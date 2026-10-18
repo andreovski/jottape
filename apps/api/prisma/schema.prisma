@@ -1,0 +1,444 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Uso pessoal: um único User, criado pelo seed (src/scripts/seed-owner.ts) a partir de
+// OWNER_EMAIL e OWNER_PASSWORD. Mesmo assim todo modelo carrega userId e toda consulta filtra por
+// ele: é barato e evita vazamento se um dia houver um segundo usuário.
+//
+// Dinheiro sempre em centavos (Int). Datas de lançamento são DATE (dia, sem hora); horários de
+// evento e tarefa são timestamptz.
+
+model User {
+  id                   String   @id @default(uuid())
+  name                 String
+  email                String   @unique
+  passwordHash         String?  @map("password_hash")
+  googleSub            String?  @unique @map("google_sub")
+  timezone             String   @default("America/Sao_Paulo")
+  currency             String   @default("BRL")
+  weekStartsOn         Int      @default(0) @map("week_starts_on")
+  defaultReminderMin   Int?     @default(10) @map("default_reminder_min")
+  dailySummaryHour     Int?     @default(8) @map("daily_summary_hour")
+  lastDailySummaryDate String?  @map("last_daily_summary_date")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  googleConnection  GoogleConnection?
+  googleCalendars   GoogleCalendar[]
+  events            Event[]
+  reminders         Reminder[]
+  pushSubscriptions PushSubscription[]
+  taskLists         TaskList[]
+  tasks             Task[]
+  tags              Tag[]
+  accounts          Account[]
+  categories        Category[]
+  transactions      Transaction[]
+  recurrences       Recurrence[]
+  invoices          CreditCardInvoice[]
+  budgets           Budget[]
+
+  @@map("users")
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+// ---------------------------------------------------------------- Google
+
+model GoogleConnection {
+  id                    String    @id @default(uuid())
+  userId                String    @unique @map("user_id")
+  googleEmail           String    @map("google_email")
+  refreshTokenEncrypted String    @map("refresh_token_encrypted")
+  scope                 String
+  defaultCalendarId     String?   @map("default_calendar_id")
+  tasksSyncedAt         DateTime? @map("tasks_synced_at")
+  lastError             String?   @map("last_error")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("google_connections")
+}
+
+model GoogleCalendar {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  googleCalendarId String    @map("google_calendar_id")
+  name             String
+  color            String?
+  primary          Boolean   @default(false)
+  selected         Boolean   @default(false)
+  syncToken        String?   @map("sync_token")
+  syncedAt         DateTime? @map("synced_at")
+  watchChannelId   String?   @unique @map("watch_channel_id")
+  watchResourceId  String?   @map("watch_resource_id")
+  watchExpiresAt   DateTime? @map("watch_expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events Event[]
+
+  @@unique([userId, googleCalendarId])
+  @@map("google_calendars")
+}
+
+// ---------------------------------------------------------------- Agenda
+
+enum EventSource {
+  LOCAL
+  GOOGLE
+}
+
+enum EventStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+enum SyncState {
+  SYNCED
+  PENDING
+  ERROR
+}
+
+// Recorrência no modelo do Google: o evento mestre tem `rrule`; uma ocorrência alterada é outro
+// Event com `recurringEventId` + `originalStartAt`, e uma ocorrência apagada é esse override com
+// status CANCELLED.
+model Event {
+  id               String      @id @default(uuid())
+  userId           String      @map("user_id")
+  title            String
+  description      String?
+  location         String?
+  startAt          DateTime    @map("start_at")
+  endAt            DateTime    @map("end_at")
+  allDay           Boolean     @default(false) @map("all_day")
+  color            String?
+  rrule            String?
+  status           EventStatus @default(CONFIRMED)
+  recurringEventId String?     @map("recurring_event_id")
+  originalStartAt  DateTime?   @map("original_start_at")
+  source           EventSource @default(LOCAL)
+  calendarId       String?     @map("calendar_id")
+  googleEventId    String?     @map("google_event_id")
+  etag             String?
+  syncState        SyncState   @default(SYNCED) @map("sync_state")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendar  GoogleCalendar? @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  recurring Event?          @relation("EventOverrides", fields: [recurringEventId], references: [id], onDelete: Cascade)
+  overrides Event[]         @relation("EventOverrides")
+
+  @@unique([calendarId, googleEventId])
+  @@index([userId, startAt])
+  @@index([userId, recurringEventId])
+  @@map("events")
+}
+
+enum ReminderOwner {
+  EVENT
+  TASK
+}
+
+model Reminder {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  ownerType     ReminderOwner @map("owner_type")
+  ownerId       String        @map("owner_id")
+  minutesBefore Int           @map("minutes_before")
+  // Próximo disparo já calculado (para recorrentes, da próxima ocorrência). Null = nada pela frente.
+  nextFireAt    DateTime?     @map("next_fire_at")
+  // Início da ocorrência do último disparo, para não repetir a mesma.
+  lastFiredFor  DateTime?     @map("last_fired_for")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerType, ownerId, minutesBefore])
+  @@index([nextFireAt])
+  @@map("reminders")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
+}
+
+// ---------------------------------------------------------------- Tarefas
+
+model TaskList {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  name             String
+  color            String?
+  icon             String?
+  sortOrder        Int       @default(0) @map("sort_order")
+  isInbox          Boolean   @default(false) @map("is_inbox")
+  googleTaskListId String?   @map("google_task_list_id")
+  syncState        SyncState @default(SYNCED) @map("sync_state")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@unique([userId, googleTaskListId])
+  @@map("task_lists")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  listId        String        @map("list_id")
+  parentTaskId  String?       @map("parent_task_id")
+  title         String
+  notes         String?
+  dueAt         DateTime?     @map("due_at")
+  hasTime       Boolean       @default(false) @map("has_time")
+  priority      TaskPriority?
+  rrule         String?
+  completedAt   DateTime?     @map("completed_at")
+  sortOrder     Int           @default(0) @map("sort_order")
+  transactionId String?       @map("transaction_id")
+  googleTaskId  String?       @map("google_task_id")
+  googleEtag    String?       @map("google_etag")
+  syncState     SyncState     @default(SYNCED) @map("sync_state")
+  // Apagada localmente, esperando o apagar no Google Tasks.
+  deletedAt     DateTime?     @map("deleted_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  list        TaskList     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  parent      Task?        @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  subtasks    Task[]       @relation("Subtasks")
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  tags        TaskTag[]
+
+  @@unique([listId, googleTaskId])
+  @@index([userId, dueAt])
+  @@map("tasks")
+}
+
+model Tag {
+  id     String    @id @default(uuid())
+  userId String    @map("user_id")
+  name   String
+  color  String?
+  tasks  TaskTag[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@map("tags")
+}
+
+model TaskTag {
+  taskId String @map("task_id")
+  tagId  String @map("tag_id")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@map("task_tags")
+}
+
+// ---------------------------------------------------------------- Finanças
+
+enum AccountType {
+  WALLET
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+}
+
+model Account {
+  id                  String      @id @default(uuid())
+  userId              String      @map("user_id")
+  name                String
+  type                AccountType
+  initialBalanceCents Int         @default(0) @map("initial_balance_cents")
+  color               String?
+  // Só cartão: dia do fechamento, dia do vencimento e a conta que paga a fatura.
+  closingDay          Int?        @map("closing_day")
+  dueDay              Int?        @map("due_day")
+  paymentAccountId    String?     @map("payment_account_id")
+  archivedAt          DateTime?   @map("archived_at")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentAccount    Account?            @relation("CardPayment", fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  cardsPaid         Account[]           @relation("CardPayment")
+  transactions      Transaction[]       @relation("TransactionAccount")
+  incomingTransfers Transaction[]       @relation("TransactionToAccount")
+  invoices          CreditCardInvoice[]
+
+  @@map("accounts")
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+}
+
+model Category {
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  name      String
+  kind      CategoryKind
+  parentId  String?      @map("parent_id")
+  icon      String?
+  color     String?
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       Category?     @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Category[]    @relation("Subcategories")
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@map("categories")
+}
+
+enum TransactionKind {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PLANNED
+  DONE
+}
+
+model Transaction {
+  id                    String            @id @default(uuid())
+  userId                String            @map("user_id")
+  kind                  TransactionKind
+  // Sempre positivo: o sinal vem de `kind`.
+  amountCents           Int               @map("amount_cents")
+  date                  DateTime          @db.Date
+  accountId             String            @map("account_id")
+  toAccountId           String?           @map("to_account_id")
+  categoryId            String?           @map("category_id")
+  description           String
+  notes                 String?
+  status                TransactionStatus @default(DONE)
+  recurrenceId          String?           @map("recurrence_id")
+  // Ocorrência de recorrência editada só ela: a regeneração não mexe mais nela.
+  isRecurrenceException Boolean           @default(false) @map("is_recurrence_exception")
+  installmentGroupId    String?           @map("installment_group_id")
+  installmentNumber     Int?              @map("installment_number")
+  installmentTotal      Int?              @map("installment_total")
+  invoiceId             String?           @map("invoice_id")
+  // Transferência que paga esta fatura (só nos pagamentos de fatura).
+  paysInvoiceId         String?           @unique @map("pays_invoice_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     Account            @relation("TransactionAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount   Account?           @relation("TransactionToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  category    Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recurrence  Recurrence?        @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
+  invoice     CreditCardInvoice? @relation("InvoiceItems", fields: [invoiceId], references: [id], onDelete: SetNull)
+  paysInvoice CreditCardInvoice? @relation("InvoicePayment", fields: [paysInvoiceId], references: [id], onDelete: SetNull)
+  tasks       Task[]
+
+  @@index([userId, date])
+  @@index([accountId, date])
+  @@map("transactions")
+}
+
+model Recurrence {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  rrule          String
+  // Data da primeira ocorrência (YYYY-MM-DD) e o lançamento modelo (kind, valor, conta...).
+  startDate      DateTime @map("start_date") @db.Date
+  template       Json
+  generatedUntil DateTime @map("generated_until") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("recurrences")
+}
+
+model CreditCardInvoice {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  accountId      String    @map("account_id")
+  // Primeiro dia do mês do fechamento (YYYY-MM-01).
+  referenceMonth DateTime  @map("reference_month") @db.Date
+  closingDate    DateTime  @map("closing_date") @db.Date
+  dueDate        DateTime  @map("due_date") @db.Date
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  items   Transaction[] @relation("InvoiceItems")
+  payment Transaction?  @relation("InvoicePayment")
+
+  @@unique([accountId, referenceMonth])
+  @@map("credit_card_invoices")
+}
+
+model Budget {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  categoryId String   @map("category_id")
+  // Primeiro dia do mês (YYYY-MM-01).
+  month      DateTime @db.Date
+  limitCents Int      @map("limit_cents")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, month])
+  @@map("budgets")
+}

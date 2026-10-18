@@ -1,0 +1,306 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Linguagem visual: a dos apps da Apple (Calendário, Lembretes, Wallet, Ajustes). Fundo agrupado
+ * cinza com cartões brancos no claro; preto puro com superfícies em camadas no escuro. Cada seção
+ * tem a sua cor, como os apps do iPhone: Hoje índigo, Agenda vermelho, Tarefas laranja e Finanças
+ * verde. As cores do sistema são as do iOS (systemRed, systemBlue...), nas duas aparências.
+ */
+:root {
+  color-scheme: light;
+  --radius: 0.875rem;
+
+  /* Superfícies (grouped background do iOS). */
+  --background: #f2f2f7;
+  --surface: #ffffff;
+  --surface-2: #f2f2f7;
+  --surface-3: #e5e5ea;
+  --elevated: #ffffff;
+  --material: rgb(249 249 249 / 0.78);
+  --foreground: #000000;
+  --label-2: rgb(60 60 67 / 0.6);
+  --label-3: rgb(60 60 67 / 0.3);
+  --separator: rgb(60 60 67 / 0.18);
+  --fill: rgb(120 120 128 / 0.12);
+  --fill-2: rgb(120 120 128 / 0.2);
+
+  /* Cores do sistema. */
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --yellow: #ffcc00;
+  --green: #34c759;
+  --mint: #00c7be;
+  --teal: #30b0c7;
+  --cyan: #32ade6;
+  --blue: #007aff;
+  --indigo: #5856d6;
+  --purple: #af52de;
+  --pink: #ff2d55;
+  --brown: #a2845e;
+  --gray: #8e8e93;
+
+  /* Cor da seção aberta (o AppShell troca conforme a rota). */
+  --tint: var(--blue);
+
+  /* Nomes que os componentes do shadcn esperam. */
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--elevated);
+  --popover-foreground: var(--foreground);
+  --primary: var(--tint);
+  --primary-foreground: #ffffff;
+  --secondary: var(--fill);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--label-2);
+  --accent: var(--fill);
+  --accent-foreground: var(--foreground);
+  --destructive: var(--red);
+  --destructive-foreground: #ffffff;
+  --border: var(--separator);
+  --input: var(--fill);
+  --ring: var(--tint);
+
+  --ok: var(--green);
+  --warn: var(--orange);
+  --danger: var(--red);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #000000;
+  --surface: #1c1c1e;
+  --surface-2: #2c2c2e;
+  --surface-3: #3a3a3c;
+  --elevated: #1c1c1e;
+  --material: rgb(22 22 23 / 0.78);
+  --foreground: #ffffff;
+  --label-2: rgb(235 235 245 / 0.6);
+  --label-3: rgb(235 235 245 / 0.3);
+  --separator: rgb(84 84 88 / 0.6);
+  --fill: rgb(118 118 128 / 0.24);
+  --fill-2: rgb(118 118 128 / 0.32);
+
+  --red: #ff453a;
+  --orange: #ff9f0a;
+  --yellow: #ffd60a;
+  --green: #30d158;
+  --mint: #63e6e2;
+  --teal: #40c8e0;
+  --cyan: #64d2ff;
+  --blue: #0a84ff;
+  --indigo: #5e5ce6;
+  --purple: #bf5af2;
+  --pink: #ff375f;
+  --brown: #ac8e68;
+  --gray: #98989d;
+}
+
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Segoe UI Variable Text',
+    'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-rounded:
+    ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display',
+    'Segoe UI', Inter, Roboto, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-elevated: var(--elevated);
+  --color-material: var(--material);
+  --color-label-2: var(--label-2);
+  --color-label-3: var(--label-3);
+  --color-separator: var(--separator);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
+  --color-tint: var(--tint);
+
+  --color-red: var(--red);
+  --color-orange: var(--orange);
+  --color-yellow: var(--yellow);
+  --color-green: var(--green);
+  --color-mint: var(--mint);
+  --color-teal: var(--teal);
+  --color-cyan: var(--cyan);
+  --color-blue: var(--blue);
+  --color-indigo: var(--indigo);
+  --color-purple: var(--purple);
+  --color-pink: var(--pink);
+  --color-brown: var(--brown);
+  --color-gray: var(--gray);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --animate-sheet-in: sheet-in 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-separator outline-tint/50;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    font-size: 17px;
+    letter-spacing: -0.022em;
+    overscroll-behavior-y: none;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: 17px;
+  }
+}
+
+@layer utilities {
+  /* Material translúcido das barras (UINavigationBar / UITabBar). */
+  .material {
+    background-color: var(--material);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .hairline-b {
+    box-shadow: inset 0 -0.5px 0 var(--separator);
+  }
+
+  .hairline-r {
+    box-shadow: inset -0.5px 0 0 var(--separator);
+  }
+
+  .hairline-t {
+    box-shadow: inset 0 0.5px 0 var(--separator);
+  }
+
+  .numeric {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Tipografia do iOS (Dynamic Type, tamanho padrão). */
+  .text-large-title {
+    font-size: 34px;
+    line-height: 41px;
+    font-weight: 700;
+    letter-spacing: 0.011em;
+  }
+  .text-title-1 {
+    font-size: 28px;
+    line-height: 34px;
+    font-weight: 700;
+    letter-spacing: 0.013em;
+  }
+  .text-title-2 {
+    font-size: 22px;
+    line-height: 28px;
+    font-weight: 700;
+    letter-spacing: -0.016em;
+  }
+  .text-title-3 {
+    font-size: 20px;
+    line-height: 25px;
+    font-weight: 600;
+    letter-spacing: -0.017em;
+  }
+  .text-headline {
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+  }
+  .text-body {
+    font-size: 17px;
+    line-height: 22px;
+    letter-spacing: -0.022em;
+  }
+  .text-callout {
+    font-size: 16px;
+    line-height: 21px;
+    letter-spacing: -0.02em;
+  }
+  .text-subhead {
+    font-size: 15px;
+    line-height: 20px;
+    letter-spacing: -0.016em;
+  }
+  .text-footnote {
+    font-size: 13px;
+    line-height: 18px;
+    letter-spacing: -0.006em;
+  }
+  .text-caption {
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .text-caption-2 {
+    font-size: 11px;
+    line-height: 13px;
+    letter-spacing: 0.006em;
+  }
+}

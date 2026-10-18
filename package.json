@@ -1,0 +1,24 @@
+{
+  "name": "jottape-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "studio": "pnpm --filter api studio"
+  },
+  "devDependencies": {
+    "prettier": "3.6.2",
+    "railway": "3.11.0",
+    "turbo": "2.6.1",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": "22.x"
+  }
+}
