@@ -61,7 +61,8 @@ export default defineRailway(() => {
       watchPatterns: ['/apps/web/**', '/packages/**', ...ROOT_FILES],
     },
     start: 'node apps/web/server.mjs',
-    healthcheck: '/manifest.webmanifest',
+    // O Railway recusa ponto no caminho do healthcheck: `/` devolve o index.html.
+    healthcheck: '/',
     env: {
       PORT: '4173',
       // `/api/*` vai para a API pela rede privada (um domínio só, cookie de sessão de primeira parte).
