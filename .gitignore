@@ -1,0 +1,23 @@
+# Dependências
+node_modules
+.pnpm-debug.log*
+
+# Build
+dist/
+dev-dist/
+coverage/
+*.tsbuildinfo
+
+# Turborepo
+.turbo
+
+# Variáveis locais
+.env
+.env*.local
+
+# Editores e sistema
+.idea
+.vscode
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
