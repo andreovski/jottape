@@ -43,6 +43,7 @@ model User {
   recurrences       Recurrence[]
   invoices          CreditCardInvoice[]
   budgets           Budget[]
+  briefingSettings  BriefingSettings?
 
   @@map("users")
 }
@@ -441,4 +442,26 @@ model Budget {
 
   @@unique([categoryId, month])
   @@map("budgets")
+}
+
+// ---------------------------------------------------------------- briefing
+
+/// Plugins do briefing da tela Hoje: ordem, quais estão ligados e ajustes (signo, cidade, moedas).
+model BriefingSettings {
+  userId    String   @id @map("user_id")
+  settings  Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("briefing_settings")
+}
+
+/// Respostas de serviços de fora (clima, horóscopo, cotação, feriados), iguais para todos os usuários.
+model ExternalCache {
+  key       String   @id
+  data      Json
+  expiresAt DateTime @map("expires_at")
+
+  @@map("external_cache")
 }

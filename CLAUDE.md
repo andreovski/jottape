@@ -49,6 +49,12 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   `updatedMin`. Mudança local pendente (`syncState: PENDING`) vence a do Google.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e
   descarta o que atrasou mais de 1 h. Tarefa só com data é lembrada às 09:00 locais.
+- **Briefing** (tela Hoje): cada plugin é uma função em `services/briefing/index.ts` que devolve
+  frases montadas em `text.ts` (funções puras, com teste). Dinheiro do usuário vai como `{0}` +
+  `values` em centavos, para o app poder ocultar. Plugin novo entra em `briefingPluginIds`
+  (schemas) e no `briefingCatalog` (web); quem já salvou ajustes recebe ele desligado. Serviços de
+  fora passam por `cached()` (tabela `ExternalCache`, igual para todos) e, se falharem, o plugin
+  só some.
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.
 

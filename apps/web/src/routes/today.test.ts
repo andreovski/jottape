@@ -1,7 +1,9 @@
 import type { EventOccurrence } from '@jottape/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { greeting, nextUpcoming, taskProgress } from './today';
+import { setAppTimeZone } from '@/lib/format';
+
+import { eventDay, greeting, nextUpcoming, sortUndated, taskProgress } from './today';
 
 const event = (title: string, startAt: string, endAt: string, allDay = false) =>
   ({ title, startAt, endAt, allDay }) as EventOccurrence;
@@ -30,5 +32,22 @@ describe('tela Hoje', () => {
     expect(taskProgress(0, 0)).toBe(0);
     expect(taskProgress(1, 3)).toBe(0.25);
     expect(taskProgress(2, 0)).toBe(1);
+  });
+
+  it('acha o dia do evento, com e sem horário', () => {
+    setAppTimeZone('America/Sao_Paulo');
+    expect(eventDay({ allDay: true, startAt: '2026-11-02T00:00:00.000Z' })).toBe('2026-11-02');
+    // 23h em São Paulo ainda é dia 2.
+    expect(eventDay({ allDay: false, startAt: '2026-11-03T02:00:00.000Z' })).toBe('2026-11-02');
+  });
+
+  it('põe as sem data com prioridade primeiro', () => {
+    const tasks = [
+      { id: 'a', priority: null },
+      { id: 'b', priority: 'LOW' },
+      { id: 'c', priority: 'HIGH' },
+      { id: 'd', priority: null },
+    ] as const;
+    expect(sortUndated([...tasks]).map((t) => t.id)).toEqual(['c', 'b', 'a', 'd']);
   });
 });

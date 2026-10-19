@@ -130,11 +130,19 @@ export function PrivacyPage() {
         navegador (Apple, Google ou Mozilla) com conteúdo criptografado de ponta a ponta. Não usamos
         ferramentas de análise, rastreamento ou anúncios.
       </p>
+      <p>
+        Se você ligar os plugins de fora no briefing da tela Hoje, o servidor do Jottape consulta
+        serviços públicos gratuitos: Open-Meteo (clima e busca de cidade, com a cidade escolhida),
+        Horoscope App API e MyMemory (horóscopo e tradução, com o signo), Frankfurter e CoinGecko
+        (cotações) e BrasilAPI (feriados). Só a cidade e o signo saem do app, sem nome, e-mail ou
+        qualquer dado que identifique você, e as respostas ficam guardadas para todos os usuários.
+      </p>
 
       <H2>Cookies e armazenamento local</H2>
       <p>
         Usamos um único cookie de sessão, necessário para manter você conectado, e o armazenamento
-        local do navegador para lembrar o tema (claro ou escuro) e funcionar como app instalado.
+        local do navegador para lembrar o tema (claro ou escuro), se os valores da tela Hoje estão
+        ocultos, e funcionar como app instalado.
       </p>
 
       <H2>Seus controles</H2>

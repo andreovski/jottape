@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 
 import { prisma } from '@/lib/prisma';
+import { pruneExternalCache } from '@/services/briefing/external';
 import { extendRecurrences } from '@/services/finance';
 import { syncAllCalendars } from '@/services/google/calendar';
 import { syncTasks } from '@/services/google/tasks';
@@ -50,6 +51,10 @@ export function startJobs() {
   cron.schedule(
     '17 3 * * *',
     guarded('recurrences', () => extendRecurrences())
+  );
+  cron.schedule(
+    '41 3 * * *',
+    guarded('external-cache', () => pruneExternalCache())
   );
 
   // Na subida: estende recorrências que ficaram para trás enquanto a API estava fora.
