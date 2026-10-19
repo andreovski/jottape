@@ -1,17 +1,28 @@
+import type { GoogleAccountResponse, GoogleCalendarResponse } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
-import { CalendarDays, ChevronLeft, CircleCheck, RefreshCw, TriangleAlert } from 'lucide-react';
+import {
+  CalendarDays,
+  ChevronLeft,
+  CircleCheck,
+  Plus,
+  RefreshCw,
+  TriangleAlert,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button, Spinner, Switch } from '@/components/ios/controls';
-import { SelectInput } from '@/components/ios/fields';
+import { ColorPicker, SelectInput } from '@/components/ios/fields';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
-import { ActionSheet } from '@/components/ios/sheet';
+import { ActionSheet, Sheet } from '@/components/ios/sheet';
 import {
+  alsoInLabel,
+  calendarsBody,
   startGoogle,
-  useDisconnectGoogle,
+  useDisconnectGoogleAccount,
   useGoogleStatus,
+  useSetTasksAccount,
   useSyncGoogle,
   useUpdateGoogleCalendars,
 } from '@/features/google';
@@ -28,18 +39,26 @@ function ago(iso: string | null) {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
 
+const ERRORS: Record<string, string> = {
+  'conta-em-uso': 'Essa conta Google já está ligada a outro usuário do Jottape.',
+};
+
 export function GooglePage() {
   const navigate = useNavigate();
   const status = useGoogleStatus();
   const update = useUpdateGoogleCalendars();
   const sync = useSyncGoogle();
-  const disconnect = useDisconnectGoogle();
-  const [confirm, setConfirm] = useState(false);
+  const disconnect = useDisconnectGoogleAccount();
+  const setTasksAccount = useSetTasksAccount();
+  const [disconnecting, setDisconnecting] = useState<GoogleAccountResponse | null>(null);
+  const [tasksTarget, setTasksTarget] = useState<string | null | undefined>(undefined);
+  const [painting, setPainting] = useState<GoogleCalendarResponse | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('google') === 'ok') toast.success('Conta Google conectada. Sincronizando…');
-    if (params.get('erro')) toast.error('Não deu para conectar o Google. Tente de novo.');
+    const error = params.get('erro');
+    if (error) toast.error(ERRORS[error] ?? 'Não deu para conectar o Google. Tente de novo.');
     if (params.size) window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
@@ -55,6 +74,8 @@ export function GooglePage() {
   );
 
   const data = status.data;
+  const emailOf = (accountId: string | null | undefined) =>
+    data?.accounts.find((a) => a.id === accountId)?.email;
 
   return (
     <Page
@@ -95,7 +116,8 @@ export function GooglePage() {
           <h2 className='text-title-2'>Conectar ao Google</h2>
           <p className='text-subhead text-label-2 mt-2 max-w-sm'>
             Seus compromissos do Google Agenda aparecem aqui e o que você criar no Jottape vai para
-            lá. As listas do Google Tasks viram listas de tarefas, nos dois sentidos.
+            lá. As listas do Google Tasks viram listas de tarefas, nos dois sentidos. Dá para
+            conectar mais de uma conta.
           </p>
           <Button className='mt-6 w-full max-w-xs' onClick={() => startGoogle('connect')}>
             Conectar conta Google
@@ -103,66 +125,78 @@ export function GooglePage() {
         </div>
       ) : (
         <>
+          {data.accounts.map((account) => {
+            const calendars = data.calendars.filter((c) => c.accountId === account.id);
+            return (
+              <Section key={account.id} header={account.email}>
+                {account.lastError && (
+                  <Row
+                    leading={
+                      <IconChip color='var(--red)'>
+                        <TriangleAlert />
+                      </IconChip>
+                    }
+                    title='A sincronização falhou'
+                    subtitle={account.lastError}
+                    detail='Reconectar'
+                    onClick={() => startGoogle('connect')}
+                  />
+                )}
+                {calendars.map((calendar) => (
+                  <Row
+                    key={calendar.id}
+                    leading={
+                      <button
+                        type='button'
+                        aria-label={`Cor de ${calendar.name}`}
+                        onClick={() => setPainting(calendar)}
+                        className='flex size-7 items-center justify-center active:opacity-40'
+                      >
+                        <span
+                          className='size-3 rounded-full'
+                          style={{ backgroundColor: calendar.color ?? 'var(--blue)' }}
+                        />
+                      </button>
+                    }
+                    title={calendar.name}
+                    subtitle={
+                      alsoInLabel(data, calendar) ??
+                      (calendar.selected ? `Sincronizado ${ago(calendar.syncedAt)}` : undefined)
+                    }
+                    trailing={
+                      <Switch
+                        label={calendar.name}
+                        checked={calendar.selected}
+                        onChange={(on) =>
+                          update.mutate(calendarsBody(data, { selected: { id: calendar.id, on } }))
+                        }
+                      />
+                    }
+                  />
+                ))}
+                <Row
+                  destructive
+                  title='Desconectar esta conta'
+                  onClick={() => setDisconnecting(account)}
+                />
+              </Section>
+            );
+          })}
+
           <Section>
             <Row
               leading={
-                <IconChip color='#ffffff'>
-                  <GoogleGlyph />
+                <IconChip color='var(--blue)'>
+                  <Plus />
                 </IconChip>
               }
-              title={data.email}
-              subtitle='Conta conectada'
+              action
+              title='Adicionar conta Google'
+              onClick={() => startGoogle('connect')}
             />
           </Section>
 
-          {data.lastError && (
-            <div className='bg-red/12 text-red text-subhead mb-7 flex gap-3 rounded-[var(--radius)] p-4'>
-              <TriangleAlert className='size-5 shrink-0' />
-              <div>
-                <div className='font-semibold'>A sincronização falhou</div>
-                <div className='opacity-90'>{data.lastError}</div>
-                <button
-                  type='button'
-                  className='mt-2 font-semibold underline'
-                  onClick={() => startGoogle('connect')}
-                >
-                  Conectar de novo
-                </button>
-              </div>
-            </div>
-          )}
-
-          <Section
-            header='Calendários'
-            footer='Os calendários ligados aparecem na Agenda. Eventos novos vão para o calendário padrão.'
-          >
-            {data.calendars.map((calendar) => (
-              <Row
-                key={calendar.id}
-                leading={
-                  <span
-                    className='size-3 rounded-full'
-                    style={{ backgroundColor: calendar.color ?? 'var(--blue)' }}
-                  />
-                }
-                title={calendar.name}
-                subtitle={calendar.selected ? `Sincronizado ${ago(calendar.syncedAt)}` : undefined}
-                trailing={
-                  <Switch
-                    label={calendar.name}
-                    checked={calendar.selected}
-                    onChange={(on) =>
-                      update.mutate({
-                        selectedIds: data.calendars
-                          .filter((c) => (c.id === calendar.id ? on : c.selected))
-                          .map((c) => c.id),
-                        defaultCalendarId: data.defaultCalendarId,
-                      })
-                    }
-                  />
-                }
-              />
-            ))}
+          <Section footer='Os calendários ligados aparecem na Agenda. Eventos novos vão para o calendário padrão.'>
             <Row
               leading={
                 <IconChip color='var(--red)'>
@@ -174,21 +208,26 @@ export function GooglePage() {
                 <SelectInput
                   value={data.defaultCalendarId ?? ''}
                   onChange={(value) =>
-                    update.mutate({
-                      selectedIds: data.calendars.filter((c) => c.selected).map((c) => c.id),
-                      defaultCalendarId: value || null,
-                    })
+                    update.mutate(calendarsBody(data, { defaultCalendarId: value || null }))
                   }
                   placeholder='Só no Jottape'
-                  options={data.calendars.map((c) => ({ value: c.id, label: c.name }))}
+                  options={data.calendars.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    group: emailOf(c.accountId),
+                  }))}
                 />
               }
             />
           </Section>
 
           <Section
-            header='Tarefas'
-            footer='O Google Tasks guarda só o dia do prazo; hora, repetição e lembretes ficam no Jottape.'
+            header='Google Tasks'
+            footer={
+              data.tasksAccountId
+                ? `Sincronizado ${ago(data.tasksSyncedAt)}. O Google Tasks guarda só o dia do prazo; hora, repetição e lembretes ficam no Jottape.`
+                : 'As tarefas ficam só no Jottape.'
+            }
           >
             <Row
               leading={
@@ -196,24 +235,90 @@ export function GooglePage() {
                   <CircleCheck />
                 </IconChip>
               }
-              title='Google Tasks'
-              detail={ago(data.tasksSyncedAt)}
+              title='Conta'
+              trailing={
+                setTasksAccount.isPending ? (
+                  <Spinner />
+                ) : (
+                  <SelectInput
+                    value={data.tasksAccountId ?? ''}
+                    onChange={(value) => setTasksTarget(value || null)}
+                    placeholder='Nenhuma'
+                    options={data.accounts.map((a) => ({ value: a.id, label: a.email }))}
+                  />
+                )
+              }
             />
           </Section>
 
-          <Section>
-            <Row destructive title='Desconectar conta Google' onClick={() => setConfirm(true)} />
-          </Section>
-
           <ActionSheet
-            open={confirm}
-            onOpenChange={setConfirm}
-            title='Desconectar o Google?'
-            message='Os eventos do Google somem da Agenda. Suas tarefas ficam no Jottape.'
+            open={Boolean(disconnecting)}
+            onOpenChange={(open) => !open && setDisconnecting(null)}
+            title={`Desconectar ${disconnecting?.email ?? ''}?`}
+            message={
+              disconnecting?.syncTasks
+                ? 'Os eventos desta conta somem da Agenda e as tarefas param de sincronizar com o Google Tasks. Suas tarefas ficam no Jottape.'
+                : 'Os eventos desta conta somem da Agenda. As outras contas continuam conectadas.'
+            }
             actions={[
-              { label: 'Desconectar', destructive: true, onSelect: () => disconnect.mutate() },
+              {
+                label: 'Desconectar',
+                destructive: true,
+                onSelect: () => disconnecting && disconnect.mutate(disconnecting.id),
+              },
             ]}
           />
+
+          <ActionSheet
+            open={tasksTarget !== undefined}
+            onOpenChange={(open) => !open && setTasksTarget(undefined)}
+            title={
+              tasksTarget
+                ? `Sincronizar tarefas com ${emailOf(tasksTarget)}?`
+                : 'Parar de sincronizar as tarefas?'
+            }
+            message={
+              tasksTarget
+                ? 'As tarefas e listas do Jottape são enviadas para esta conta, e as dela aparecem aqui. Nada some da conta anterior.'
+                : 'Suas tarefas ficam no Jottape, sem ligação com o Google Tasks.'
+            }
+            actions={[
+              {
+                label: tasksTarget ? 'Sincronizar' : 'Parar',
+                destructive: !tasksTarget,
+                onSelect: () =>
+                  tasksTarget !== undefined && setTasksAccount.mutate({ accountId: tasksTarget }),
+              },
+            ]}
+          />
+
+          <Sheet
+            open={Boolean(painting)}
+            onOpenChange={(open) => !open && setPainting(null)}
+            title={painting?.name ?? 'Cor'}
+            cancelLabel='OK'
+          >
+            <Section footer='A cor vale só no Jottape; no Google fica a de lá.'>
+              <ColorPicker
+                value={painting?.colorOverride ?? null}
+                onChange={(color) => {
+                  if (!painting) return;
+                  update.mutate(calendarsBody(data, { color: { id: painting.id, color } }));
+                  setPainting(null);
+                }}
+              />
+              {painting?.colorOverride && (
+                <Row
+                  action
+                  title='Usar a cor do Google'
+                  onClick={() => {
+                    update.mutate(calendarsBody(data, { color: { id: painting.id, color: null } }));
+                    setPainting(null);
+                  }}
+                />
+              )}
+            </Section>
+          </Sheet>
         </>
       )}
     </Page>

@@ -25,7 +25,10 @@ function guarded(name: string, job: () => Promise<unknown>) {
 }
 
 async function eachGoogleUser(run: (userId: string) => Promise<void>) {
-  const connections = await prisma.googleConnection.findMany({ select: { userId: true } });
+  const connections = await prisma.googleConnection.findMany({
+    select: { userId: true },
+    distinct: ['userId'],
+  });
   for (const { userId } of connections) await run(userId);
 }
 

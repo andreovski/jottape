@@ -66,10 +66,18 @@ export function SelectInput({
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  /** Com `group`, as opções saem agrupadas (na ordem em que o grupo aparece). */
+  options: { value: string; label: string; group?: string }[];
   placeholder?: string;
   className?: string;
 }) {
+  const groups = [...new Set(options.map((option) => option.group))];
+  const render = (list: typeof options) =>
+    list.map((option) => (
+      <option key={option.value} value={option.value}>
+        {option.label}
+      </option>
+    ));
   return (
     <span className={cn('relative inline-flex max-w-full items-center', className)}>
       <select
@@ -78,11 +86,13 @@ export function SelectInput({
         className='text-body text-label-2 max-w-full appearance-none truncate bg-transparent pr-5 text-right outline-none'
       >
         {placeholder !== undefined && <option value=''>{placeholder}</option>}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
+        {groups.length > 1 || groups[0] !== undefined
+          ? groups.map((group) => (
+              <optgroup key={group ?? ''} label={group ?? ''}>
+                {render(options.filter((option) => option.group === group))}
+              </optgroup>
+            ))
+          : render(options)}
       </select>
       <svg
         aria-hidden

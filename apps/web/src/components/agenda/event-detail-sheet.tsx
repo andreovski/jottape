@@ -118,7 +118,12 @@ export function EventDetailSheet({
                     className='size-2.5 shrink-0 rounded-full'
                     style={{ backgroundColor: calendar?.color ?? color }}
                   />
-                  <span className='truncate'>{calendar?.name ?? 'Jottape'}</span>
+                  <span className='truncate'>
+                    {calendar?.name ?? 'Jottape'}
+                    {calendar?.account && (
+                      <span className='text-label-2'> · {calendar.account}</span>
+                    )}
+                  </span>
                 </span>
               </DetailRow>
               <DetailRow icon={<Bell />} label='Alerta'>

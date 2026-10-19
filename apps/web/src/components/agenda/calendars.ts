@@ -9,15 +9,20 @@ export interface CalendarInfo {
   id: string | null;
   name: string;
   color: string;
+  /** E-mail da conta Google, quando há mais de uma conectada. */
+  account?: string;
 }
 
 export function calendarsOf(status: GoogleStatusResponse | undefined) {
   const map = new Map<string, CalendarInfo>();
+  const accounts = status?.accounts ?? [];
   for (const calendar of status?.calendars ?? []) {
     map.set(calendar.id, {
       id: calendar.id,
       name: calendar.name,
       color: calendar.color ?? 'var(--blue)',
+      account:
+        accounts.length > 1 ? accounts.find((a) => a.id === calendar.accountId)?.email : undefined,
     });
   }
   return map;

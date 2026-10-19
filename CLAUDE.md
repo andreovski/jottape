@@ -44,7 +44,9 @@ pnpm --filter api seed                         # dono, categorias padrão e list
 - **Eventos** seguem o modelo do Google: o mestre tem a `rrule`, a exceção tem `recurringEventId` +
   `originalStartAt`, e ocorrência apagada é uma exceção `CANCELLED`. Dia inteiro é guardado em
   meia-noite UTC com fim exclusivo e expandido sem fuso.
-- **Google**: refresh token cifrado (AES-256-GCM, `ENCRYPTION_KEY`). Agenda por `syncToken` (410 →
+- **Google**: o usuário pode conectar várias contas (`GoogleConnection`); toda chamada ao Google é
+  por conta (`googleFetch(connectionId, …)`), e só a conta com `syncTasks` sincroniza o Google Tasks.
+  O calendário padrão fica no `User`. Refresh token cifrado (AES-256-GCM, `ENCRYPTION_KEY`). Agenda por `syncToken` (410 →
   sincronização completa) e webhook `events.watch` só com `APP_URL` em HTTPS; tarefas por
   `updatedMin`. Mudança local pendente (`syncState: PENDING`) vence a do Google.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e

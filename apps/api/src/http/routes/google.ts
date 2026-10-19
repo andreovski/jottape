@@ -1,4 +1,9 @@
-import { type GoogleStatusResponse, updateGoogleCalendarsBodySchema } from '@jottape/schemas';
+import {
+  type GoogleStatusResponse,
+  updateGoogleCalendarsBodySchema,
+  updateGoogleTasksAccountBodySchema,
+} from '@jottape/schemas';
+import type { GoogleConnection } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
@@ -10,17 +15,19 @@ import { prisma } from '@/lib/prisma';
 import {
   channelToken,
   stopWatch,
+  syncAccount,
   syncAllCalendars,
   syncCalendar,
 } from '@/services/google/calendar';
 import {
   authorizationUrl,
+  connectionsOf,
   exchangeCode,
   fetchUserInfo,
   forgetAccessToken,
   REVOKE_URL,
 } from '@/services/google/client';
-import { syncTasks } from '@/services/google/tasks';
+import { syncTasks, unlinkTasksOps } from '@/services/google/tasks';
 
 import { authenticate, sessionUserId, startSession } from '../session';
 
@@ -33,29 +40,84 @@ function background(job: () => Promise<unknown>) {
 }
 
 export async function googleStatus(userId: string): Promise<GoogleStatusResponse> {
-  const [connection, calendars] = await Promise.all([
-    prisma.googleConnection.findUnique({ where: { userId } }),
+  const [accounts, calendars, user] = await Promise.all([
+    connectionsOf(userId),
     prisma.googleCalendar.findMany({
       where: { userId },
       orderBy: [{ primary: 'desc' }, { name: 'asc' }],
     }),
+    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
   ]);
+  const order = new Map(accounts.map((account, index) => [account.id, index]));
+  const visible = calendars
+    .filter((c) => order.has(c.connectionId))
+    .sort((x, y) => order.get(x.connectionId)! - order.get(y.connectionId)!);
+  const tasksAccount = accounts.find((a) => a.syncTasks) ?? null;
+  const main = tasksAccount ?? accounts[0] ?? null;
+
   return {
     configured: Boolean(getGoogleConfig()),
-    connected: Boolean(connection),
-    email: connection?.googleEmail ?? null,
-    calendars: calendars.map((c) => ({
+    connected: accounts.length > 0,
+    accounts: accounts.map((a) => ({
+      id: a.id,
+      email: a.googleEmail,
+      syncTasks: a.syncTasks,
+      tasksSyncedAt: a.tasksSyncedAt?.toISOString() ?? null,
+      lastError: a.lastError,
+    })),
+    calendars: visible.map((c) => ({
       id: c.id,
+      accountId: c.connectionId,
       name: c.name,
-      color: c.color,
+      color: c.colorOverride ?? c.color,
+      colorOverride: c.colorOverride,
       primary: c.primary,
       selected: c.selected,
       syncedAt: c.syncedAt?.toISOString() ?? null,
+      alsoIn: visible
+        .filter((o) => o.googleCalendarId === c.googleCalendarId && o.id !== c.id)
+        .map((o) => o.id),
     })),
-    defaultCalendarId: connection?.defaultCalendarId ?? null,
-    tasksSyncedAt: connection?.tasksSyncedAt?.toISOString() ?? null,
-    lastError: connection?.lastError ?? null,
+    defaultCalendarId: visible.some((c) => c.id === user.defaultCalendarId)
+      ? user.defaultCalendarId
+      : null,
+    tasksAccountId: tasksAccount?.id ?? null,
+    email: main?.googleEmail ?? null,
+    tasksSyncedAt: tasksAccount?.tasksSyncedAt?.toISOString() ?? null,
+    lastError: accounts.find((a) => a.lastError)?.lastError ?? null,
   };
+}
+
+/** Desconecta uma conta: para os webhooks, revoga o token e apaga calendários e eventos dela. */
+async function disconnectAccount(connection: GoogleConnection) {
+  const { userId } = connection;
+  const calendars = await prisma.googleCalendar.findMany({
+    where: { connectionId: connection.id },
+  });
+  for (const calendar of calendars) await stopWatch(calendar).catch(() => undefined);
+  await fetch(
+    `${REVOKE_URL}?token=${encodeURIComponent(decrypt(connection.refreshTokenEncrypted))}`,
+    { method: 'POST' }
+  ).catch(() => undefined);
+
+  // Os eventos do Google somem com os calendários; as tarefas ficam, só sem o vínculo.
+  await prisma.$transaction([
+    ...(connection.syncTasks ? unlinkTasksOps(userId) : []),
+    prisma.googleConnection.delete({ where: { id: connection.id } }),
+  ]);
+  forgetAccessToken(connection.id);
+
+  // O calendário padrão era desta conta: passa para o principal de outra que esteja marcado.
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!user.defaultCalendarId) {
+    const next = await prisma.googleCalendar.findFirst({
+      where: { userId, selected: true },
+      orderBy: [{ primary: 'desc' }, { createdAt: 'asc' }],
+    });
+    if (next) {
+      await prisma.user.update({ where: { id: userId }, data: { defaultCalendarId: next.id } });
+    }
+  }
 }
 
 function safeEqual(a: string, b: string) {
@@ -112,10 +174,15 @@ export async function googleRoutes(app: FastifyInstance) {
     const email = info.email.toLowerCase();
 
     if (state.intent === 'login') {
-      // Só entra quem já tem conta (Google ligado ou o mesmo e-mail): o login não cria usuário.
+      // Só entra quem já tem conta (Google ligado, uma conta conectada ou o mesmo e-mail): o login
+      // não cria usuário.
       const user = await prisma.user.findFirst({
         where: {
-          OR: [{ googleSub: info.sub }, ...(info.email_verified !== false ? [{ email }] : [])],
+          OR: [
+            { googleSub: info.sub },
+            { googleConnections: { some: { googleSub: info.sub } } },
+            ...(info.email_verified !== false ? [{ email }] : []),
+          ],
         },
       });
       if (!user) return reply.redirect(`${back}?erro=conta`);
@@ -126,35 +193,49 @@ export async function googleRoutes(app: FastifyInstance) {
     }
 
     const userId = state.sub;
-    const existing = await prisma.googleConnection.findUnique({ where: { userId } });
+    // Uma conta Google fica ligada a um usuário do Jottape por vez.
+    const usedElsewhere = await prisma.googleConnection.count({
+      where: { googleSub: info.sub, userId: { not: userId } },
+    });
+    if (usedElsewhere) return reply.redirect(`${back}?erro=conta-em-uso`);
+
+    // Reconectar a mesma conta só renova o token (contas antigas ainda sem `sub`: pelo e-mail).
+    const existing = await prisma.googleConnection.findFirst({
+      where: {
+        userId,
+        OR: [{ googleSub: info.sub }, { googleSub: null, googleEmail: email }],
+      },
+    });
     const refresh =
       token.refresh_token ?? (existing ? decrypt(existing.refreshTokenEncrypted) : null);
     if (!refresh) return reply.redirect(`${back}?erro=google`);
 
-    await prisma.googleConnection.upsert({
-      where: { userId },
-      update: {
-        googleEmail: email,
-        refreshTokenEncrypted: encrypt(refresh),
-        scope: token.scope,
-        lastError: null,
-      },
-      create: {
-        userId,
-        googleEmail: email,
-        refreshTokenEncrypted: encrypt(refresh),
-        scope: token.scope,
-      },
-    });
-    forgetAccessToken(userId);
+    const fields = {
+      googleSub: info.sub,
+      googleEmail: email,
+      refreshTokenEncrypted: encrypt(refresh),
+      scope: token.scope,
+      lastError: null,
+    };
+    const connection = existing
+      ? await prisma.googleConnection.update({ where: { id: existing.id }, data: fields })
+      : await prisma.googleConnection.create({
+          data: {
+            ...fields,
+            userId,
+            // A primeira conta sincroniza o Google Tasks; as outras só a agenda.
+            syncTasks: (await prisma.googleConnection.count({ where: { userId } })) === 0,
+          },
+        });
+    forgetAccessToken(connection.id);
     await prisma.user.updateMany({
       where: { id: userId, googleSub: null },
       data: { googleSub: info.sub },
     });
 
     background(async () => {
-      await syncAllCalendars(userId);
-      await syncTasks(userId);
+      await syncAccount(connection.id);
+      if (connection.syncTasks) await syncTasks(userId);
     });
     return reply.redirect(`${back}?google=ok`);
   });
@@ -184,24 +265,59 @@ export async function googleRoutes(app: FastifyInstance) {
 
     privateRoutes.put('/google/calendars', async (request) => {
       const body = updateGoogleCalendarsBodySchema.parse(request.body);
-      const calendars = await prisma.googleCalendar.findMany({ where: { userId: request.userId } });
+      const userId = request.userId;
+      const calendars = await prisma.googleCalendar.findMany({ where: { userId } });
       const ids = new Set(calendars.map((c) => c.id));
       if (body.defaultCalendarId && !ids.has(body.defaultCalendarId)) {
         throw new AppError(404, 'Calendário não encontrado.');
       }
       for (const calendar of calendars) {
         const selected = body.selectedIds.includes(calendar.id);
-        if (selected !== calendar.selected) {
-          await prisma.googleCalendar.update({ where: { id: calendar.id }, data: { selected } });
-          if (!selected) await stopWatch(calendar).catch(() => undefined);
+        const color =
+          body.colors && calendar.id in body.colors ? body.colors[calendar.id] : undefined;
+        if (selected !== calendar.selected || color !== undefined) {
+          await prisma.googleCalendar.update({
+            where: { id: calendar.id },
+            data: { selected, ...(color !== undefined ? { colorOverride: color } : {}) },
+          });
         }
+        if (calendar.selected && !selected) await stopWatch(calendar).catch(() => undefined);
       }
-      await prisma.googleConnection.update({
-        where: { userId: request.userId },
+      await prisma.user.update({
+        where: { id: userId },
         data: { defaultCalendarId: body.defaultCalendarId },
       });
-      const userId = request.userId;
       background(() => syncAllCalendars(userId));
+      return googleStatus(userId);
+    });
+
+    privateRoutes.put('/google/tasks-account', async (request) => {
+      const { accountId } = updateGoogleTasksAccountBodySchema.parse(request.body);
+      const userId = request.userId;
+      const accounts = await connectionsOf(userId);
+      if (accountId && !accounts.some((a) => a.id === accountId)) {
+        throw new AppError(404, 'Conta não encontrada.');
+      }
+      const current = accounts.find((a) => a.syncTasks);
+      if ((current?.id ?? null) === accountId) return googleStatus(userId);
+
+      // Trocar de conta: as tarefas perdem o vínculo com a anterior e sobem para a nova.
+      await prisma.$transaction([
+        ...unlinkTasksOps(userId),
+        prisma.googleConnection.updateMany({
+          where: { userId },
+          data: { syncTasks: false, tasksSyncedAt: null },
+        }),
+        ...(accountId
+          ? [
+              prisma.googleConnection.update({
+                where: { id: accountId },
+                data: { syncTasks: true },
+              }),
+            ]
+          : []),
+      ]);
+      if (accountId) await syncTasks(userId);
       return googleStatus(userId);
     });
 
@@ -211,35 +327,33 @@ export async function googleRoutes(app: FastifyInstance) {
       return googleStatus(request.userId);
     });
 
+    privateRoutes.post('/google/accounts/:id/sync', async (request) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const connection = await prisma.googleConnection.findFirst({
+        where: { id, userId: request.userId },
+      });
+      if (!connection) throw new AppError(404, 'Conta não encontrada.');
+      await syncAccount(connection.id);
+      if (connection.syncTasks) await syncTasks(request.userId);
+      return googleStatus(request.userId);
+    });
+
+    privateRoutes.delete('/google/accounts/:id', async (request, reply) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const connection = await prisma.googleConnection.findFirst({
+        where: { id, userId: request.userId },
+      });
+      if (!connection) throw new AppError(404, 'Conta não encontrada.');
+      await disconnectAccount(connection);
+      return reply.status(204).send();
+    });
+
+    /** Desconecta todas as contas. */
     privateRoutes.delete('/google', async (request, reply) => {
-      const userId = request.userId;
-      const connection = await prisma.googleConnection.findUnique({ where: { userId } });
-      if (!connection) return reply.status(204).send();
-
-      const calendars = await prisma.googleCalendar.findMany({ where: { userId } });
-      for (const calendar of calendars) await stopWatch(calendar).catch(() => undefined);
-      await fetch(
-        `${REVOKE_URL}?token=${encodeURIComponent(decrypt(connection.refreshTokenEncrypted))}`,
-        {
-          method: 'POST',
-        }
-      ).catch(() => undefined);
-
-      // Os eventos do Google somem com os calendários; as tarefas ficam, só sem o vínculo.
-      await prisma.$transaction([
-        prisma.googleCalendar.deleteMany({ where: { userId } }),
-        prisma.task.deleteMany({ where: { userId, deletedAt: { not: null } } }),
-        prisma.task.updateMany({
-          where: { userId },
-          data: { googleTaskId: null, googleEtag: null, syncState: 'PENDING' },
-        }),
-        prisma.taskList.updateMany({
-          where: { userId },
-          data: { googleTaskListId: null, syncState: 'PENDING' },
-        }),
-        prisma.googleConnection.delete({ where: { userId } }),
-      ]);
-      forgetAccessToken(userId);
+      const connections = await prisma.googleConnection.findMany({
+        where: { userId: request.userId },
+      });
+      for (const connection of connections) await disconnectAccount(connection);
       return reply.status(204).send();
     });
   });

@@ -44,7 +44,7 @@ export function authorizationUrl(state: string, intent: 'login' | 'connect') {
     state,
     include_granted_scopes: 'true',
     ...(intent === 'connect'
-      ? { access_type: 'offline', prompt: 'consent' }
+      ? { access_type: 'offline', prompt: 'consent select_account' }
       : { prompt: 'select_account' }),
   });
   return `${AUTH_URL}?${params}`;
@@ -94,17 +94,18 @@ export async function fetchUserInfo(accessToken: string) {
   };
 }
 
+// Tudo que fala com o Google é por conta conectada (GoogleConnection): o usuário pode ter várias.
 const accessTokens = new Map<string, { token: string; expiresAt: number }>();
 
-export function forgetAccessToken(userId: string) {
-  accessTokens.delete(userId);
+export function forgetAccessToken(connectionId: string) {
+  accessTokens.delete(connectionId);
 }
 
-async function accessTokenFor(userId: string): Promise<string> {
-  const cached = accessTokens.get(userId);
+async function accessTokenFor(connectionId: string): Promise<string> {
+  const cached = accessTokens.get(connectionId);
   if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
 
-  const connection = await prisma.googleConnection.findUnique({ where: { userId } });
+  const connection = await prisma.googleConnection.findUnique({ where: { id: connectionId } });
   if (!connection) throw new GoogleAuthError('not connected');
 
   try {
@@ -112,7 +113,7 @@ async function accessTokenFor(userId: string): Promise<string> {
       grant_type: 'refresh_token',
       refresh_token: decrypt(connection.refreshTokenEncrypted),
     });
-    accessTokens.set(userId, {
+    accessTokens.set(connectionId, {
       token: token.access_token,
       expiresAt: Date.now() + token.expires_in * 1000,
     });
@@ -120,21 +121,23 @@ async function accessTokenFor(userId: string): Promise<string> {
   } catch (error) {
     if (error instanceof GoogleAuthError) {
       await prisma.googleConnection.update({
-        where: { userId },
-        data: { lastError: 'O acesso ao Google expirou ou foi revogado. Conecte de novo.' },
+        where: { id: connectionId },
+        data: { lastError: RECONNECT_MESSAGE },
       });
     }
     throw error;
   }
 }
 
-/** fetch autenticado. Devolve o JSON (ou null em 204). */
+export const RECONNECT_MESSAGE = 'O acesso ao Google expirou ou foi revogado. Conecte de novo.';
+
+/** fetch autenticado com a conta `connectionId`. Devolve o JSON (ou null em 204). */
 export async function googleFetch<T = unknown>(
-  userId: string,
+  connectionId: string,
   url: string,
   init: { method?: string; body?: unknown; query?: Record<string, string | undefined> } = {}
 ): Promise<T> {
-  const token = await accessTokenFor(userId);
+  const token = await accessTokenFor(connectionId);
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(init.query ?? {})) {
     if (value !== undefined) query.set(key, value);
@@ -150,24 +153,47 @@ export async function googleFetch<T = unknown>(
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
 
-  if (response.status === 401) forgetAccessToken(userId);
+  if (response.status === 401) forgetAccessToken(connectionId);
   if (!response.ok) throw new GoogleApiError(response.status, await response.text());
   if (response.status === 204) return null as T;
   const text = await response.text();
   return (text ? JSON.parse(text) : null) as T;
 }
 
-/** Há conexão com o Google para este usuário (e o servidor tem as credenciais)? */
-export async function isConnected(userId: string): Promise<boolean> {
-  if (!getGoogleConfig()) return false;
-  return (await prisma.googleConnection.count({ where: { userId } })) > 0;
+/** Contas Google do usuário (vazio se o servidor não tem as credenciais). */
+export async function connectionsOf(userId: string) {
+  if (!getGoogleConfig()) return [];
+  return prisma.googleConnection.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } });
 }
 
-export async function recordError(userId: string, error: unknown) {
+/** A conta que sincroniza o Google Tasks, se houver. */
+export async function tasksConnection(userId: string) {
+  if (!getGoogleConfig()) return null;
+  return prisma.googleConnection.findFirst({ where: { userId, syncTasks: true } });
+}
+
+/** A conta existe (e o servidor tem as credenciais)? */
+export async function isConnectionActive(connectionId: string): Promise<boolean> {
+  if (!getGoogleConfig()) return false;
+  return (await prisma.googleConnection.count({ where: { id: connectionId } })) > 0;
+}
+
+export async function recordError(connectionId: string, error: unknown) {
   if (error instanceof GoogleAuthError) return;
   const message = error instanceof Error ? error.message : String(error);
   console.error('[google]', message);
   await prisma.googleConnection
-    .update({ where: { userId }, data: { lastError: message.slice(0, 500) } })
+    .update({ where: { id: connectionId }, data: { lastError: message.slice(0, 500) } })
     .catch(() => undefined);
+}
+
+/** Preenche o `sub` de uma conta conectada antes de existir o campo. */
+export async function ensureGoogleSub(connectionId: string) {
+  const connection = await prisma.googleConnection.findUnique({ where: { id: connectionId } });
+  if (!connection || connection.googleSub) return;
+  const info = await googleFetch<{ sub: string }>(connectionId, USERINFO_URL);
+  await prisma.googleConnection.update({
+    where: { id: connectionId },
+    data: { googleSub: info.sub },
+  });
 }

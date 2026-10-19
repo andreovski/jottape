@@ -12,7 +12,7 @@ import { z } from 'zod';
 
 import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
-import { googleFetch, isConnected } from '@/services/google/client';
+import { googleFetch, tasksConnection } from '@/services/google/client';
 import { deleteTaskFromGoogle } from '@/services/google/tasks';
 import { deleteReminders } from '@/services/reminders';
 import { toTaskList } from '@/services/serializers';
@@ -100,9 +100,10 @@ export async function taskRoutes(app: FastifyInstance) {
     );
     // A lista some no Google também (e as tarefas com ela).
     if (list.googleTaskListId) {
-      if (await isConnected(request.userId)) {
+      const connection = await tasksConnection(request.userId);
+      if (connection) {
         await googleFetch(
-          request.userId,
+          connection.id,
           `https://tasks.googleapis.com/tasks/v1/users/@me/lists/${encodeURIComponent(list.googleTaskListId)}`,
           { method: 'DELETE' }
         ).catch(() => undefined);

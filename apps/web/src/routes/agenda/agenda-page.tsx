@@ -1,7 +1,7 @@
 import { addDays, addMonthsClamped } from '@jottape/finance-engine';
 import type { EventOccurrence } from '@jottape/schemas';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Layers, Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -13,6 +13,7 @@ import {
   weekDays,
 } from '@/components/agenda/calendar';
 import { occurrenceKey, useCalendars } from '@/components/agenda/calendars';
+import { CalendarsSheet } from '@/components/agenda/calendars-sheet';
 import { EventDetailSheet } from '@/components/agenda/event-detail-sheet';
 import { newEventForm } from '@/components/agenda/event-form-model';
 import { type EventFormMode, EventFormSheet } from '@/components/agenda/event-form-sheet';
@@ -93,6 +94,7 @@ export function AgendaPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [form, setForm] = useState<{ key: number; mode: EventFormMode } | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [calendarsOpen, setCalendarsOpen] = useState(false);
 
   const go = (next: { view?: View; date?: string }) =>
     navigate({
@@ -169,6 +171,11 @@ export function AgendaPage() {
           >
             Hoje
           </button>
+          {status?.connected && (
+            <BarButton label='Calendários' onClick={() => setCalendarsOpen(true)}>
+              <Layers />
+            </BarButton>
+          )}
           <BarButton label='Novo evento' onClick={() => openCreate()}>
             <Plus strokeWidth={2.25} />
           </BarButton>
@@ -253,6 +260,8 @@ export function AgendaPage() {
             onCreate={() => openCreate()}
           />
         ))}
+
+      <CalendarsSheet open={calendarsOpen} onOpenChange={setCalendarsOpen} />
 
       <EventDetailSheet
         event={detail}

@@ -81,12 +81,18 @@ export function EventFormSheet({
   const weekStartsOn = me?.weekStartsOn ?? 0;
   const defaultReminder = me?.defaultReminderMin ?? null;
 
+  // Com mais de uma conta Google, os calendários saem agrupados pelo e-mail da conta.
+  const grouped = (status?.accounts.length ?? 0) > 1;
   const calendarOptions = [
-    { value: '', label: 'Jottape' },
+    { value: '', label: 'Jottape', group: grouped ? 'Jottape' : undefined },
     ...(status?.connected
       ? (status.calendars ?? [])
           .filter((calendar) => calendar.selected)
-          .map((calendar) => ({ value: calendar.id, label: calendar.name }))
+          .map((calendar) => ({
+            value: calendar.id,
+            label: calendar.name,
+            group: grouped ? calendars.get(calendar.id)?.account : undefined,
+          }))
       : []),
   ];
   const calendar = form.calendarId
