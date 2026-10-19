@@ -97,18 +97,18 @@ export function smartView(param: string): SmartViewMeta | undefined {
 
 export type ListTarget =
   | { kind: 'smart'; meta: SmartViewMeta; tag?: string }
-  | { kind: 'list'; id: string };
+  | { kind: 'list'; id: string; tag?: string };
 
 /** O `$listId` da rota é o id de uma lista ou o nome de uma lista inteligente. */
 export function resolveListParam(param: string, tag?: string): ListTarget {
   const meta = smartView(param);
   if (meta) return { kind: 'smart', meta, tag: tag || undefined };
-  return { kind: 'list', id: param };
+  return { kind: 'list', id: param, tag: tag || undefined };
 }
 
 /** A consulta da API para cada destino. */
 export function queryForTarget(target: ListTarget) {
-  if (target.kind === 'list') return { listId: target.id };
+  if (target.kind === 'list') return { listId: target.id, tag: target.tag };
   return { view: target.meta.view, tag: target.tag };
 }
 
@@ -404,6 +404,7 @@ export function quickAddBody(
   const body: CreateTaskBody = { title: title.trim() };
   if (target.kind === 'list') {
     body.listId = target.id;
+    if (target.tag) body.tags = [target.tag];
     return body;
   }
   if (target.meta.slug === 'hoje' || target.meta.slug === 'programadas') {
