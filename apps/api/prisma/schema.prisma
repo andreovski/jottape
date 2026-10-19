@@ -26,11 +26,14 @@ model User {
   defaultReminderMin   Int?     @default(10) @map("default_reminder_min")
   dailySummaryHour     Int?     @default(8) @map("daily_summary_hour")
   lastDailySummaryDate String?  @map("last_daily_summary_date")
+  /// Calendário do Google onde nascem os eventos novos (vale entre as contas conectadas).
+  defaultCalendarId    String?  @unique @map("default_calendar_id")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
-  googleConnection  GoogleConnection?
+  googleConnections GoogleConnection[]
   googleCalendars   GoogleCalendar[]
+  defaultCalendar   GoogleCalendar?     @relation("DefaultCalendar", fields: [defaultCalendarId], references: [id], onDelete: SetNull)
   events            Event[]
   reminders         Reminder[]
   pushSubscriptions PushSubscription[]
@@ -60,29 +63,38 @@ model LoginAttempt {
 
 // ---------------------------------------------------------------- Google
 
+// Uma conta Google conectada. O usuário pode ter várias; só uma (syncTasks) sincroniza o Google
+// Tasks, garantido por um índice único parcial na migration.
 model GoogleConnection {
   id                    String    @id @default(uuid())
-  userId                String    @unique @map("user_id")
+  userId                String    @map("user_id")
+  googleSub             String?   @map("google_sub")
   googleEmail           String    @map("google_email")
   refreshTokenEncrypted String    @map("refresh_token_encrypted")
   scope                 String
-  defaultCalendarId     String?   @map("default_calendar_id")
+  syncTasks             Boolean   @default(false) @map("sync_tasks")
   tasksSyncedAt         DateTime? @map("tasks_synced_at")
   lastError             String?   @map("last_error")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendars GoogleCalendar[]
 
+  @@unique([userId, googleSub])
+  @@index([userId])
   @@map("google_connections")
 }
 
 model GoogleCalendar {
   id               String    @id @default(uuid())
   userId           String    @map("user_id")
+  connectionId     String    @map("connection_id")
   googleCalendarId String    @map("google_calendar_id")
   name             String
   color            String?
+  /// Cor escolhida no Jottape; vence a do Google.
+  colorOverride    String?   @map("color_override")
   primary          Boolean   @default(false)
   selected         Boolean   @default(false)
   syncToken        String?   @map("sync_token")
@@ -93,10 +105,13 @@ model GoogleCalendar {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  events Event[]
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection    GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  events        Event[]
+  defaultOfUser User?            @relation("DefaultCalendar")
 
-  @@unique([userId, googleCalendarId])
+  @@unique([connectionId, googleCalendarId])
+  @@index([userId])
   @@map("google_calendars")
 }
 

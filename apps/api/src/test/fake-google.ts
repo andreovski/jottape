@@ -5,15 +5,43 @@ import { vi } from 'vitest';
  * Google de mentira: troca o fetch global e responde às rotas que a API usa, com estado em
  * memória (calendários, eventos e tarefas). Cada chamada fica em `calls` para os testes conferirem.
  */
+export interface FakeAccount {
+  sub: string;
+  email: string;
+  refreshToken: string;
+  /** Ids dos calendários que a conta enxerga (os eventos ficam em `events`, por calendário). */
+  calendarIds: string[];
+}
+
 export class FakeGoogle {
   calls: { method: string; url: string; body?: any }[] = [];
+  /** Contas Google. O fluxo de OAuth usa `nextAccount`; cada token sabe de que conta é. */
+  accounts: FakeAccount[] = [
+    {
+      sub: 'google-sub-1',
+      email: 'andre@example.com',
+      refreshToken: 'refresh-123',
+      calendarIds: ['primary@gmail.com', 'family@group'],
+    },
+    {
+      sub: 'google-sub-2',
+      email: 'trabalho@example.com',
+      refreshToken: 'refresh-456',
+      calendarIds: ['work@company.com', 'family@group'],
+    },
+  ];
+  nextAccount = 'google-sub-1';
+  /** Refresh tokens revogados: o Google responde invalid_grant. */
+  revoked = new Set<string>();
   calendars = [
     { id: 'primary@gmail.com', summary: 'André', primary: true, backgroundColor: '#4285f4' },
     { id: 'family@group', summary: 'Família', backgroundColor: '#0b8043' },
+    { id: 'work@company.com', summary: 'Trabalho', primary: true, backgroundColor: '#f4511e' },
   ];
   events = new Map<string, any[]>([
     ['primary@gmail.com', []],
     ['family@group', []],
+    ['work@company.com', []],
   ]);
   syncTokenGone = false;
   taskLists = [
@@ -42,6 +70,17 @@ export class FakeGoogle {
     delete process.env.GOOGLE_CLIENT_SECRET;
   }
 
+  account(sub: string) {
+    return this.accounts.find((a) => a.sub === sub)!;
+  }
+
+  /** Conta dona do access token da chamada. */
+  private callerOf(init?: RequestInit) {
+    const header = new Headers(init?.headers).get('authorization') ?? '';
+    const sub = header.replace('Bearer access-', '');
+    return this.account(sub) ?? this.accounts[0];
+  }
+
   private json(status: number, data: unknown) {
     return new Response(data === null ? null : JSON.stringify(data), {
       status,
@@ -66,25 +105,31 @@ export class FakeGoogle {
     const path = decodeURIComponent(url.pathname);
 
     if (url.host === 'oauth2.googleapis.com' && path === '/token') {
+      const account =
+        body.grant_type === 'authorization_code'
+          ? this.account(this.nextAccount)
+          : this.accounts.find((a) => a.refreshToken === body.refresh_token);
+      if (!account || this.revoked.has(account.refreshToken))
+        return this.json(400, { error: 'invalid_grant' });
       return this.json(200, {
-        access_token: 'access',
+        access_token: `access-${account.sub}`,
         expires_in: 3600,
-        refresh_token: body.grant_type === 'authorization_code' ? 'refresh-123' : undefined,
+        refresh_token: body.grant_type === 'authorization_code' ? account.refreshToken : undefined,
         scope: 'openid email calendar tasks',
-      });
-    }
-    if (url.host === 'openidconnect.googleapis.com') {
-      return this.json(200, {
-        sub: 'google-sub-1',
-        email: 'andre@example.com',
-        email_verified: true,
       });
     }
     if (url.host === 'oauth2.googleapis.com' && path === '/revoke') return this.json(200, {});
 
+    const caller = this.callerOf(init);
+    if (url.host === 'openidconnect.googleapis.com') {
+      return this.json(200, { sub: caller.sub, email: caller.email, email_verified: true });
+    }
+
     // ---- Calendar
     if (path === '/calendar/v3/users/me/calendarList')
-      return this.json(200, { items: this.calendars });
+      return this.json(200, {
+        items: this.calendars.filter((c) => caller.calendarIds.includes(c.id)),
+      });
     if (path === '/calendar/v3/channels/stop') return this.json(204, null);
     let match = path.match(/^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/);
     if (match) {

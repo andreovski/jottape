@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { channelToken, syncAllCalendars } from '@/services/google/calendar';
-import { forgetAccessToken } from '@/services/google/client';
+import { RECONNECT_MESSAGE } from '@/services/google/client';
 import { syncTasks } from '@/services/google/tasks';
 import { FakeGoogle } from '@/test/fake-google';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
@@ -24,7 +24,6 @@ describe('Google', () => {
     const session = await loginAsOwner(app);
     api = client(app, session.cookie);
     userId = session.user.id;
-    forgetAccessToken(userId);
   });
 
   /** Faz o fluxo de OAuth: /google/auth dá o state e o cookie, o callback grava a conexão. */
@@ -50,7 +49,8 @@ describe('Google', () => {
     expect(callback.statusCode).toBe(302);
     expect(callback.headers.location).toContain('/ajustes?google=ok');
 
-    const connection = await prisma.googleConnection.findUniqueOrThrow({ where: { userId } });
+    const connection = await prisma.googleConnection.findFirstOrThrow({ where: { userId } });
+    expect(connection).toMatchObject({ googleSub: 'google-sub-1', syncTasks: true });
     expect(connection.refreshTokenEncrypted).not.toContain('refresh-123');
     expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).googleSub).toBe(
       'google-sub-1'
@@ -299,5 +299,186 @@ describe('Google', () => {
     expect(((await api.get('/google/status')).json() as GoogleStatusResponse).connected).toBe(
       false
     );
+  });
+
+  describe('várias contas', () => {
+    const range = '/events?from=2026-10-18T00:00:00Z&to=2026-11-10T00:00:00Z';
+
+    async function connectBoth() {
+      const { cookie } = await loginAsOwner(app);
+      await connect(cookie);
+      google.nextAccount = 'google-sub-2';
+      const second = await connect(cookie);
+      expect(second.headers.location).toContain('/ajustes?google=ok');
+      google.events.set('primary@gmail.com', [
+        {
+          id: 'p1',
+          summary: 'Pessoal',
+          start: { dateTime: '2026-10-20T10:00:00Z' },
+          end: { dateTime: '2026-10-20T11:00:00Z' },
+        },
+      ]);
+      google.events.set('work@company.com', [
+        {
+          id: 'w1',
+          summary: 'Reunião',
+          start: { dateTime: '2026-10-21T13:00:00Z' },
+          end: { dateTime: '2026-10-21T14:00:00Z' },
+        },
+      ]);
+      await syncAllCalendars(userId);
+      return (await api.get('/google/status')).json() as GoogleStatusResponse;
+    }
+
+    it('conecta a segunda conta e junta as agendas; calendário repetido chega desmarcado', async () => {
+      const status = await connectBoth();
+      expect(status.accounts.map((a) => [a.email, a.syncTasks])).toEqual([
+        ['andre@example.com', true],
+        ['trabalho@example.com', false],
+      ]);
+      const [first, second] = status.accounts;
+      expect(status.tasksAccountId).toBe(first.id);
+      const [, family1, , family2] = status.calendars;
+      expect(status.calendars.map((c) => [c.accountId, c.name, c.selected, c.alsoIn])).toEqual([
+        [first.id, 'André', true, []],
+        [first.id, 'Família', false, [family2.id]],
+        [second.id, 'Trabalho', true, []],
+        [second.id, 'Família', false, [family1.id]],
+      ]);
+      // O padrão continua o da primeira conta.
+      expect(status.defaultCalendarId).toBe(status.calendars[0].id);
+
+      const list: EventOccurrence[] = (await api.get(range)).json();
+      expect(list.map((o) => o.title)).toEqual(['Pessoal', 'Reunião']);
+
+      // Evento novo num calendário da segunda conta vai para ela.
+      const work = status.calendars.find((c) => c.name === 'Trabalho')!;
+      await api.post('/events', {
+        title: 'Planejamento',
+        startAt: '2026-10-22T13:00:00Z',
+        endAt: '2026-10-22T14:00:00Z',
+        calendarId: work.id,
+      });
+      expect(google.events.get('work@company.com')!.some((e) => e.summary === 'Planejamento')).toBe(
+        true
+      );
+      expect(
+        google.events.get('primary@gmail.com')!.some((e) => e.summary === 'Planejamento')
+      ).toBe(false);
+
+      // Cor própria no Jottape vence a do Google.
+      const updated: GoogleStatusResponse = (
+        await api.put('/google/calendars', {
+          selectedIds: status.calendars.filter((c) => c.selected).map((c) => c.id),
+          defaultCalendarId: work.id,
+          colors: { [work.id]: '#af52de' },
+        })
+      ).json();
+      expect(updated.calendars.find((c) => c.id === work.id)).toMatchObject({
+        color: '#af52de',
+        colorOverride: '#af52de',
+      });
+      expect(updated.defaultCalendarId).toBe(work.id);
+
+      // Conectar de novo a mesma conta só renova o token.
+      const { cookie } = await loginAsOwner(app);
+      await connect(cookie);
+      expect(await prisma.googleConnection.count()).toBe(2);
+    });
+
+    it('uma conta revogada não para a sincronização da outra', async () => {
+      await connectBoth();
+      google.revoked.add('refresh-123');
+      google.events.get('work@company.com')!.push({
+        id: 'w2',
+        summary: 'Almoço',
+        start: { dateTime: '2026-10-23T15:00:00Z' },
+        end: { dateTime: '2026-10-23T16:00:00Z' },
+      });
+      // Esquece o access token em cache para o refresh acontecer.
+      const accounts = await prisma.googleConnection.findMany({ orderBy: { createdAt: 'asc' } });
+      const { forgetAccessToken } = await import('@/services/google/client');
+      for (const account of accounts) forgetAccessToken(account.id);
+
+      await syncAllCalendars(userId);
+      const status: GoogleStatusResponse = (await api.get('/google/status')).json();
+      expect(status.accounts.map((a) => a.lastError)).toEqual([RECONNECT_MESSAGE, null]);
+      const list: EventOccurrence[] = (await api.get(range)).json();
+      expect(list.map((o) => o.title)).toEqual(['Pessoal', 'Reunião', 'Almoço']);
+    });
+
+    it('desconectar uma conta mantém a outra', async () => {
+      const status = await connectBoth();
+      const [first, second] = status.accounts;
+      expect((await api.delete(`/google/accounts/${first.id}`)).statusCode).toBe(204);
+
+      const after: GoogleStatusResponse = (await api.get('/google/status')).json();
+      expect(after.accounts.map((a) => a.id)).toEqual([second.id]);
+      expect(after.tasksAccountId).toBeNull();
+      // O padrão era da conta que saiu: passa para o principal da outra.
+      expect(after.defaultCalendarId).toBe(after.calendars.find((c) => c.name === 'Trabalho')!.id);
+      const list: EventOccurrence[] = (await api.get(range)).json();
+      expect(list.map((o) => o.title)).toEqual(['Reunião']);
+    });
+
+    it('troca a conta do Google Tasks', async () => {
+      const local = (await api.post('/tasks', { title: 'Comprar pão' })).json();
+      const status = await connectBoth();
+      await syncTasks(userId);
+      const before = await prisma.task.findUniqueOrThrow({ where: { id: local.id } });
+      expect(before.googleTaskId).toBeTruthy();
+
+      const second = status.accounts[1];
+      const switched: GoogleStatusResponse = (
+        await api.put('/google/tasks-account', { accountId: second.id })
+      ).json();
+      expect(switched.tasksAccountId).toBe(second.id);
+      expect(switched.accounts.map((a) => a.syncTasks)).toEqual([false, true]);
+      // A tarefa subiu de novo, agora pela segunda conta.
+      const after = await prisma.task.findUniqueOrThrow({ where: { id: local.id } });
+      expect(after.syncState).toBe('SYNCED');
+      expect(after.googleTaskId).not.toBe(before.googleTaskId);
+      expect(
+        google.calls.some(
+          (c) => c.method === 'POST' && c.url.includes('/tasks') && c.body?.title === 'Comprar pão'
+        )
+      ).toBe(true);
+
+      // "Nenhuma": as tarefas ficam só no Jottape.
+      const none: GoogleStatusResponse = (
+        await api.put('/google/tasks-account', { accountId: null })
+      ).json();
+      expect(none.tasksAccountId).toBeNull();
+      expect(
+        (await prisma.task.findUniqueOrThrow({ where: { id: local.id } })).googleTaskId
+      ).toBeNull();
+    });
+
+    it('login com Google entra por qualquer conta conectada', async () => {
+      await connectBoth();
+      google.nextAccount = 'google-sub-2';
+      const ok = await connect('', 'login');
+      expect(ok.headers.location).toMatch(/\/$/);
+      expect(ok.cookies.find((c) => c.name === 'jottape_session')?.value).toBeTruthy();
+    });
+
+    it('recusa uma conta Google que já está ligada a outro usuário', async () => {
+      const other = await prisma.user.create({
+        data: { name: 'Outra', email: 'outra@example.com' },
+      });
+      await prisma.googleConnection.create({
+        data: {
+          userId: other.id,
+          googleSub: 'google-sub-2',
+          googleEmail: 'trabalho@example.com',
+          refreshTokenEncrypted: 'x',
+          scope: 'x',
+        },
+      });
+      google.nextAccount = 'google-sub-2';
+      const response = await connect((await loginAsOwner(app)).cookie);
+      expect(response.headers.location).toContain('/ajustes?erro=conta-em-uso');
+      expect(await prisma.googleConnection.count({ where: { userId } })).toBe(0);
+    });
   });
 });

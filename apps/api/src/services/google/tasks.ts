@@ -3,7 +3,7 @@ import type { Task } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
-import { GoogleApiError, googleFetch, isConnected, recordError } from './client';
+import { GoogleApiError, googleFetch, recordError, tasksConnection } from './client';
 
 // Google Tasks não tem webhook: o job puxa a cada 5 minutos, e cada mudança local é enviada na hora.
 // O Google guarda só o dia do prazo (sem hora) e não tem recorrência nem lembrete: isso fica no
@@ -60,19 +60,18 @@ export async function deleteTaskFromGoogle(
   const finish = async () => {
     if (!options.keepLocal) await prisma.task.deleteMany({ where: { id: task.id } });
   };
-  if (!task.googleTaskId || !list?.googleTaskListId || !(await isConnected(task.userId))) {
-    return finish();
-  }
+  const connection = await tasksConnection(task.userId);
+  if (!task.googleTaskId || !list?.googleTaskListId || !connection) return finish();
   try {
     await googleFetch(
-      task.userId,
+      connection.id,
       `${API}/lists/${enc(list.googleTaskListId)}/tasks/${enc(task.googleTaskId)}`,
       { method: 'DELETE' }
     );
     await finish();
   } catch (error) {
     if (isNotFound(error)) return finish();
-    await recordError(task.userId, error);
+    await recordError(connection.id, error);
   }
 }
 
@@ -82,7 +81,9 @@ export async function pushTaskToGoogle(taskId: string): Promise<void> {
     where: { id: taskId },
     include: { list: true, parent: true, user: { select: { timezone: true } } },
   });
-  if (!task || !task.list.googleTaskListId || !(await isConnected(task.userId))) return;
+  if (!task || !task.list.googleTaskListId) return;
+  const connection = await tasksConnection(task.userId);
+  if (!connection) return;
   if (task.deletedAt) return deleteTaskFromGoogle(task);
 
   const listUrl = `${API}/lists/${enc(task.list.googleTaskListId)}/tasks`;
@@ -90,10 +91,14 @@ export async function pushTaskToGoogle(taskId: string): Promise<void> {
     let result: GoogleTask;
     const body = await googleBody(task, task.user.timezone);
     if (task.googleTaskId) {
-      result = await googleFetch<GoogleTask>(task.userId, `${listUrl}/${enc(task.googleTaskId)}`, {
-        method: 'PATCH',
-        body,
-      });
+      result = await googleFetch<GoogleTask>(
+        connection.id,
+        `${listUrl}/${enc(task.googleTaskId)}`,
+        {
+          method: 'PATCH',
+          body,
+        }
+      );
     } else {
       let parentGoogleId: string | undefined;
       if (task.parent) {
@@ -101,7 +106,7 @@ export async function pushTaskToGoogle(taskId: string): Promise<void> {
         const parent = await prisma.task.findUnique({ where: { id: task.parent.id } });
         parentGoogleId = parent?.googleTaskId ?? undefined;
       }
-      result = await googleFetch<GoogleTask>(task.userId, listUrl, {
+      result = await googleFetch<GoogleTask>(connection.id, listUrl, {
         method: 'POST',
         body,
         query: { parent: parentGoogleId },
@@ -118,18 +123,18 @@ export async function pushTaskToGoogle(taskId: string): Promise<void> {
       return;
     }
     await prisma.task.update({ where: { id: task.id }, data: { syncState: 'ERROR' } });
-    await recordError(task.userId, error);
+    await recordError(connection.id, error);
   }
 }
 
 // ---------------------------------------------------------------- Google -> Jottape
 
-async function syncLists(userId: string) {
+async function syncLists(userId: string, connectionId: string) {
   const [lists, defaultList] = await Promise.all([
-    googleFetch<{ items?: GoogleTaskList[] }>(userId, `${API}/users/@me/lists`, {
+    googleFetch<{ items?: GoogleTaskList[] }>(connectionId, `${API}/users/@me/lists`, {
       query: { maxResults: '100' },
     }),
-    googleFetch<GoogleTaskList>(userId, `${API}/users/@me/lists/@default`),
+    googleFetch<GoogleTaskList>(connectionId, `${API}/users/@me/lists/@default`),
   ]);
   const remote = lists.items ?? [];
   const seen = new Set(remote.map((l) => l.id));
@@ -178,14 +183,14 @@ async function syncLists(userId: string) {
   for (const list of local) {
     const result = list.googleTaskListId
       ? await googleFetch<GoogleTaskList>(
-          userId,
+          connectionId,
           `${API}/users/@me/lists/${enc(list.googleTaskListId)}`,
           {
             method: 'PATCH',
             body: { title: list.name },
           }
         )
-      : await googleFetch<GoogleTaskList>(userId, `${API}/users/@me/lists`, {
+      : await googleFetch<GoogleTaskList>(connectionId, `${API}/users/@me/lists`, {
           method: 'POST',
           body: { title: list.name },
         });
@@ -198,6 +203,7 @@ async function syncLists(userId: string) {
 
 async function pullList(
   userId: string,
+  connectionId: string,
   listId: string,
   googleListId: string,
   timeZone: string,
@@ -207,7 +213,7 @@ async function pullList(
   let pageToken: string | undefined;
   do {
     const page = await googleFetch<{ items?: GoogleTask[]; nextPageToken?: string }>(
-      userId,
+      connectionId,
       `${API}/lists/${enc(googleListId)}/tasks`,
       {
         query: {
@@ -283,12 +289,12 @@ async function pullList(
 }
 
 export async function syncTasks(userId: string) {
-  if (!(await isConnected(userId))) return;
+  const connection = await tasksConnection(userId);
+  if (!connection) return;
   const startedAt = new Date();
   try {
-    const connection = await prisma.googleConnection.findUniqueOrThrow({ where: { userId } });
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    await syncLists(userId);
+    await syncLists(userId, connection.id);
 
     const lists = await prisma.taskList.findMany({
       where: { userId, googleTaskListId: { not: null } },
@@ -297,7 +303,7 @@ export async function syncTasks(userId: string) {
       ? new Date(connection.tasksSyncedAt.getTime() - 60_000)
       : null;
     for (const list of lists) {
-      await pullList(userId, list.id, list.googleTaskListId!, user.timezone, since);
+      await pullList(userId, connection.id, list.id, list.googleTaskListId!, user.timezone, since);
     }
 
     const pending = await prisma.task.findMany({
@@ -311,10 +317,25 @@ export async function syncTasks(userId: string) {
     for (const task of pending) await pushTaskToGoogle(task.id);
 
     await prisma.googleConnection.update({
-      where: { userId },
+      where: { id: connection.id },
       data: { tasksSyncedAt: startedAt },
     });
   } catch (error) {
-    await recordError(userId, error);
+    await recordError(connection.id, error);
   }
+}
+
+/** Tira o vínculo das tarefas com o Google Tasks (nada se perde; sobem de novo na próxima conta). */
+export function unlinkTasksOps(userId: string) {
+  return [
+    prisma.task.deleteMany({ where: { userId, deletedAt: { not: null } } }),
+    prisma.task.updateMany({
+      where: { userId },
+      data: { googleTaskId: null, googleEtag: null, syncState: 'PENDING' },
+    }),
+    prisma.taskList.updateMany({
+      where: { userId },
+      data: { googleTaskListId: null, syncState: 'PENDING' },
+    }),
+  ];
 }
