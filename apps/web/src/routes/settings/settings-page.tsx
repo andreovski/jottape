@@ -328,6 +328,15 @@ export function SettingsPage() {
       </Section>
 
       <Section>
+        <Link to='/privacidade' className='block'>
+          <Row chevron title='Política de privacidade' />
+        </Link>
+        <Link to='/termos' className='block'>
+          <Row chevron title='Termos de uso' />
+        </Link>
+      </Section>
+
+      <Section>
         <Row
           destructive
           title={

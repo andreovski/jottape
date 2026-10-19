@@ -198,6 +198,11 @@ export function LoginPage() {
           </p>
         </div>
       )}
+
+      <p className='text-footnote text-label-2 pb-safe mt-10 flex gap-4'>
+        <a href='/privacidade'>Política de privacidade</a>
+        <a href='/termos'>Termos de uso</a>
+      </p>
     </div>
   );
 }
