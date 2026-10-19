@@ -61,7 +61,7 @@ function rangeOf(view: View, date: string, weekStartsOn: number) {
 }
 
 export function AgendaPage() {
-  const search = useSearch({ from: '/agenda' });
+  const search = useSearch({ from: '/app/agenda' });
   const navigate = useNavigate({ from: '/agenda' });
   const zone = appTimeZone();
   const now = useNow();
