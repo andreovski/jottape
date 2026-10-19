@@ -8,7 +8,6 @@ import { FinancePage } from '@/routes/finance/finance-page';
 import { CategoriesPage } from '@/routes/settings/categories-page';
 import { GooglePage } from '@/routes/settings/google-page';
 import { SettingsPage } from '@/routes/settings/settings-page';
-import { TaskListPage } from '@/routes/tasks/task-list-page';
 import { TasksPage } from '@/routes/tasks/tasks-page';
 import { TodayPage } from '@/routes/today-page';
 
@@ -52,15 +51,30 @@ const routeTree = rootRoute.addChildren([
       novo: typeof search.novo === 'string' ? search.novo : undefined,
     }),
   }),
-  route('/tarefas', TasksPage),
   createRoute({
     getParentRoute: () => rootRoute,
-    path: '/tarefas/$listId',
-    component: TaskListPage,
-    validateSearch: (search: Record<string, unknown>): { tag?: string; novo?: string } => ({
+    path: '/tarefas',
+    component: TasksPage,
+    validateSearch: (
+      search: Record<string, unknown>
+    ): { filtro?: string; tag?: string; novo?: string } => ({
+      filtro: typeof search.filtro === 'string' ? search.filtro : undefined,
       tag: typeof search.tag === 'string' ? search.tag : undefined,
       novo: typeof search.novo === 'string' ? search.novo : undefined,
     }),
+  }),
+  // Endereço antigo de cada lista: hoje as listas são filtros da tela Tarefas.
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/tarefas/$listId',
+    beforeLoad: ({ params, search }) => {
+      const { tag, novo } = search as { tag?: string; novo?: string };
+      throw redirect({
+        to: '/tarefas',
+        search: { filtro: params.listId === 'todas' ? undefined : params.listId, tag, novo },
+        replace: true,
+      });
+    },
   }),
   createRoute({
     getParentRoute: () => rootRoute,

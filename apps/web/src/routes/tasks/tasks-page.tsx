@@ -1,253 +1,363 @@
 import type { TaskListResponse, TaskResponse } from '@jottape/schemas';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { Cloud, Search } from 'lucide-react';
-import { type CSSProperties, useDeferredValue, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
+import { CircleCheck, Ellipsis, ListX, Plus, Search, SunMedium } from 'lucide-react';
+import { type CSSProperties, useDeferredValue, useEffect, useState } from 'react';
 
-import { EmptyState, Skeleton } from '@/components/ios/controls';
-import { IconChip, Row, Section, SectionTitle } from '@/components/ios/list';
-import { Page } from '@/components/ios/page';
-import { BottomBar, SearchField } from '@/components/tasks/bottom-bar';
+import { EmptyState } from '@/components/ios/controls';
+import { BarButton, Page } from '@/components/ios/page';
+import { ActionSheet } from '@/components/ios/sheet';
+import {
+  FilterBar,
+  FilterSheet,
+  type TaskFilter,
+  useSmartCounts,
+} from '@/components/tasks/filters';
 import { useNow, useRootTint, useSheetState } from '@/components/tasks/hooks';
-import { ListIcon, SmartViewIcon } from '@/components/tasks/icons';
+import {
+  CompletedSection,
+  QuickAdd,
+  type RowProps,
+  RowsSkeleton,
+  SortableRows,
+} from '@/components/tasks/list-body';
 import { ListSheet } from '@/components/tasks/list-sheet';
+import { SearchField } from '@/components/tasks/search-field';
 import {
   ALL_COLOR_CLASS,
+  canQuickAdd,
   listColor,
-  SMART_VIEWS,
-  type SmartViewMeta,
-  sortLists,
+  queryForTarget,
+  resolveListParam,
 } from '@/components/tasks/task-logic';
 import { TaskCard, TaskRow, useToggleTask } from '@/components/tasks/task-row';
-import { TaskSheet } from '@/components/tasks/task-sheet';
-import { useTags, useTaskLists, useTasks } from '@/features/tasks';
+import { TaskSheet, type TaskSheetDefaults } from '@/components/tasks/task-sheet';
+import { useClearCompleted, useDeleteTaskList, useTaskLists, useTasks } from '@/features/tasks';
 import { todayKey } from '@/lib/format';
 
-const TASKS_TINT = 'var(--orange)';
+interface Confirm {
+  title: string;
+  message?: string;
+  label: string;
+  onConfirm: () => void;
+}
 
+/**
+ * Tarefas numa tela só: a faixa de filtros no topo (listas inteligentes, listas e etiquetas, e o
+ * botão que abre todos eles numa folha) e, embaixo, os lembretes do filtro numa lista única.
+ */
 export function TasksPage() {
-  useRootTint(TASKS_TINT);
+  const { filtro = 'todas', tag, novo } = useSearch({ from: '/tarefas' });
   const navigate = useNavigate();
+  const lists = useTaskLists();
+  const counts = useSmartCounts(lists.data);
+  const target = resolveListParam(filtro, tag);
+  const list = target.kind === 'list' ? lists.data?.find((l) => l.id === target.id) : undefined;
+  const byId = new Map((lists.data ?? []).map((item) => [item.id, item]));
+
+  const color =
+    target.kind === 'smart' ? target.meta.color : list ? listColor(list) : 'var(--orange)';
+  useRootTint(color);
+
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search.trim());
-  const taskSheet = useSheetState<TaskResponse | null>();
-  const listSheet = useSheetState<null>();
-  const lists = useTaskLists();
-  const inbox = lists.data?.find((list) => list.isInbox);
+  const tasks = useTasks(queryForTarget(target));
+  const toggle = useToggleTask();
+  const clearCompleted = useClearCompleted();
+  const deleteList = useDeleteTaskList();
+  const now = useNow();
+  const today = todayKey();
+
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // `?novo=1` (vindo da tela Hoje) já abre a folha de novo lembrete; depois some da URL.
+  const taskSheet = useSheetState<TaskResponse | null>(novo ? { value: null } : undefined);
+  useEffect(() => {
+    if (!novo) return;
+    navigate({ to: '/tarefas', search: { filtro, tag }, replace: true });
+  }, [novo, navigate, filtro, tag]);
+  const listSheet = useSheetState<TaskListResponse | null>();
+
+  function setFilter(next: TaskFilter) {
+    setShowCompleted(false);
+    navigate({
+      to: '/tarefas',
+      search: { filtro: next.filtro === 'todas' ? undefined : next.filtro, tag: next.tag },
+      replace: true,
+    });
+  }
+
+  const isCompletedView = target.kind === 'smart' && target.meta.slug === 'concluidas';
+  const notFound = target.kind === 'list' && lists.isSuccess && !list;
+
+  const sheetDefaults: TaskSheetDefaults =
+    target.kind === 'list'
+      ? { listId: target.id, tags: target.tag ? [target.tag] : undefined }
+      : {
+          listId: lists.data?.find((item) => item.isInbox)?.id,
+          date: ['hoje', 'programadas'].includes(target.meta.slug) ? today : undefined,
+          tags: target.tag ? [target.tag] : undefined,
+        };
+
+  function ask(next: Confirm) {
+    setConfirm(next);
+    setConfirmOpen(true);
+  }
+
+  const menuActions: { label: string; onSelect: () => void; destructive?: boolean }[] = [];
+  if (list) {
+    menuActions.push(
+      { label: 'Editar lista', onSelect: () => listSheet.show(list) },
+      {
+        label: showCompleted ? 'Ocultar concluídas' : 'Mostrar concluídas',
+        onSelect: () => setShowCompleted((value) => !value),
+      },
+      {
+        label: 'Apagar concluídas',
+        onSelect: () =>
+          ask({
+            title: `Apagar os lembretes concluídos de “${list.name}”?`,
+            label: 'Apagar concluídas',
+            onConfirm: () => clearCompleted.mutate(list.id),
+          }),
+      }
+    );
+    if (!list.isInbox) {
+      menuActions.push({
+        label: 'Apagar lista',
+        destructive: true,
+        onSelect: () =>
+          ask({
+            title: `Apagar “${list.name}”?`,
+            message: 'Todos os lembretes desta lista também serão apagados.',
+            label: 'Apagar lista',
+            onConfirm: () =>
+              deleteList.mutate(list.id, { onSuccess: () => setFilter({ filtro: 'todas' }) }),
+          }),
+      });
+    }
+  } else if (isCompletedView && tasks.data?.length) {
+    menuActions.push({
+      label: 'Apagar concluídas',
+      destructive: true,
+      onSelect: () =>
+        ask({
+          title: 'Apagar todos os lembretes concluídos?',
+          message: 'Isso não pode ser desfeito.',
+          label: 'Apagar concluídas',
+          onConfirm: () => clearCompleted.mutate(undefined),
+        }),
+    });
+  }
+
+  const rowProps: RowProps = {
+    color,
+    now,
+    onOpen: (task) => taskSheet.show(task),
+    onToggle: toggle,
+  };
+
+  /** Fora de uma lista, cada lembrete mostra de qual lista é (a bolinha na cor dela). */
+  function listLabel(task: TaskResponse) {
+    const owner = byId.get(task.listId);
+    if (!owner) return null;
+    return (
+      <span className='inline-flex items-center gap-1'>
+        <span className='size-2 rounded-full' style={{ backgroundColor: listColor(owner) }} />
+        {owner.name}
+      </span>
+    );
+  }
+
+  let body: React.ReactNode;
+  if (deferredSearch) {
+    body = <SearchResults search={deferredSearch} rowProps={rowProps} listLabel={listLabel} />;
+  } else if (notFound) {
+    body = (
+      <EmptyState
+        icon={<ListX />}
+        title='Lista não encontrada'
+        message='Ela pode ter sido apagada.'
+        action={
+          <button
+            type='button'
+            className='text-tint text-body'
+            onClick={() => setFilter({ filtro: 'todas' })}
+          >
+            Ver todas
+          </button>
+        }
+      />
+    );
+  } else if (tasks.isPending || (target.kind === 'list' && lists.isPending)) {
+    body = <RowsSkeleton />;
+  } else {
+    const data = tasks.data ?? [];
+    const quickAdd = canQuickAdd(target) ? <QuickAdd target={target} color={color} /> : null;
+    body = (
+      <>
+        {data.length > 0 && <CountLine count={data.length} completed={isCompletedView} />}
+        {!data.length && (
+          <EmptyState
+            icon={
+              target.kind === 'smart' && target.meta.slug === 'hoje' ? (
+                <SunMedium />
+              ) : (
+                <CircleCheck />
+              )
+            }
+            title={target.kind === 'smart' ? target.meta.emptyTitle : 'Nenhum lembrete'}
+            message={
+              target.kind === 'smart' && target.meta.slug === 'hoje'
+                ? 'Nada para hoje. Aproveite o dia.'
+                : undefined
+            }
+          />
+        )}
+        {(data.length > 0 || quickAdd) && (
+          <TaskCard className='mb-6'>
+            {target.kind === 'list' && !target.tag ? (
+              <SortableRows listId={target.id} tasks={data} rowProps={rowProps} />
+            ) : (
+              data.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  {...rowProps}
+                  color={target.kind === 'list' ? color : listColorOf(byId, task.listId, color)}
+                  showCompletedSubtasks={isCompletedView}
+                  extra={target.kind === 'smart' ? listLabel(task) : undefined}
+                />
+              ))
+            )}
+            {quickAdd}
+          </TaskCard>
+        )}
+        {list && showCompleted && <CompletedSection list={list} rowProps={rowProps} />}
+      </>
+    );
+  }
 
   return (
-    <div className={ALL_COLOR_CLASS} style={{ '--tint': TASKS_TINT } as CSSProperties}>
-      <Page title='Tarefas'>
-        <div className='mb-5'>
+    <div className={ALL_COLOR_CLASS} style={{ '--tint': color } as CSSProperties}>
+      <Page
+        title='Tarefas'
+        actions={
+          <>
+            {menuActions.length > 0 && (
+              <BarButton label='Mais opções' onClick={() => setMenuOpen(true)}>
+                <span className='border-tint flex size-[22px] items-center justify-center rounded-full border-[1.75px]'>
+                  <Ellipsis className='size-3.5!' strokeWidth={3} />
+                </span>
+              </BarButton>
+            )}
+            <BarButton label='Adicionar' onClick={() => setAddOpen(true)}>
+              <Plus strokeWidth={2.25} />
+            </BarButton>
+          </>
+        }
+      >
+        <div className='mb-3'>
           <SearchField value={search} onChange={setSearch} />
         </div>
-
-        {deferredSearch ? (
-          <SearchResults
-            search={deferredSearch}
-            lists={lists.data ?? []}
-            onOpen={(task) => taskSheet.show(task)}
+        {!deferredSearch && (
+          <FilterBar
+            value={{ filtro, tag }}
+            lists={lists.data}
+            counts={counts}
+            onChange={setFilter}
+            onOpenSheet={() => setFilterOpen(true)}
           />
-        ) : (
-          <>
-            <SmartTiles lists={lists.data} />
-            <MyLists lists={lists.data} loading={lists.isPending} />
-            <TagCloud />
-          </>
         )}
 
-        <BottomBar
-          onNew={() => taskSheet.show(null)}
-          trailing={
-            <button
-              type='button'
-              onClick={() => listSheet.show(null)}
-              className='text-tint text-body active:opacity-50'
-            >
-              Adicionar Lista
-            </button>
-          }
-        />
+        {body}
       </Page>
 
+      <FilterSheet
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        value={{ filtro, tag }}
+        lists={lists.data}
+        counts={counts}
+        onChange={setFilter}
+        onNewList={() => {
+          setFilterOpen(false);
+          listSheet.show(null);
+        }}
+      />
+      <ActionSheet open={menuOpen} onOpenChange={setMenuOpen} actions={menuActions} />
+      <ActionSheet
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        actions={[
+          { label: 'Novo lembrete', onSelect: () => taskSheet.show(null) },
+          { label: 'Adicionar lista', onSelect: () => listSheet.show(null) },
+        ]}
+      />
+      <ActionSheet
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={confirm?.title}
+        message={confirm?.message}
+        actions={
+          confirm ? [{ label: confirm.label, destructive: true, onSelect: confirm.onConfirm }] : []
+        }
+      />
       <TaskSheet
         key={`task-${taskSheet.key}`}
         open={taskSheet.open}
         onOpenChange={taskSheet.setOpen}
         task={taskSheet.value}
-        defaults={{ listId: inbox?.id }}
+        defaults={sheetDefaults}
       />
       <ListSheet
         key={`list-${listSheet.key}`}
         open={listSheet.open}
         onOpenChange={listSheet.setOpen}
-        list={null}
-        onCreated={(list) => navigate({ to: '/tarefas/$listId', params: { listId: list.id } })}
+        list={listSheet.value}
+        onCreated={(created) => setFilter({ filtro: created.id })}
       />
     </div>
   );
 }
 
-function SmartTiles({ lists }: { lists: TaskListResponse[] | undefined }) {
-  const today = useTasks({ view: 'today' });
-  const next7 = useTasks({ view: 'next7' });
-  const overdue = useTasks({ view: 'overdue' });
-  const nodate = useTasks({ view: 'nodate' });
-  const day = Number(todayKey().slice(8, 10));
+function listColorOf(byId: Map<string, TaskListResponse>, listId: string, fallback: string) {
+  const owner = byId.get(listId);
+  return owner ? listColor(owner) : fallback;
+}
 
-  const counts: Record<string, number | undefined> = {
-    hoje: today.data?.length,
-    programadas: next7.data?.length,
-    atrasadas: overdue.data?.length,
-    'sem-prazo': nodate.data?.length,
-    todas: lists?.reduce((sum, list) => sum + list.openCount, 0),
-  };
-
+function CountLine({ count, completed }: { count: number; completed: boolean }) {
+  const noun = completed
+    ? count === 1
+      ? 'concluído'
+      : 'concluídos'
+    : count === 1
+      ? 'lembrete'
+      : 'lembretes';
   return (
-    <div className='mb-7 grid grid-cols-2 gap-3 lg:grid-cols-3'>
-      {SMART_VIEWS.map((meta) => (
-        <SmartTile key={meta.slug} meta={meta} count={counts[meta.slug]} day={day} />
-      ))}
+    <div className='text-footnote text-label-2 mb-1.5 px-4 uppercase'>
+      {count} {noun}
     </div>
-  );
-}
-
-function SmartTile({
-  meta,
-  count,
-  day,
-}: {
-  meta: SmartViewMeta;
-  count: number | undefined;
-  day: number;
-}) {
-  const hasCount = meta.slug !== 'concluidas';
-  return (
-    <Link
-      to='/tarefas/$listId'
-      params={{ listId: meta.slug }}
-      className='bg-surface flex h-[84px] flex-col justify-between rounded-[12px] px-3 pt-2.5 pb-2 transition-transform duration-100 active:scale-[0.97] active:opacity-80'
-    >
-      <div className='flex items-start justify-between'>
-        <span
-          className='flex size-[34px] items-center justify-center rounded-full text-white [&_svg]:size-[19px]'
-          style={{ backgroundColor: meta.color }}
-        >
-          <SmartViewIcon icon={meta.icon} day={day} />
-        </span>
-        {hasCount &&
-          (count === undefined ? (
-            <Skeleton className='mt-1 h-6 w-7 rounded-md' />
-          ) : (
-            <span className='font-rounded numeric text-[28px] leading-[32px] font-bold'>
-              {count}
-            </span>
-          ))}
-      </div>
-      <span className='text-label-2 text-[16px] leading-5 font-semibold tracking-tight'>
-        {meta.title}
-      </span>
-    </Link>
-  );
-}
-
-function MyLists({ lists, loading }: { lists: TaskListResponse[] | undefined; loading: boolean }) {
-  const navigate = useNavigate();
-  return (
-    <>
-      <SectionTitle>Minhas listas</SectionTitle>
-      <Section>
-        {loading
-          ? Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className='flex h-[52px] items-center gap-3 px-4'>
-                <Skeleton className='size-[29px] rounded-full' />
-                <Skeleton className='h-4 flex-1' />
-              </div>
-            ))
-          : sortLists(lists ?? []).map((list) => (
-              <Row
-                key={list.id}
-                onClick={() => navigate({ to: '/tarefas/$listId', params: { listId: list.id } })}
-                leading={
-                  <IconChip color={listColor(list)} round>
-                    <ListIcon icon={list.icon} inbox={list.isInbox} />
-                  </IconChip>
-                }
-                title={
-                  <span className='flex items-center gap-1.5'>
-                    <span className='truncate'>{list.name}</span>
-                    {list.googleLinked && (
-                      <Cloud
-                        className='text-label-3 size-3.5 shrink-0'
-                        strokeWidth={2.25}
-                        aria-label='Sincronizada com o Google'
-                      />
-                    )}
-                  </span>
-                }
-                detail={list.openCount || ''}
-                chevron
-              />
-            ))}
-      </Section>
-    </>
-  );
-}
-
-function TagCloud() {
-  const tags = useTags();
-  const items = tags.data ?? [];
-  if (!items.length) return null;
-  return (
-    <>
-      <SectionTitle>Etiquetas</SectionTitle>
-      <div className='bg-surface mb-7 flex flex-wrap gap-2 rounded-[var(--radius)] p-3'>
-        {items.map((tag) => (
-          <Link
-            key={tag.id}
-            to='/tarefas/$listId'
-            params={{ listId: 'todas' }}
-            search={{ tag: tag.name }}
-            className='bg-fill text-subhead inline-flex h-8 items-center gap-1.5 rounded-full px-3 font-medium active:opacity-60'
-          >
-            <span>#{tag.name}</span>
-            {tag.taskCount > 0 && (
-              <span className='text-label-2 font-rounded numeric text-footnote'>
-                {tag.taskCount}
-              </span>
-            )}
-          </Link>
-        ))}
-      </div>
-    </>
   );
 }
 
 function SearchResults({
   search,
-  lists,
-  onOpen,
+  rowProps,
+  listLabel,
 }: {
   search: string;
-  lists: TaskListResponse[];
-  onOpen: (task: TaskResponse) => void;
+  rowProps: RowProps;
+  listLabel: (task: TaskResponse) => React.ReactNode;
 }) {
   const results = useTasks({ search: search.slice(0, 80) });
-  const toggle = useToggleTask();
-  const now = useNow();
-  const byId = new Map(lists.map((list) => [list.id, list]));
+  const lists = useTaskLists();
+  const byId = new Map((lists.data ?? []).map((item) => [item.id, item]));
 
-  if (results.isPending) {
-    return (
-      <TaskCard>
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className='flex items-center gap-3 px-4 py-3'>
-            <Skeleton className='size-[22px] rounded-full' />
-            <Skeleton className='h-4 flex-1' />
-          </div>
-        ))}
-      </TaskCard>
-    );
-  }
+  if (results.isPending) return <RowsSkeleton />;
 
   if (!results.data?.length) {
     return (
@@ -265,28 +375,15 @@ function SearchResults({
         {results.data.length} {results.data.length === 1 ? 'resultado' : 'resultados'}
       </div>
       <TaskCard className='mb-7'>
-        {results.data.map((task) => {
-          const list = byId.get(task.listId);
-          const color = list ? listColor(list) : 'var(--tint)';
-          return (
-            <TaskRow
-              key={task.id}
-              task={task}
-              color={color}
-              now={now}
-              onOpen={onOpen}
-              onToggle={toggle}
-              extra={
-                list && (
-                  <span className='inline-flex items-center gap-1'>
-                    <span className='size-2 rounded-full' style={{ backgroundColor: color }} />
-                    {list.name}
-                  </span>
-                )
-              }
-            />
-          );
-        })}
+        {results.data.map((task) => (
+          <TaskRow
+            key={task.id}
+            task={task}
+            {...rowProps}
+            color={listColorOf(byId, task.listId, rowProps.color)}
+            extra={listLabel(task)}
+          />
+        ))}
       </TaskCard>
     </>
   );

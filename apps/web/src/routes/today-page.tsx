@@ -460,7 +460,14 @@ export function TodayPage() {
         )}
       </Section>
 
-      <Section header='Tarefas' action={<Link to='/tarefas/hoje'>Ver todas</Link>}>
+      <Section
+        header='Tarefas'
+        action={
+          <Link to='/tarefas' search={{ filtro: 'hoje' }}>
+            Ver todas
+          </Link>
+        }
+      >
         {!data ? (
           <div className='p-4'>
             <Skeleton className='h-10' />
@@ -568,9 +575,8 @@ export function TodayPage() {
             label: 'Nova tarefa',
             onSelect: () =>
               void navigate({
-                to: '/tarefas/$listId',
-                params: { listId: 'hoje' },
-                search: { novo: '1' },
+                to: '/tarefas',
+                search: { filtro: 'hoje', novo: '1' },
               }),
           },
           { label: 'Novo lançamento', onSelect: () => setTxSheet({ open: true }) },
