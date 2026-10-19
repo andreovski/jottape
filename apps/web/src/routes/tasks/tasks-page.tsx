@@ -46,7 +46,7 @@ interface Confirm {
  * botão que abre todos eles numa folha) e, embaixo, os lembretes do filtro numa lista única.
  */
 export function TasksPage() {
-  const { filtro = 'todas', tag, novo } = useSearch({ from: '/tarefas' });
+  const { filtro = 'todas', tag, novo } = useSearch({ from: '/app/tarefas' });
   const navigate = useNavigate();
   const lists = useTaskLists();
   const counts = useSmartCounts(lists.data);

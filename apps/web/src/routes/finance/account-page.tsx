@@ -20,7 +20,7 @@ import { money, shortDay, todayKey } from '@/lib/format';
 import { Statement } from './statement';
 
 export function AccountPage() {
-  const { accountId } = useParams({ from: '/financas/contas/$accountId' });
+  const { accountId } = useParams({ from: '/app/financas/contas/$accountId' });
   const navigate = useNavigate();
   const { data: accounts, isLoading } = useAccounts({ archived: true });
   const account = accounts?.find((a) => a.id === accountId);

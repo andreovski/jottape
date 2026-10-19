@@ -35,7 +35,7 @@ const TABS: { value: Tab; label: string }[] = [
 const isTab = (value: unknown): value is Tab => TABS.some((t) => t.value === value);
 
 export function FinancePage() {
-  const search = useSearch({ from: '/financas' });
+  const search = useSearch({ from: '/app/financas' });
   const navigate = useNavigate({ from: '/financas' });
   const today = todayKey();
   const tab: Tab = isTab(search.tab) ? search.tab : 'extrato';
