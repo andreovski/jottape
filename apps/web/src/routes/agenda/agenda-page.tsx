@@ -16,6 +16,7 @@ import { occurrenceKey, useCalendars } from '@/components/agenda/calendars';
 import { EventDetailSheet } from '@/components/agenda/event-detail-sheet';
 import { newEventForm } from '@/components/agenda/event-form-model';
 import { type EventFormMode, EventFormSheet } from '@/components/agenda/event-form-sheet';
+import { loadLastView, saveLastView } from '@/components/agenda/last-view';
 import { listDayTitle, ListView } from '@/components/agenda/list-view';
 import { MonthView } from '@/components/agenda/month-view';
 import { AllDayChip, TimeGrid } from '@/components/agenda/time-grid';
@@ -65,7 +66,9 @@ export function AgendaPage() {
   const zone = appTimeZone();
   const now = useNow();
   const today = dayKey(new Date(now), zone);
-  const view: View = isView(search.view) ? search.view : 'dia';
+  // Sem visão no link, abre na última que a pessoa usou.
+  const [lastView] = useState(() => loadLastView(isView));
+  const view: View = isView(search.view) ? search.view : (lastView ?? 'dia');
   const date = isDay(search.date) ? search.date : today;
 
   const me = useMe().data;
@@ -83,6 +86,8 @@ export function AgendaPage() {
     () => eventsByDay(events.data ?? [], fetchDays, zone),
     [events.data, fetchDays, zone]
   );
+
+  useEffect(() => saveLastView(view), [view]);
 
   const [detail, setDetail] = useState<EventOccurrence | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
