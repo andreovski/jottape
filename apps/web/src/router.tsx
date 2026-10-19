@@ -1,10 +1,18 @@
-import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  redirect,
+  type RouterHistory,
+} from '@tanstack/react-router';
 
 import { AppShell } from '@/components/app-shell';
 import { AuthGate } from '@/components/auth-gate';
 import { AgendaPage } from '@/routes/agenda/agenda-page';
 import { AccountPage } from '@/routes/finance/account-page';
 import { FinancePage } from '@/routes/finance/finance-page';
+import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
 import { CategoriesPage } from '@/routes/settings/categories-page';
 import { GooglePage } from '@/routes/settings/google-page';
 import { SettingsPage } from '@/routes/settings/settings-page';
@@ -12,7 +20,19 @@ import { TasksPage } from '@/routes/tasks/tasks-page';
 import { TodayPage } from '@/routes/today-page';
 
 // Rotas em código (são poucas). As URLs ficam em português: é o que aparece na barra do navegador.
-const rootRoute = createRootRoute({
+const rootRoute = createRootRoute({ component: Outlet });
+
+// Termos e privacidade abrem sem login: o Google exige as duas páginas públicas na tela de
+// consentimento do OAuth.
+const publicRoutes = [
+  createRoute({ getParentRoute: () => rootRoute, path: '/privacidade', component: PrivacyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/termos', component: TermsPage }),
+];
+
+// Todo o resto passa pelo login.
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'app',
   component: () => (
     <AuthGate>
       <AppShell />
@@ -21,26 +41,26 @@ const rootRoute = createRootRoute({
 });
 
 const route = <P extends string>(path: P, component: () => React.ReactNode) =>
-  createRoute({ getParentRoute: () => rootRoute, path, component });
+  createRoute({ getParentRoute: () => appRoute, path, component });
 
-const routeTree = rootRoute.addChildren([
+const appRoutes = appRoute.addChildren([
   route('/', TodayPage),
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: '/entrar',
     beforeLoad: () => {
       throw redirect({ to: '/' });
     },
   }),
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: '/cadastro',
     beforeLoad: () => {
       throw redirect({ to: '/' });
     },
   }),
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: '/agenda',
     component: AgendaPage,
     validateSearch: (
@@ -52,7 +72,7 @@ const routeTree = rootRoute.addChildren([
     }),
   }),
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: '/tarefas',
     component: TasksPage,
     validateSearch: (
@@ -65,7 +85,7 @@ const routeTree = rootRoute.addChildren([
   }),
   // Endereço antigo de cada lista: hoje as listas são filtros da tela Tarefas.
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: '/tarefas/$listId',
     beforeLoad: ({ params, search }) => {
       const { tag, novo } = search as { tag?: string; novo?: string };
@@ -77,7 +97,7 @@ const routeTree = rootRoute.addChildren([
     },
   }),
   createRoute({
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => appRoute,
     path: '/financas',
     component: FinancePage,
     validateSearch: (search: Record<string, unknown>): { tab?: string; month?: string } => ({
@@ -91,8 +111,10 @@ const routeTree = rootRoute.addChildren([
   route('/ajustes/google', GooglePage),
 ]);
 
-export function createAppRouter() {
-  return createRouter({ routeTree, scrollRestoration: true, defaultPreload: 'intent' });
+const routeTree = rootRoute.addChildren([...publicRoutes, appRoutes]);
+
+export function createAppRouter(history?: RouterHistory) {
+  return createRouter({ routeTree, history, scrollRestoration: true, defaultPreload: 'intent' });
 }
 
 declare module '@tanstack/react-router' {
