@@ -42,7 +42,9 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
   const [type, setType] = useState<AccountType>(account?.type ?? 'CHECKING');
   const [name, setName] = useState(account?.name ?? '');
   const [color, setColor] = useState<string | null>(account?.color ?? null);
-  const [initial, setInitial] = useState<number | null>(account?.initialBalanceCents ?? 0);
+  const [initial, setInitial] = useState<number | null>(
+    account ? account.initialBalanceCents : null
+  );
   const [closingDay, setClosingDay] = useState(String(account?.closingDay ?? ''));
   const [dueDay, setDueDay] = useState(String(account?.dueDay ?? ''));
   const [paymentAccountId, setPaymentAccountId] = useState(account?.paymentAccountId ?? '');

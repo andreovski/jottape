@@ -10,8 +10,8 @@ import {
   availableBalance,
   axisTicks,
   budgetBar,
-  categoryOptions,
   categorySlices,
+  categoryTree,
   compactMoney,
   comparisonText,
   defaultStatus,
@@ -296,13 +296,13 @@ describe('resumo', () => {
       cat({ id: 'a2', name: 'Luz', parentId: 'a' }),
       cat({ id: 'i', name: 'Salário', kind: 'INCOME' }),
     ];
-    expect(categoryOptions(all, 'EXPENSE').map((o) => o.label)).toEqual([
-      'Casa',
-      'Casa › Luz',
-      'Transporte',
+    const tree = categoryTree(all, 'EXPENSE');
+    expect(tree.map((g) => [g.parent.name, g.children.map((c) => c.name)])).toEqual([
+      ['Casa', ['Luz']],
+      ['Transporte', []],
     ]);
-    expect(categoryOptions(all, 'INCOME').map((o) => o.value)).toEqual(['i']);
-    expect(categoryOptions(all, 'TRANSFER')).toEqual([]);
+    expect(categoryTree(all, 'INCOME').map((g) => g.parent.id)).toEqual(['i']);
+    expect(categoryTree(all, 'TRANSFER')).toEqual([]);
   });
 });
 

@@ -187,6 +187,8 @@ export function MoneyField({
       value={text}
       placeholder={placeholder}
       onChange={(event) => setText(event.target.value)}
+      // Tocar seleciona o valor, para digitar por cima sem apagar antes.
+      onFocus={(event) => event.target.select()}
       onBlur={() => {
         const parsed = parseCents(text);
         const cents = parsed === null ? null : allowNegative ? parsed : Math.abs(parsed);

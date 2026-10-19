@@ -1,8 +1,9 @@
 import type { TransactionResponse } from '@jottape/schemas';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
-import { AccountCard, AddAccountCard } from '@/components/finance/account-card';
+import { AccountChip, AddAccountChip } from '@/components/finance/account-card';
 import { AccountSheet } from '@/components/finance/account-sheet';
 import {
   availableBalance,
@@ -14,7 +15,7 @@ import {
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { useSheetState } from '@/components/finance/use-sheet-state';
 import { Segmented, Skeleton } from '@/components/ios/controls';
-import { BarButton, Page } from '@/components/ios/page';
+import { BarButton } from '@/components/ios/page';
 import { useAccounts, useForecast } from '@/features/finance';
 import { money, todayKey } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -59,36 +60,59 @@ export function FinancePage() {
 
   const onMonthChange = (value: string) => setSearch({ month: value });
 
+  const scroller = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  // Trocar de aba volta a lista para o topo.
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 0 });
+  }, [tab]);
+
   return (
-    <Page
-      title='Finanças'
-      actions={
-        <BarButton label='Novo lançamento' onClick={() => txSheet.show(undefined)}>
-          <Plus strokeWidth={2.25} />
-        </BarButton>
-      }
-    >
-      <Hero />
-      <Wallet onAddAccount={() => accountSheet.show(undefined)} />
+    // Saldo, contas e abas ficam presos no topo; só o conteúdo da aba rola.
+    <div className='flex h-dvh flex-col'>
+      <header
+        className={cn(
+          'pt-safe shrink-0 transition-shadow duration-200',
+          scrolled && 'shadow-[inset_0_-0.5px_0_var(--separator)]'
+        )}
+      >
+        <div className='mx-auto max-w-3xl px-4 lg:px-8'>
+          <div className='flex h-12 items-center justify-between'>
+            <h1 className='text-title-1 font-bold'>Finanças</h1>
+            <BarButton label='Novo lançamento' onClick={() => txSheet.show(undefined)}>
+              <Plus strokeWidth={2.25} />
+            </BarButton>
+          </div>
+          <Hero />
+          <Wallet onAddAccount={() => accountSheet.show(undefined)} />
+          <Segmented
+            value={tab}
+            onChange={(value) => setSearch({ tab: value })}
+            options={TABS}
+            className='mb-3'
+          />
+        </div>
+      </header>
 
-      <Segmented
-        value={tab}
-        onChange={(value) => setSearch({ tab: value })}
-        options={TABS}
-        className='mb-5'
-      />
-
-      {tab === 'extrato' && (
-        <Statement
-          month={month}
-          onMonthChange={onMonthChange}
-          onSelect={(tx) => txSheet.show(tx)}
-          onCreate={() => txSheet.show(undefined)}
-        />
-      )}
-      {tab === 'previsao' && <ForecastTab onSelect={(tx) => txSheet.show(tx)} />}
-      {tab === 'resumo' && <SummaryTab month={month} onMonthChange={onMonthChange} />}
-      {tab === 'orcamentos' && <BudgetsTab month={month} onMonthChange={onMonthChange} />}
+      <div
+        ref={scroller}
+        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
+        className='min-h-0 flex-1 overflow-y-auto overscroll-contain'
+      >
+        <div className='mx-auto max-w-3xl px-4 pt-2 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
+          {tab === 'extrato' && (
+            <Statement
+              month={month}
+              onMonthChange={onMonthChange}
+              onSelect={(tx) => txSheet.show(tx)}
+              onCreate={() => txSheet.show(undefined)}
+            />
+          )}
+          {tab === 'previsao' && <ForecastTab onSelect={(tx) => txSheet.show(tx)} />}
+          {tab === 'resumo' && <SummaryTab month={month} onMonthChange={onMonthChange} />}
+          {tab === 'orcamentos' && <BudgetsTab month={month} onMonthChange={onMonthChange} />}
+        </div>
+      </div>
 
       <TransactionSheet
         open={txSheet.open}
@@ -101,73 +125,72 @@ export function FinancePage() {
         }
       />
       <AccountSheet open={accountSheet.open} onOpenChange={accountSheet.onOpenChange} />
-    </Page>
+    </div>
   );
 }
 
-/** "Saldo disponível" grande, como o Apple Cash, e a previsão para o fim do mês. */
+/** Saldo disponível numa linha, com a previsão do fim do mês ao lado. */
 function Hero() {
   const { data: accounts, isLoading } = useAccounts();
   const { data: forecast } = useForecast(30);
   const today = todayKey();
   const balance = availableBalance(accounts ?? []);
   const endOfMonth = forecastAt(forecast, lastDayOfMonth(monthOfDay(today)));
+  const signed = (cents: number) => (cents < 0 ? `−${money(-cents)}` : money(cents));
 
   return (
-    <div className='mb-5 px-1'>
-      <div className='text-footnote text-label-2 font-medium'>Saldo disponível</div>
-      {isLoading ? (
-        <Skeleton className='my-1.5 h-11 w-52' />
-      ) : (
-        <div
-          className={cn(
-            'font-rounded numeric text-[44px] leading-[52px] font-bold tracking-tight sm:text-[52px] sm:leading-[60px]',
-            balance < 0 && 'text-red'
-          )}
-        >
-          {balance < 0 ? `−${money(-balance)}` : money(balance)}
-        </div>
-      )}
-      {endOfMonth && (
-        <div className='text-subhead text-label-2'>
-          Previsto no fim do mês:{' '}
-          <span
+    <div className='mb-3 flex items-end justify-between gap-4'>
+      <div className='min-w-0'>
+        <div className='text-footnote text-label-2 font-medium'>Saldo disponível</div>
+        {isLoading ? (
+          <Skeleton className='my-1 h-7 w-40' />
+        ) : (
+          <div
             className={cn(
-              'font-rounded numeric font-semibold',
-              endOfMonth.totalCents < 0 ? 'text-red' : 'text-foreground'
+              'font-rounded numeric truncate text-[28px] leading-[34px] font-bold tracking-tight',
+              balance < 0 && 'text-red'
             )}
           >
-            {endOfMonth.totalCents < 0
-              ? `−${money(-endOfMonth.totalCents)}`
-              : money(endOfMonth.totalCents)}
-          </span>
+            {signed(balance)}
+          </div>
+        )}
+      </div>
+      {endOfMonth && (
+        <div className='shrink-0 pb-0.5 text-right'>
+          <div className='text-footnote text-label-2'>Fim do mês</div>
+          <div
+            className={cn(
+              'font-rounded numeric text-callout font-semibold',
+              endOfMonth.totalCents < 0 && 'text-red'
+            )}
+          >
+            {signed(endOfMonth.totalCents)}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-/** Carrossel de cartões do Wallet, com o "Adicionar conta" no fim. */
+/** Faixa de contas em cartões pequenos, com o "+" no fim. */
 function Wallet({ onAddAccount }: { onAddAccount: () => void }) {
   const { data: accounts, isLoading } = useAccounts();
   const navigate = useNavigate();
   const visible = (accounts ?? []).filter((a) => !a.archived);
-  const item = 'w-[78%] max-w-[300px] shrink-0 snap-start sm:w-[280px]';
 
   return (
     <div
-      className='no-scrollbar -mx-4 mb-6 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pt-1 pb-4 lg:-mx-8 lg:scroll-px-8 lg:px-8'
+      className='no-scrollbar -mx-4 mb-3 flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-1 lg:-mx-8 lg:scroll-px-8 lg:px-8'
       aria-label='Contas'
     >
       {isLoading
         ? [0, 1].map((i) => (
-            <Skeleton key={i} className={cn(item, 'aspect-[1.586] rounded-[16px]')} />
+            <Skeleton key={i} className='h-[58px] w-[148px] shrink-0 rounded-[12px]' />
           ))
         : visible.map((account) => (
-            <AccountCard
+            <AccountChip
               key={account.id}
               account={account}
-              className={item}
               onClick={() =>
                 void navigate({
                   to: '/financas/contas/$accountId',
@@ -176,7 +199,7 @@ function Wallet({ onAddAccount }: { onAddAccount: () => void }) {
               }
             />
           ))}
-      {!isLoading && <AddAccountCard onClick={onAddAccount} className={item} />}
+      {!isLoading && <AddAccountChip onClick={onAddAccount} />}
     </div>
   );
 }

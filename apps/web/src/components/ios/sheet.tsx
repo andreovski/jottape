@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { Drawer } from 'vaul';
 
 import { cn } from '@/lib/utils';
@@ -15,6 +15,43 @@ interface SheetProps {
   cancelLabel?: string;
   /** Altura cheia (formulários longos). */
   tall?: boolean;
+  /** Aberta por cima de outra folha: a de baixo recua, como no iOS. */
+  nested?: boolean;
+}
+
+/**
+ * Com o teclado aberto, o iOS empurra a página para cima e a folha (presa no fundo) fica com o topo
+ * fora da tela: aparecia o fim do formulário em vez do campo tocado. Enquanto o teclado está aberto,
+ * a folha passa a ocupar só a área visível (`visualViewport`), e o próprio conteúdo dela rola.
+ */
+function useFitVisibleArea(open: boolean, ref: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!open || !viewport) return;
+    const reset = () => {
+      const element = ref.current;
+      if (!element) return;
+      for (const key of ['top', 'bottom', 'height', 'maxHeight'] as const) element.style[key] = '';
+    };
+    const update = () => {
+      const element = ref.current;
+      if (!element) return;
+      const keyboardOpen = window.innerHeight - viewport.height > 120;
+      if (!keyboardOpen) return reset();
+      element.style.top = `${viewport.offsetTop + 8}px`;
+      element.style.bottom = 'auto';
+      element.style.height = `${viewport.height - 8}px`;
+      element.style.maxHeight = 'none';
+    };
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    update();
+    return () => {
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+      reset();
+    };
+  }, [open, ref]);
 }
 
 /**
@@ -31,12 +68,17 @@ export function Sheet({
   confirmDisabled,
   cancelLabel = 'Cancelar',
   tall,
+  nested,
 }: SheetProps) {
+  const Root = nested ? Drawer.NestedRoot : Drawer.Root;
+  const content = useRef<HTMLDivElement>(null);
+  useFitVisibleArea(open, content);
   return (
-    <Drawer.Root open={open} onOpenChange={onOpenChange} repositionInputs={false}>
+    <Root open={open} onOpenChange={onOpenChange} repositionInputs={false}>
       <Drawer.Portal>
         <Drawer.Overlay className='fixed inset-0 z-50 bg-black/40' />
         <Drawer.Content
+          ref={content}
           aria-describedby={undefined}
           className={cn(
             'bg-background fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-lg flex-col rounded-t-[12px] outline-none',
@@ -72,7 +114,7 @@ export function Sheet({
           </div>
         </Drawer.Content>
       </Drawer.Portal>
-    </Drawer.Root>
+    </Root>
   );
 }
 

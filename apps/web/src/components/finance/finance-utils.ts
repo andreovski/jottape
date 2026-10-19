@@ -162,24 +162,23 @@ export function categoryLabel(category: CategoryResponse, all: CategoryResponse[
   return parent ? `${parent.name} › ${category.name}` : category.name;
 }
 
-/** Opções do seletor: só do tipo pedido, cada mãe seguida das filhas. */
-export function categoryOptions(
+/** Árvore do seletor: só do tipo pedido, mães em ordem alfabética, cada uma com as filhas. */
+export function categoryTree(
   all: CategoryResponse[],
   kind: TransactionKind
-): { value: string; label: string }[] {
+): { parent: CategoryResponse; children: CategoryResponse[] }[] {
   if (kind === 'TRANSFER') return [];
   const ofKind = all.filter((c) => c.kind === kind);
   const byName = (a: CategoryResponse, b: CategoryResponse) =>
     a.name.localeCompare(b.name, 'pt-BR');
   const ids = new Set(ofKind.map((c) => c.id));
-  const roots = ofKind.filter((c) => !c.parentId || !ids.has(c.parentId)).sort(byName);
-  return roots.flatMap((root) => [
-    { value: root.id, label: categoryLabel(root, all) },
-    ...ofKind
-      .filter((c) => c.parentId === root.id)
-      .sort(byName)
-      .map((child) => ({ value: child.id, label: categoryLabel(child, all) })),
-  ]);
+  return ofKind
+    .filter((c) => !c.parentId || !ids.has(c.parentId))
+    .sort(byName)
+    .map((parent) => ({
+      parent,
+      children: ofKind.filter((c) => c.parentId === parent.id).sort(byName),
+    }));
 }
 
 export interface Slice {

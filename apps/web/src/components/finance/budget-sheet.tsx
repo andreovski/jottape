@@ -2,14 +2,15 @@ import type { BudgetStatusResponse } from '@jottape/schemas';
 import { useState } from 'react';
 
 import { Button } from '@/components/ios/controls';
-import { AmountInput, FieldRow, SelectInput } from '@/components/ios/fields';
+import { AmountInput, FieldRow } from '@/components/ios/fields';
 import { Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
 import { useCategories, useDeleteBudget, useUpsertBudget } from '@/features/finance';
 import { capitalize, monthTitle } from '@/lib/format';
 
 import { CategoryIcon } from './category-icon';
-import { categoryLabel, categoryOptions } from './finance-utils';
+import { CategoryPicker } from './category-picker';
+import { categoryLabel, categoryTree } from './finance-utils';
 
 export interface BudgetSheetProps {
   open: boolean;
@@ -38,9 +39,7 @@ function BudgetForm({ open, onOpenChange, month, budget, usedCategoryIds }: Budg
   const [limit, setLimit] = useState(budget?.limitCents ?? 0);
 
   const category = categories.find((c) => c.id === (budget?.categoryId ?? categoryId));
-  const options = categoryOptions(categories, 'EXPENSE').filter(
-    (option) => !usedCategoryIds.includes(option.value) || option.value === budget?.categoryId
-  );
+  const groups = categoryTree(categories, 'EXPENSE');
   const valid = Boolean(categoryId) && limit > 0;
   const busy = upsert.isPending || remove.isPending;
 
@@ -88,11 +87,13 @@ function BudgetForm({ open, onOpenChange, month, budget, usedCategoryIds }: Budg
               {category ? categoryLabel(category, categories) : '—'}
             </span>
           ) : (
-            <SelectInput
+            <CategoryPicker
               value={categoryId}
               onChange={setCategoryId}
-              placeholder='Escolher'
-              options={options}
+              groups={groups}
+              kind='EXPENSE'
+              disabledIds={usedCategoryIds}
+              disabledHint='Já tem orçamento neste mês'
             />
           )}
         </FieldRow>

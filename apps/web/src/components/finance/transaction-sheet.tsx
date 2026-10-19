@@ -29,8 +29,9 @@ import {
 } from '@/features/finance';
 import { todayKey } from '@/lib/format';
 
+import { CategoryPicker } from './category-picker';
 import {
-  categoryOptions,
+  categoryTree,
   defaultStatus,
   installmentPreview,
   type Repetition,
@@ -113,7 +114,7 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
   const recurring = Boolean(transaction?.recurrenceId);
   const busy = create.isPending || update.isPending || remove.isPending;
 
-  const catOptions = categoryOptions(categories, kind);
+  const categoryGroups = categoryTree(categories, kind);
   const accountOptions = activeAccounts.map((a) => ({ value: a.id, label: a.name }));
   const destinationOptions = accountOptions.filter((a) => a.value !== effectiveAccountId);
 
@@ -225,11 +226,12 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
           </FieldRow>
           {kind !== 'TRANSFER' && (
             <FieldRow label='Categoria'>
-              <SelectInput
+              <CategoryPicker
                 value={categoryId}
                 onChange={setCategoryId}
+                groups={categoryGroups}
+                kind={kind}
                 placeholder='Nenhuma'
-                options={catOptions}
               />
             </FieldRow>
           )}

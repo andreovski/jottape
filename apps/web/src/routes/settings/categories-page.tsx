@@ -4,8 +4,9 @@ import { ChevronLeft, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { CategoryIcon, categoryIconOf } from '@/components/finance/category-icon';
+import { CategoryPicker } from '@/components/finance/category-picker';
 import { Button, EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
-import { ColorPicker, FieldRow, SelectInput, SWATCHES } from '@/components/ios/fields';
+import { ColorPicker, FieldRow, SWATCHES } from '@/components/ios/fields';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
@@ -73,7 +74,9 @@ function CategorySheet({
   const remove = useDeleteCategory();
 
   const hasChildren = existing ? categories.some((c) => c.parentId === existing.id) : false;
-  const parents = categories.filter((c) => c.kind === kind && !c.parentId && c.id !== existing?.id);
+  const parents = categories
+    .filter((c) => c.kind === kind && !c.parentId && c.id !== existing?.id)
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   const isSub = Boolean(parentId);
   const preview = {
     id: existing?.id ?? 'novo',
@@ -118,11 +121,13 @@ function CategorySheet({
 
         <Section header='Pertence a'>
           <FieldRow label='Categoria-mãe'>
-            <SelectInput
+            <CategoryPicker
               value={parentId}
               onChange={setParentId}
+              groups={hasChildren ? [] : parents.map((parent) => ({ parent, children: [] }))}
+              kind={kind}
+              title='Categoria-mãe'
               placeholder='Nenhuma'
-              options={hasChildren ? [] : parents.map((p) => ({ value: p.id, label: p.name }))}
             />
           </FieldRow>
         </Section>
