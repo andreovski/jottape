@@ -1,6 +1,6 @@
 # Jottape
 
-Agenda, tarefas e finanças pessoais num app só, para uso pessoal. É uma PWA (instala no iPhone pela
+Agenda, tarefas e finanças pessoais num app só, para uso pessoal (o dono e quem ele convidar). É uma PWA (instala no iPhone pela
 "Adicionar à Tela de Início") com backend próprio, no visual dos apps da Apple.
 
 - **Hoje**: saldo com a previsão de 30 dias, o próximo compromisso, o anel das tarefas e as contas

@@ -43,6 +43,7 @@ export default defineRailway(() => {
       OWNER_EMAIL: preserve(),
       OWNER_NAME: preserve(),
       OWNER_PASSWORD: preserve(),
+      SIGNUP_CODE: preserve(),
       JWT_SECRET: preserve(),
       ENCRYPTION_KEY: preserve(),
       GOOGLE_CLIENT_ID: preserve(),

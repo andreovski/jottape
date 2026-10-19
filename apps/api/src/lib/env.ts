@@ -53,6 +53,11 @@ export function getOwner(): { email: string; password: string | null; name: stri
   };
 }
 
+/** Código de convite do cadastro. Sem ele, o cadastro fica fechado. */
+export function getSignupCode(): string | null {
+  return process.env.SIGNUP_CODE?.trim() || null;
+}
+
 export function getGoogleConfig(): { clientId: string; clientSecret: string } | null {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;

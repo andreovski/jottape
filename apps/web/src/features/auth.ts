@@ -1,4 +1,4 @@
-import type { LoginBody, MeResponse, UpdateProfileBody } from '@jottape/schemas';
+import type { LoginBody, MeResponse, RegisterBody, UpdateProfileBody } from '@jottape/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api, isUnauthorized } from '@/lib/api';
@@ -23,6 +23,15 @@ export function useLogin() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (body: LoginBody) => api.post('sessions', { json: body }).json<MeResponse>(),
+    onSuccess: (me) => client.setQueryData(['me'], me),
+    meta: { silent: true },
+  });
+}
+
+export function useRegister() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RegisterBody) => api.post('users', { json: body }).json<MeResponse>(),
     onSuccess: (me) => client.setQueryData(['me'], me),
     meta: { silent: true },
   });

@@ -42,9 +42,10 @@ openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jot
 | `DATABASE_URL`                                           | api      | Referência `${{Postgres.DATABASE_URL}}` (já no arquivo).                                                                   |
 | `APP_URL`, `FRONTEND_URL`                                | api      | Domínio do web (já no arquivo, por referência). O Google volta para `${APP_URL}/api/google/callback`.                      |
 | `TRUST_PROXY`                                            | api      | `true`: a API está atrás do proxy do Railway e do `server.mjs`.                                                            |
-| `OWNER_EMAIL`                                            | api      | O seu e-mail. Só ele entra, por senha ou pelo Google.                                                                      |
+| `OWNER_EMAIL`                                            | api      | O seu e-mail: o dono, criado a cada deploy se ainda não existe. Os outros usuários entram pelo cadastro.                   |
 | `OWNER_NAME`                                             | api      | Nome mostrado no app.                                                                                                      |
 | `OWNER_PASSWORD`                                         | api      | Senha inicial, usada só quando o dono é criado. Depois troque em Ajustes e pode apagar a variável.                         |
+| `SIGNUP_CODE`                                            | api      | Código de convite da tela "Criar conta". Sem ele o cadastro fica fechado; trocar invalida o código antigo.                 |
 | `JWT_SECRET`                                             | api      | **Obrigatória**: assina a sessão. Sem ela a API não sobe em produção. Trocar derruba as sessões.                           |
 | `ENCRYPTION_KEY`                                         | api      | **Obrigatória**: 32 bytes (hex ou base64) que cifram o refresh token do Google no banco. Trocar exige reconectar o Google. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`               | api      | Login com o Google, Agenda e Tarefas (seção 3). Sem elas o app funciona sem Google.                                        |
@@ -69,7 +70,7 @@ openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jot
    webhook (`events.watch`, só em HTTPS) e, de qualquer forma, a cada 15 minutos; as tarefas, a
    cada 5 minutos.
 
-O login pelo Google só aceita a conta com o e-mail de `OWNER_EMAIL`.
+O login pelo Google só aceita quem já tem conta (pelo e-mail ou pela conta Google ligada em Ajustes): ele não cria usuário.
 
 ## 4. Notificações (Web Push)
 

@@ -35,6 +35,13 @@ const routeTree = rootRoute.addChildren([
   }),
   createRoute({
     getParentRoute: () => rootRoute,
+    path: '/cadastro',
+    beforeLoad: () => {
+      throw redirect({ to: '/' });
+    },
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: '/agenda',
     component: AgendaPage,
     validateSearch: (

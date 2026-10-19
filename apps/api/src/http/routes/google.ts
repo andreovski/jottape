@@ -112,7 +112,7 @@ export async function googleRoutes(app: FastifyInstance) {
     const email = info.email.toLowerCase();
 
     if (state.intent === 'login') {
-      // Uso pessoal: só entra a conta Google já ligada ou a do e-mail do dono.
+      // Só entra quem já tem conta (Google ligado ou o mesmo e-mail): o login não cria usuário.
       const user = await prisma.user.findFirst({
         where: {
           OR: [{ googleSub: info.sub }, ...(info.email_verified !== false ? [{ email }] : [])],

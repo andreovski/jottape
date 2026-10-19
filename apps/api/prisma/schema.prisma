@@ -7,9 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Uso pessoal: um único User, criado pelo seed (src/scripts/seed-owner.ts) a partir de
-// OWNER_EMAIL e OWNER_PASSWORD. Mesmo assim todo modelo carrega userId e toda consulta filtra por
-// ele: é barato e evita vazamento se um dia houver um segundo usuário.
+// O dono é criado pelo seed (src/scripts/seed-owner.ts) a partir de OWNER_EMAIL e OWNER_PASSWORD; os
+// outros usuários se cadastram com o código de convite (POST /users). Todo modelo carrega userId e
+// toda consulta filtra por ele.
 //
 // Dinheiro sempre em centavos (Int). Datas de lançamento são DATE (dia, sem hora); horários de
 // evento e tarefa são timestamptz.

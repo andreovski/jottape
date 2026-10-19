@@ -4,9 +4,11 @@ Guia para o Claude Code (claude.ai/code) trabalhar neste repositório.
 
 ## O que é
 
-Jottape: agenda, tarefas e finanças pessoais numa PWA, para **uso pessoal de um usuário só** (o
-André). Não há cadastro, cobrança nem distribuição: o dono é criado pelo seed (`OWNER_EMAIL`) e o
-login pelo Google só aceita esse e-mail. Textos da interface em português do Brasil.
+Jottape: agenda, tarefas e finanças pessoais numa PWA, para **uso pessoal** do André e de quem ele
+convidar. Não há cobrança nem distribuição. O dono é criado pelo seed (`OWNER_EMAIL`); os outros se
+cadastram em "Criar conta" (`POST /users`) com o código de convite `SIGNUP_CODE` (sem ele o cadastro
+fica fechado). O login pelo Google não cria conta. Todo dado tem `userId` e toda consulta filtra por
+ele: regra nova também. Textos da interface em português do Brasil.
 
 Monorepo pnpm + Turborepo, no molde da Arttevo:
 
