@@ -1,12 +1,11 @@
 import type { TaskListResponse, TaskResponse } from '@jottape/schemas';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { CircleCheck, Ellipsis, ListX, Search, SunMedium } from 'lucide-react';
+import { CircleCheck, Ellipsis, ListX, Plus, Search, SunMedium } from 'lucide-react';
 import { type CSSProperties, useDeferredValue, useEffect, useState } from 'react';
 
 import { EmptyState } from '@/components/ios/controls';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
-import { BottomBar, SearchField } from '@/components/tasks/bottom-bar';
 import {
   FilterBar,
   FilterSheet,
@@ -22,6 +21,7 @@ import {
   SortableRows,
 } from '@/components/tasks/list-body';
 import { ListSheet } from '@/components/tasks/list-sheet';
+import { SearchField } from '@/components/tasks/search-field';
 import {
   ALL_COLOR_CLASS,
   canQuickAdd,
@@ -70,6 +70,7 @@ export function TasksPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   // `?novo=1` (vindo da tela Hoje) já abre a folha de novo lembrete; depois some da URL.
@@ -245,13 +246,18 @@ export function TasksPage() {
       <Page
         title='Tarefas'
         actions={
-          menuActions.length > 0 && (
-            <BarButton label='Mais opções' onClick={() => setMenuOpen(true)}>
-              <span className='border-tint flex size-[22px] items-center justify-center rounded-full border-[1.75px]'>
-                <Ellipsis className='size-3.5!' strokeWidth={3} />
-              </span>
+          <>
+            {menuActions.length > 0 && (
+              <BarButton label='Mais opções' onClick={() => setMenuOpen(true)}>
+                <span className='border-tint flex size-[22px] items-center justify-center rounded-full border-[1.75px]'>
+                  <Ellipsis className='size-3.5!' strokeWidth={3} />
+                </span>
+              </BarButton>
+            )}
+            <BarButton label='Adicionar' onClick={() => setAddOpen(true)}>
+              <Plus strokeWidth={2.25} />
             </BarButton>
-          )
+          </>
         }
       >
         <div className='mb-3'>
@@ -268,19 +274,6 @@ export function TasksPage() {
         )}
 
         {body}
-
-        <BottomBar
-          onNew={() => taskSheet.show(null)}
-          trailing={
-            <button
-              type='button'
-              onClick={() => listSheet.show(null)}
-              className='text-tint text-body active:opacity-50'
-            >
-              Adicionar Lista
-            </button>
-          }
-        />
       </Page>
 
       <FilterSheet
@@ -296,6 +289,14 @@ export function TasksPage() {
         }}
       />
       <ActionSheet open={menuOpen} onOpenChange={setMenuOpen} actions={menuActions} />
+      <ActionSheet
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        actions={[
+          { label: 'Novo lembrete', onSelect: () => taskSheet.show(null) },
+          { label: 'Adicionar lista', onSelect: () => listSheet.show(null) },
+        ]}
+      />
       <ActionSheet
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

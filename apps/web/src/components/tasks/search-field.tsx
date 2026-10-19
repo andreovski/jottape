@@ -1,27 +1,4 @@
-import { Plus, Search, X } from 'lucide-react';
-import type { ReactNode } from 'react';
-
-/**
- * Barra de baixo do Lembretes: "+ Novo Lembrete" à esquerda e uma ação à direita. Fica presa logo
- * acima das abas no celular e no pé da tela no computador.
- */
-export function BottomBar({ onNew, trailing }: { onNew: () => void; trailing?: ReactNode }) {
-  return (
-    <div className='material hairline-t sticky bottom-[calc(50px+env(safe-area-inset-bottom))] z-20 -mx-4 mt-6 flex h-12 items-center justify-between px-4 lg:bottom-0 lg:-mx-8 lg:px-8'>
-      <button
-        type='button'
-        onClick={onNew}
-        className='text-tint text-headline -ml-1 flex items-center gap-1.5 active:opacity-50'
-      >
-        <span className='bg-tint flex size-[22px] items-center justify-center rounded-full text-white'>
-          <Plus className='size-4' strokeWidth={3} />
-        </span>
-        Novo Lembrete
-      </button>
-      {trailing}
-    </div>
-  );
-}
+import { Search, X } from 'lucide-react';
 
 /** Campo de busca do iOS (preenchimento cinza, lupa, "x" para limpar). */
 export function SearchField({
