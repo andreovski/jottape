@@ -208,12 +208,7 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
           </div>
         )}
 
-        <AmountInput
-          value={amount}
-          onChange={setAmount}
-          color={AMOUNT_COLORS[kind]}
-          autoFocus={!editing}
-        />
+        <AmountInput value={amount} onChange={setAmount} color={AMOUNT_COLORS[kind]} />
 
         <Section>
           <FieldRow>

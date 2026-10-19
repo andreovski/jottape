@@ -78,7 +78,7 @@ function BudgetForm({ open, onOpenChange, month, budget, usedCategoryIds }: Budg
         <div className='text-footnote text-label-2'>{capitalize(monthTitle(month))}</div>
       </div>
 
-      <AmountInput value={limit} onChange={setLimit} autoFocus={Boolean(budget)} />
+      <AmountInput value={limit} onChange={setLimit} />
 
       <Section footer='O orçamento de uma categoria também cobre as subcategorias dela.'>
         <FieldRow label='Categoria'>

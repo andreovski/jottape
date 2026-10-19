@@ -193,7 +193,6 @@ export function EventFormSheet({
             <TextInput
               placeholder='Título'
               value={form.title}
-              autoFocus={!editing}
               enterKeyHint='next'
               onChange={(event) => set('title', event.target.value)}
               maxLength={200}

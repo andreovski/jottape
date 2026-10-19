@@ -132,7 +132,6 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
             placeholder='Nome'
             value={name}
             maxLength={60}
-            autoFocus={!editing}
             onChange={(event) => setName(event.target.value)}
           />
         </FieldRow>

@@ -114,7 +114,6 @@ function CategorySheet({
             onChange={(event) => setName(event.target.value)}
             placeholder='Nome da categoria'
             maxLength={60}
-            autoFocus={!existing}
             className='bg-surface text-title-3 placeholder:text-label-3 mt-5 h-[52px] w-full rounded-[12px] text-center font-bold outline-none'
           />
         </div>

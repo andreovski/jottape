@@ -74,7 +74,6 @@ export function ListSheet({
           <input
             aria-label='Nome da lista'
             placeholder='Nome da Lista'
-            autoFocus={!list}
             disabled={list?.isInbox}
             maxLength={60}
             value={name}

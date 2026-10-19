@@ -165,7 +165,6 @@ export function TaskSheet({
           <TextInput
             aria-label='Título'
             placeholder='Título'
-            autoFocus={!task}
             value={form.title}
             onChange={(event) => patch({ title: event.target.value })}
             onKeyDown={(event) => {
