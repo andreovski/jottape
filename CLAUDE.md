@@ -64,7 +64,9 @@ pnpm --filter api seed                         # dono, categorias padrão e list
 - **Assistente** (aba do chat): `services/assistant`. O Haiku lê o pedido em JSON estruturado
   (`haiku.ts`), o Jev confere tipo, conta e categoria com probabilidade (`jev.ts`, opções por
   `opcao_N` na ordem das contas/categorias), e `resolve.ts` (puro, com teste) monta o rascunho e o
-  score. Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
+  score. Também cria eventos (sem horário falta `time`; fim padrão +1 h, no calendário padrão) e
+  tarefas (lista nomeada ou Entrada), pelos mesmos serviços das telas (`assistant/create.ts`).
+  Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
   usuário, o dono sem limite). Só o dono e os e-mails de `ASSISTANT_EMAILS` veem o Assistente.
   A conversa some em 30 dias.

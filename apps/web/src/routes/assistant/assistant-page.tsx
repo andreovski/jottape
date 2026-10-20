@@ -20,10 +20,12 @@ import { MAX_SECONDS, useVoice, voiceMode } from './use-voice';
 /** Exemplos acima do campo: mostram o que dá para pedir. */
 const SUGGESTIONS = [
   'Gastei 32 reais no mercado',
+  'Dentista amanhã às 15h',
+  'Me lembra de pagar o IPVA sexta',
   'Almoço de 45 no crédito',
+  'Reunião com a Ana segunda às 10h',
   'Recebi o salário de 5 mil',
   'Comprei um fone de 600 em 3x',
-  'Guardei 200 na poupança',
 ];
 
 const clock = (seconds: number) =>
@@ -125,8 +127,8 @@ export function AssistantPage() {
             <Sparkles className='size-8' strokeWidth={1.75} />
           </div>
           <p className='text-body max-w-xs'>
-            Conte o que gastou ou recebeu, do jeito que falaria. Eu monto o lançamento e, quando
-            tenho certeza, já salvo.
+            Conte o que gastou, o que tem marcado ou o que precisa fazer, do jeito que falaria. Eu
+            monto o lançamento, o evento ou a tarefa e, quando tenho certeza, já salvo.
           </p>
           <p className='text-footnote text-label-2 mt-2 max-w-xs'>
             Tudo que eu salvar pode ser desfeito na hora.
@@ -147,7 +149,7 @@ export function AssistantPage() {
             <div className='bg-surface text-label-2 inline-flex items-center gap-2 rounded-[18px] px-4 py-2.5'>
               <Spinner className='size-4' />
               <span className='text-subhead'>
-                {transcribe.isPending ? 'Ouvindo o áudio…' : 'Montando o lançamento…'}
+                {transcribe.isPending ? 'Ouvindo o áudio…' : 'Pensando…'}
               </span>
             </div>
           )}
@@ -221,7 +223,7 @@ export function AssistantPage() {
                 value={text}
                 maxLength={1000}
                 disabled={atLimit}
-                placeholder={atLimit ? 'Limite do mês atingido' : 'Peça um lançamento'}
+                placeholder={atLimit ? 'Limite do mês atingido' : 'Peça algo'}
                 aria-label='Pedido'
                 enterKeyHint='send'
                 className='text-body placeholder:text-label-3 max-h-[120px] min-h-10 flex-1 resize-none bg-transparent py-[7px] outline-none'

@@ -10,8 +10,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 const KEY = ['assistant'];
-// O que o Assistente salva ou desfaz mexe nos mesmos lugares que um lançamento feito à mão.
-const FINANCE_KEYS = ['accounts', 'transactions', 'invoices', 'budgets', 'reports', 'agenda'];
+// O que o Assistente salva ou desfaz mexe nos mesmos lugares que um lançamento, evento ou tarefa
+// feito à mão.
+const FINANCE_KEYS = [
+  'accounts',
+  'transactions',
+  'invoices',
+  'budgets',
+  'reports',
+  'agenda',
+  'events',
+  'tasks',
+  'task-lists',
+];
 
 function useInvalidateFinance() {
   const client = useQueryClient();
