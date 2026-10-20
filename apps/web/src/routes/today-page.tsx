@@ -488,6 +488,7 @@ export function TodayPage() {
   return (
     <Page
       title='Hoje'
+      barTitle={false}
       eyebrow={longDay(today)}
       actions={
         <BarButton label='Adicionar' onClick={() => setMenu(true)}>
