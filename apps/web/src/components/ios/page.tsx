@@ -10,6 +10,8 @@ interface PageProps {
   actions?: ReactNode;
   /** Botão do canto esquerdo (voltar). */
   leading?: ReactNode;
+  /** Mostra o título pequeno no centro da barra depois de rolar (padrão). */
+  barTitle?: boolean;
   /** Conteúdo preso logo abaixo da barra (segmentos, busca). */
   accessory?: ReactNode;
   children: ReactNode;
@@ -26,6 +28,7 @@ export function Page({
   actions,
   leading,
   accessory,
+  barTitle = true,
   children,
   className,
 }: PageProps) {
@@ -46,18 +49,18 @@ export function Page({
     <div className={cn('min-h-full', className)}>
       <div
         className={cn(
-          'pt-safe sticky top-0 z-30 transition-[background-color,box-shadow] duration-200',
-          compact ? 'material hairline-b' : 'bg-background'
+          'pt-safe sticky top-0 z-30 pb-4 transition-[background-color,box-shadow] duration-200',
+          compact && accessory ? 'bg-background hairline-b' : 'top-scrim'
         )}
       >
-        <div className='mx-auto grid h-11 max-w-3xl grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8'>
+        <div className='mx-auto grid h-12 max-w-3xl grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8'>
           <div className='flex min-w-0 items-center justify-start'>{leading}</div>
           <div
             className={cn(
               'text-headline truncate transition-opacity duration-200',
-              compact ? 'opacity-100' : 'opacity-0'
+              compact && barTitle ? 'opacity-100' : 'opacity-0'
             )}
-            aria-hidden={!compact}
+            aria-hidden={!compact || !barTitle}
           >
             {title}
           </div>
@@ -68,8 +71,8 @@ export function Page({
         )}
       </div>
 
-      <div className='mx-auto max-w-3xl px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
-        <header className='pt-1 pb-3'>
+      <div className='mx-auto max-w-3xl px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
+        <header className='-mt-3 pt-1 pb-3'>
           {eyebrow && (
             <div className='text-footnote text-tint font-semibold uppercase'>{eyebrow}</div>
           )}
@@ -96,7 +99,7 @@ export function BarButton({
       aria-label={label}
       title={label}
       className={cn(
-        'text-tint inline-flex size-9 items-center justify-center rounded-full transition-opacity active:opacity-40 [&_svg]:size-[22px]',
+        'text-tint bg-bar bar-shadow inline-flex size-10 items-center justify-center rounded-full transition-opacity active:opacity-40 [&_svg]:size-[20px]',
         className
       )}
       {...props}
