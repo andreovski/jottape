@@ -110,3 +110,30 @@ pg_dump "<DATABASE_PUBLIC_URL>" > jottape.sql
 
 Ajustes › Exportar dados também baixa tudo em JSON e os lançamentos em CSV (abre no Excel e no
 Numbers).
+
+## 6. Domínio próprio e editor verificado da Microsoft
+
+O selo de "editor verificado" tira o aviso de app não verificado na conexão com a Microsoft. Exige
+um domínio próprio, uma conta de trabalho nesse domínio e uma empresa (CNPJ; MEI serve) no
+Microsoft AI Cloud Partner Program. Não tem custo além do domínio.
+
+1. **Domínio no Railway.** Em jottape-web › Settings › Networking › Custom Domain, adicione o
+   domínio e crie no DNS o CNAME (e o TXT de verificação) que o Railway mostrar. Depois troque
+   `APP_URL` e `FRONTEND_URL` da API em `.railway/railway.ts` para `https://<domínio>` e aplique.
+2. **Endereços de retorno.** Acrescente `https://<domínio>/api/google/callback` no cliente OAuth
+   do Google (e o domínio em "Domínios autorizados" da tela de consentimento) e
+   `https://<domínio>/api/microsoft/callback` em Autenticação no registro do app da Microsoft.
+   Mantenha os do Railway até tudo funcionar no domínio novo.
+3. **Domínio no diretório do Azure.** Em Entra › Nomes de domínio personalizados, adicione o
+   domínio, crie o TXT pedido no DNS e verifique. Crie um usuário de trabalho nele (ex.:
+   `andre@<domínio>`) com papel de Administrador de Aplicativos.
+4. **Partner Program.** Em [partner.microsoft.com](https://partner.microsoft.com/), entre com esse
+   usuário de trabalho e cadastre a empresa (razão social, CNPJ, endereço e e-mail no domínio). A
+   Microsoft confere os dados em alguns dias e mostra o **Partner ID** (antigo MPN ID).
+5. **Editor verificado.** No registro do app, em Identidade visual e propriedades: "Domínio do
+   editor" = o domínio (ele confere `https://<domínio>/.well-known/microsoft-identity-association.json`,
+   que o app já serve com o ID do aplicativo) e, em "Editor verificado", informe o Partner ID. Feito
+   com o usuário de trabalho, que precisa de autenticação em dois fatores.
+
+Se o ID do aplicativo da Microsoft mudar, atualize
+`apps/web/public/.well-known/microsoft-identity-association.json`.
