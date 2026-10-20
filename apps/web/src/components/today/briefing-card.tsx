@@ -221,7 +221,7 @@ function BriefingStory({
   onClose: (href?: string) => void;
 }) {
   const today = todayKey();
-  const moments = groupMoments(data.items);
+  const moments = groupMoments(data.items, data.autoOrder);
   const scroller = useRef<HTMLDivElement>(null);
   const progress = useRef<HTMLDivElement>(null);
 
@@ -264,8 +264,10 @@ function BriefingStory({
             Seu briefing
           </Dialog.Title>
           <Dialog.Description className='text-callout mt-2 text-white/80'>
-            {data.items.length === 1 ? '1 destaque' : `${data.items.length} destaques`}, do que
-            passou ao que vem pela frente.
+            {data.items.length === 1 ? '1 destaque' : `${data.items.length} destaques`},{' '}
+            {data.autoOrder
+              ? 'do que passou ao que vem pela frente.'
+              : 'na ordem que você escolheu.'}
           </Dialog.Description>
           {data.sky && (
             <div className='mt-5 flex items-center gap-3'>
@@ -286,10 +288,10 @@ function BriefingStory({
             style={{ transform: 'scaleY(0.04)' }}
           />
 
-          {moments.map((moment) => {
+          {moments.map((moment, momentIndex) => {
             const label = momentLabels(moment.key, today);
             return (
-              <section key={moment.key} className='mb-9'>
+              <section key={`${moment.key}-${momentIndex}`} className='mb-9'>
                 <Reveal className='relative mb-4 pl-14'>
                   <span className='absolute top-[22px] left-[21px] size-[14px] rounded-full border-[3px] border-white bg-white/30' />
                   <div className='text-caption font-semibold tracking-wider text-white/65 uppercase'>

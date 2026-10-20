@@ -92,22 +92,33 @@ const MOMENT_OF: Record<BriefingPluginId, MomentKey> = {
   quote: 'fim',
 };
 
-const MOMENT_ORDER: MomentKey[] = ['ontem', 'agora', 'hoje', 'semana', 'mes', 'adiante', 'fim'];
-
 export interface Moment {
   key: MomentKey;
   items: BriefingItem[];
 }
 
+const MOMENT_ORDER: MomentKey[] = ['ontem', 'agora', 'hoje', 'semana', 'mes', 'adiante', 'fim'];
+
 /**
- * Agrupa as frases por momento, do passado para o futuro. Dentro de cada momento vale a ordem
- * escolhida em Ajustes (a mesma em que a API manda).
+ * Agrupa as frases por momento. Com `auto`, do passado para o futuro, e dentro de cada momento
+ * vale a ordem de Ajustes. Sem `auto`, vale a ordem de Ajustes inteira: trechos seguidos do mesmo
+ * momento ficam juntos e o título volta quando a ordem volta a um momento já mostrado.
  */
-export function groupMoments(items: BriefingItem[]): Moment[] {
-  return MOMENT_ORDER.map((key) => ({
-    key,
-    items: items.filter((item) => MOMENT_OF[item.plugin] === key),
-  })).filter((moment) => moment.items.length > 0);
+export function groupMoments(items: BriefingItem[], auto = true): Moment[] {
+  if (auto) {
+    return MOMENT_ORDER.map((key) => ({
+      key,
+      items: items.filter((item) => MOMENT_OF[item.plugin] === key),
+    })).filter((moment) => moment.items.length > 0);
+  }
+  const moments: Moment[] = [];
+  for (const item of items) {
+    const key = MOMENT_OF[item.plugin];
+    const last = moments[moments.length - 1];
+    if (last?.key === key) last.items.push(item);
+    else moments.push({ key, items: [item] });
+  }
+  return moments;
 }
 
 /** Frase do card fechado: o resumo do dia, se estiver ligado; senão a primeira. */

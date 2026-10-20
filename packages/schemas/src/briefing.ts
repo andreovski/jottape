@@ -88,6 +88,8 @@ export const briefingSettingsSchema = z.object({
   sign: zodiacSignSchema.nullable(),
   city: briefingCitySchema.nullable(),
   currencies: z.array(briefingCurrencySchema).max(briefingCurrencies.length),
+  /** Ligada: a linha do tempo segue os momentos do dia. Desligada: vale a ordem de `plugins`. */
+  autoOrder: z.boolean().default(true),
   /** Ações do plugin de ações, na ordem em que aparecem. */
   stocks: z.array(stockTickerSchema).max(briefingStocksMax).default([]),
 });
@@ -99,6 +101,7 @@ export function defaultBriefingSettings(): BriefingSettings {
     sign: null,
     city: null,
     currencies: ['USD', 'EUR'],
+    autoOrder: true,
     stocks: [],
   };
 }
@@ -133,6 +136,7 @@ export function normalizeBriefingSettings(saved: unknown): BriefingSettings {
     sign: sign.success ? sign.data : null,
     city: city.success ? city.data : null,
     currencies: currencies.success ? [...new Set(currencies.data)] : fallback.currencies,
+    autoOrder: typeof raw.autoOrder === 'boolean' ? raw.autoOrder : true,
     stocks: stocks.success ? [...new Set(stocks.data)].slice(0, briefingStocksMax) : [],
   };
 }
@@ -168,6 +172,8 @@ export const briefingResponseSchema = z.object({
   items: z.array(briefingItemSchema),
   /** Só com o plugin de clima ligado e respondendo. */
   sky: briefingSkySchema.nullable(),
+  /** Como a timeline agrupa: pelos momentos do dia ou na ordem do usuário. */
+  autoOrder: z.boolean().default(true),
 });
 export type BriefingResponse = z.infer<typeof briefingResponseSchema>;
 
