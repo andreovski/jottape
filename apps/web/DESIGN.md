@@ -13,7 +13,8 @@ de template: nada de cartões com borda cinza, sombras genéricas ou gradientes 
   aparências.
 - **Tipografia do iOS**: fonte do sistema (SF no Apple), tamanhos `text-large-title`, `text-title-1/2/3`,
   `text-headline`, `text-body` (17 px), `text-callout`, `text-subhead`, `text-footnote`,
-  `text-caption`. Rótulos secundários em `text-label-2`, terciários em `text-label-3`.
+  `text-caption`. Rótulos secundários em `text-label-2`, terciários em `text-label-3`. Exceção: o
+  briefing (cartão e linha do tempo) usa Figtree, pela classe `font-briefing`.
 - **Números**: valores em `font-rounded numeric` (SF Rounded com algarismos tabulares), como Wallet e
   Saúde. Dinheiro sempre por `money()` de `@/lib/format`.
 - **Separadores finos** de 0,5 px (`hairline-b`, `hairline-t`) que começam depois do ícone da linha.
