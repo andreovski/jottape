@@ -25,7 +25,7 @@ import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
 import { BriefingCard } from '@/components/today/briefing-card';
 import { useAgenda } from '@/features/agenda';
-import { useMe } from '@/features/auth';
+import { useCurrentUser } from '@/features/auth';
 import { useNextEvent } from '@/features/briefing';
 import { useAccounts, useCategories, useForecast, useUpdateTransaction } from '@/features/finance';
 import { useCompleteTask, useTasks } from '@/features/tasks';
@@ -439,7 +439,7 @@ function BillRow({
 }
 
 export function TodayPage() {
-  const me = useMe().data!;
+  const me = useCurrentUser();
   const today = todayKey();
   const range = useMemo(() => {
     return {

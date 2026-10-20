@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { Spinner } from '@/components/ios/controls';
-import { useMe } from '@/features/auth';
+import { CurrentUserContext, useMe } from '@/features/auth';
 import { setAppTimeZone } from '@/lib/format';
 import { LoginPage } from '@/routes/login-page';
 
@@ -30,5 +30,5 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (!me.data) return <LoginPage />;
 
   setAppTimeZone(me.data.timezone);
-  return <>{children}</>;
+  return <CurrentUserContext value={me.data}>{children}</CurrentUserContext>;
 }
