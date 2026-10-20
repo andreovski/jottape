@@ -1,5 +1,11 @@
 import { addDays } from '@jottape/finance-engine';
-import type { BriefingCity, BriefingCurrency, StockQuote, ZodiacSign } from '@jottape/schemas';
+import type {
+  BriefingCity,
+  BriefingCurrency,
+  StockPeriod,
+  StockQuote,
+  ZodiacSign,
+} from '@jottape/schemas';
 import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
@@ -136,26 +142,41 @@ export async function tide(
 /** Quatro letras e um número (PETR4, BOVA11, TAEE11F): é da B3. */
 const B3_TICKER = /^[A-Z]{4}\d{1,2}F?$/;
 
+/** Como o Yahoo chama cada período, e de quanto em quanto tempo vem um ponto. */
+const STOCK_RANGES: Record<StockPeriod, { range: string; interval: string }> = {
+  day: { range: '1d', interval: '5m' },
+  week: { range: '5d', interval: '30m' },
+  month: { range: '1mo', interval: '1d' },
+};
+
+/** Pontos de sobra só pesam na resposta: o gráfico é pequeno. */
+const MAX_POINTS = 60;
+
 /**
- * Cotação de uma ação. Vem do gráfico público do Yahoo Finance; se ele recusar, da brapi.dev,
- * que sem chave atende parte das ações da B3. `null` quando o código não existe.
+ * Cotação de uma ação no período, com a série do gráfico. Vem do gráfico público do Yahoo
+ * Finance; se ele recusar, da brapi.dev, que sem chave atende parte das ações da B3 (aí sem
+ * gráfico). `null` quando o código não existe.
  */
-export async function stockQuote(ticker: string): Promise<StockQuote | null> {
-  const result = await cached(`stock:${ticker}`, 15 * 60_000, async () => {
+export async function stockQuote(
+  ticker: string,
+  period: StockPeriod = 'day'
+): Promise<StockQuote | null> {
+  const result = await cached(`stock:${ticker}:${period}`, 15 * 60_000, async () => {
     try {
-      return { quote: await yahooQuote(ticker) };
+      return { quote: await yahooQuote(ticker, period) };
     } catch (error) {
       if (!B3_TICKER.test(ticker)) throw error;
-      return { quote: await brapiQuote(ticker) };
+      return { quote: await brapiQuote(ticker, period) };
     }
   });
   return result.quote;
 }
 
-async function yahooQuote(ticker: string): Promise<StockQuote | null> {
+async function yahooQuote(ticker: string, period: StockPeriod): Promise<StockQuote | null> {
   const symbol = B3_TICKER.test(ticker) ? `${ticker}.SA` : ticker;
+  const params = new URLSearchParams(STOCK_RANGES[period]);
   const response = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`,
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`,
     {
       signal: AbortSignal.timeout(TIMEOUT_MS),
       // Sem um navegador como agente, o Yahoo às vezes recusa.
@@ -171,7 +192,8 @@ async function yahooQuote(ticker: string): Promise<StockQuote | null> {
             meta: {
               currency?: string;
               regularMarketPrice?: number;
-              regularMarketChangePercent?: number;
+              chartPreviousClose?: number;
+              previousClose?: number;
               shortName?: string;
               longName?: string;
             };
@@ -183,51 +205,67 @@ async function yahooQuote(ticker: string): Promise<StockQuote | null> {
   const result = data.chart.result?.[0];
   const price = result?.meta.regularMarketPrice;
   if (!result || typeof price !== 'number') return null;
-  let change: number | null = null;
-  if (typeof result.meta.regularMarketChangePercent === 'number') {
-    change = result.meta.regularMarketChangePercent / 100;
-  } else {
-    const closes = (result.indicators?.quote?.[0]?.close ?? []).filter(
-      (c): c is number => typeof c === 'number'
-    );
-    if (closes.length >= 2) change = price / closes.at(-2)! - 1;
-  }
+  const closes = (result.indicators?.quote?.[0]?.close ?? []).filter(
+    (c): c is number => typeof c === 'number'
+  );
+  // O último ponto é o preço de agora, para o fim da linha bater com o número.
+  const points = thin([...closes, price], MAX_POINTS);
+  const reference =
+    period === 'day'
+      ? (result.meta.chartPreviousClose ?? result.meta.previousClose ?? null)
+      : (points[0] ?? null);
   return {
     ticker,
+    period,
     name: (result.meta.longName ?? result.meta.shortName ?? '').trim() || null,
     currency: result.meta.currency ?? 'BRL',
     price,
-    change,
+    reference,
+    change: reference ? price / reference - 1 : null,
+    points: points.length >= 2 ? points : [],
   };
 }
 
-async function brapiQuote(ticker: string): Promise<StockQuote | null> {
+/** No máximo `max` pontos, igualmente espaçados, sempre com o primeiro e o último. */
+export function thin(points: number[], max: number) {
+  if (points.length <= max) return points;
+  const step = (points.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => points[Math.round(i * step)]);
+}
+
+async function brapiQuote(ticker: string, period: StockPeriod): Promise<StockQuote | null> {
   const data = await getJson<{
     results?: {
       longName?: string;
       shortName?: string;
       currency?: string;
       regularMarketPrice?: number;
+      regularMarketPreviousClose?: number;
       regularMarketChangePercent?: number;
     }[];
   }>(`https://brapi.dev/api/quote/${encodeURIComponent(ticker)}`);
   const result = data.results?.[0];
   if (!result || typeof result.regularMarketPrice !== 'number') return null;
+  // Sem série: só dá para comparar com o fechamento de ontem.
+  const day = period === 'day';
   return {
     ticker,
+    period,
     name: result.longName ?? result.shortName ?? null,
     currency: result.currency ?? 'BRL',
     price: result.regularMarketPrice,
+    reference: day ? (result.regularMarketPreviousClose ?? null) : null,
     change:
-      typeof result.regularMarketChangePercent === 'number'
+      day && typeof result.regularMarketChangePercent === 'number'
         ? result.regularMarketChangePercent / 100
         : null,
+    points: [],
   };
 }
 
 /** As ações da lista, na ordem dela. A que falhar ou não existir fica de fora. */
-export async function stocks(tickers: string[]): Promise<StockQuote[]> {
-  const quotes = await Promise.all(tickers.map((t) => stockQuote(t).catch(() => null)));
+export async function stocks(tickers: string[], period: StockPeriod): Promise<StockQuote[]> {
+  const quotes = await Promise.all(tickers.map((t) => stockQuote(t, period).catch(() => null)));
   const found = quotes.filter((q): q is StockQuote => !!q);
   if (tickers.length > 0 && found.length === 0) throw new Error('Nenhuma cotação de ação');
   return found;

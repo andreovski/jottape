@@ -21,6 +21,7 @@ import {
   type BriefingPluginId,
   type BriefingSettings,
   briefingStocksMax,
+  stockPeriods,
   stockTickerSchema,
   zodiacSigns,
 } from '@jottape/schemas';
@@ -37,12 +38,13 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
-import { Spinner, Switch } from '@/components/ios/controls';
+import { Segmented, Spinner, Switch } from '@/components/ios/controls';
 import { SelectInput, TextInput } from '@/components/ios/fields';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { Page } from '@/components/ios/page';
 import { Sheet } from '@/components/ios/sheet';
 import { briefingCatalog } from '@/components/today/briefing-catalog';
+import { STOCK_PERIOD_LABELS } from '@/components/today/stock-chart';
 import {
   useBriefingSettings,
   useCitySearch,
@@ -474,7 +476,7 @@ export function BriefingSettingsPage() {
         footer={
           data.stocks.length === 0
             ? 'Nenhuma ação escolhida ainda.'
-            : 'Preço de até 15 minutos atrás, com a variação desde o último fechamento.'
+            : 'Preço de até 15 minutos atrás.'
         }
       >
         {data.stocks.map((ticker) => (
@@ -496,6 +498,26 @@ export function BriefingSettingsPage() {
         {data.stocks.length < briefingStocksMax && (
           <Row action title='Adicionar ação' onClick={() => setStockSheet(true)} />
         )}
+      </Section>
+
+      <Section
+        header='Gráfico das ações'
+        footer='Hoje mostra o pregão de 5 em 5 minutos, comparado ao fechamento de ontem (a linha pontilhada). 7 dias e Mês comparam com o começo do período.'
+      >
+        <Row
+          title='Período'
+          trailing={
+            <Segmented
+              value={data.stockPeriod}
+              onChange={(stockPeriod) => update({ stockPeriod })}
+              options={stockPeriods.map((value) => ({
+                value,
+                label: STOCK_PERIOD_LABELS[value],
+              }))}
+              className='w-[204px]'
+            />
+          }
+        />
       </Section>
 
       <StockSheet

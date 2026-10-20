@@ -32,6 +32,7 @@ import {
   type SkyTheme,
   skyTheme,
 } from './sky';
+import { STOCK_PERIOD_LABELS, StockList } from './stock-chart';
 
 /** Troca `{0}`, `{1}`... pelos valores formatados (ou ocultos). */
 export function fillValues(text: string, values: number[], format: (cents: number) => string) {
@@ -177,12 +178,24 @@ function TimelineItem({
       )}
     >
       <div className='text-caption mb-1 flex items-center justify-between font-semibold tracking-wide text-white/70 uppercase'>
-        {info.name}
+        <span>
+          {info.name}
+          {item.stocks?.[0] && (
+            <span className='font-medium tracking-normal normal-case'>
+              {' · '}
+              {STOCK_PERIOD_LABELS[item.stocks[0].period]}
+            </span>
+          )}
+        </span>
         {item.href && <ChevronRight className='size-4 text-white/50' />}
       </div>
-      <p className='text-[19px] leading-[1.35] font-medium text-white'>
-        <Filled item={item} format={format} />
-      </p>
+      {item.stocks?.length ? (
+        <StockList stocks={item.stocks} />
+      ) : (
+        <p className='text-[19px] leading-[1.35] font-medium text-white'>
+          <Filled item={item} format={format} />
+        </p>
+      )}
     </div>
   );
   const href = item.href;

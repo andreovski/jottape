@@ -339,7 +339,8 @@ const plugins: Record<BriefingPluginId, Plugin> = {
     if (ctx.settings.stocks.length === 0) {
       return line('Escolha as ações que quer acompanhar.', { href: SETTINGS_HREF });
     }
-    return stocksLine(await external.stocks(ctx.settings.stocks));
+    const period = ctx.settings.stockPeriod;
+    return stocksLine(await external.stocks(ctx.settings.stocks, period), period);
   },
 
   async holidays(ctx) {

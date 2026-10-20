@@ -1,5 +1,11 @@
 import { addDays, diffInDays, wallTimeToInstant } from '@jottape/finance-engine';
-import type { BriefingItem, BriefingPluginId, StockQuote, ZodiacSign } from '@jottape/schemas';
+import type {
+  BriefingItem,
+  BriefingPluginId,
+  StockPeriod,
+  StockQuote,
+  ZodiacSign,
+} from '@jottape/schemas';
 
 // Frases do briefing. Funções puras: recebem os dados já lidos e devolvem o texto.
 
@@ -397,13 +403,18 @@ export function currencyLine(rates: Rate[]): Line | null {
 
 const currencySymbols: Record<string, string> = { BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' };
 
-export function stocksLine(quotes: StockQuote[]): Line | null {
+const periodSuffix: Record<StockPeriod, string> = { day: '', week: ' em 7 dias', month: ' no mês' };
+
+/** A frase serve de resumo e de texto alternativo; o app desenha os gráficos com `stocks`. */
+export function stocksLine(quotes: StockQuote[], period: StockPeriod = 'day'): Line | null {
   if (quotes.length === 0) return null;
   const parts = quotes.map((q) => {
     const symbol = currencySymbols[q.currency] ?? q.currency;
-    return `${q.ticker} ${symbol} ${decimal(q.price, 2)}${changeText(q.change)}`;
+    const change =
+      q.change === null ? '' : changeText(q.change).replace(/\)$/, `${periodSuffix[period]})`);
+    return `${q.ticker} ${symbol} ${decimal(q.price, 2)}${change}`;
   });
-  return line(`${parts.join(', ')}.`);
+  return line(`${parts.join(', ')}.`, { stocks: quotes });
 }
 
 // ---------------------------------------------------------------- maré
