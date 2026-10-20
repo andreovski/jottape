@@ -47,6 +47,9 @@ model User {
   invoices          CreditCardInvoice[]
   budgets           Budget[]
   briefingSettings  BriefingSettings?
+  assistantMessages AssistantMessage[]
+  assistantCards    AssistantCard[]
+  assistantUsage    AssistantUsage[]
 
   @@map("users")
 }
@@ -490,4 +493,79 @@ model ExternalCache {
   expiresAt DateTime @map("expires_at")
 
   @@map("external_cache")
+}
+
+// ---------------------------------------------------------------- assistente
+
+enum AssistantRole {
+  USER
+  ASSISTANT
+}
+
+/// Conversa com o Assistente. Some depois de 30 dias (job diário) ou com "Nova conversa".
+model AssistantMessage {
+  id        String        @id @default(uuid())
+  userId    String        @map("user_id")
+  role      AssistantRole
+  text      String
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards AssistantCard[]
+
+  @@index([userId, createdAt])
+  @@map("assistant_messages")
+}
+
+enum AssistantCardStatus {
+  DRAFT
+  SAVED
+  UNDONE
+  DISCARDED
+}
+
+/// Lançamento proposto pelo Assistente: rascunho até ser salvo (sozinho, com score alto, ou pelo
+/// usuário). `draft` segue o corpo de POST /transactions; `transactionIds` são os criados.
+model AssistantCard {
+  id             String              @id @default(uuid())
+  userId         String              @map("user_id")
+  messageId      String              @map("message_id")
+  status         AssistantCardStatus
+  score          Float
+  draft          Json
+  missing        String[]
+  uncertain      String[]
+  transactionIds String[]            @map("transaction_ids")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message AssistantMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("assistant_cards")
+}
+
+enum AssistantUsageKind {
+  MESSAGE
+  TRANSCRIPTION
+}
+
+/// Uma linha por comando ou transcrição: conta o limite do mês e o custo. Sem o texto.
+model AssistantUsage {
+  id                String             @id @default(uuid())
+  userId            String             @map("user_id")
+  kind              AssistantUsageKind
+  audioSeconds      Float?             @map("audio_seconds")
+  jevInputTokens    Int                @default(0) @map("jev_input_tokens")
+  modelInputTokens  Int                @default(0) @map("model_input_tokens")
+  modelOutputTokens Int                @default(0) @map("model_output_tokens")
+  /// Custo estimado em milionésimos de dólar.
+  costMicros        Int                @default(0) @map("cost_micros")
+  createdAt         DateTime           @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+  @@map("assistant_usage")
 }
