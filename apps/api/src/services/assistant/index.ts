@@ -23,6 +23,7 @@ import { prisma } from '@/lib/prisma';
 import { userTimezone } from '@/services/finance';
 import { toTransaction } from '@/services/serializers';
 
+import { answerQuestion } from './answer';
 import {
   type Created,
   createFromDraft,
@@ -47,13 +48,15 @@ import {
   resolveTask,
   type TaskListOption,
 } from './resolve';
-import { type CardOutcome, READ_FAILED, replyText } from './text';
+import { type CardOutcome, extractMoney, READ_FAILED, replyText, restoreMoney } from './text';
 import { transcribe } from './transcribe';
 
 /** Itens por pedido: o resto é ignorado (o Haiku pode exagerar). */
 const MAX_ITEMS = 5;
 /** Mensagens que voltam com a tela. */
 const HISTORY = 60;
+/** Mensagens anteriores que vão junto com uma pergunta ("e anteontem?"). */
+const QUESTION_HISTORY = 6;
 /** A conversa some depois disto (job diário). */
 export const RETENTION_DAYS = 30;
 
@@ -143,6 +146,7 @@ async function toMessages(userId: string, messages: MessageWithCards[]) {
         id: message.id,
         role: message.role,
         text: message.text,
+        values: message.values,
         createdAt: message.createdAt.toISOString(),
         cards: await Promise.all(
           [...message.cards]
@@ -297,6 +301,35 @@ export async function sendMessage(
     }
   }
 
+  // Perguntas: o Haiku consulta os dados e responde (dinheiro como {n} + values).
+  let answer: { text: string; values: number[] } | null = null;
+  if (otherIntents.includes('question')) {
+    try {
+      const previous = await prisma.assistantMessage.findMany({
+        where: { userId, createdAt: { lt: userMessage.createdAt } },
+        orderBy: { createdAt: 'desc' },
+        take: QUESTION_HISTORY,
+        select: { role: true, text: true, values: true },
+      });
+      const result = await answerQuestion(text, {
+        userId,
+        timezone,
+        today,
+        accounts,
+        categories,
+        lists,
+        history: previous
+          .reverse()
+          .map((m) => ({ role: m.role, text: restoreMoney(m.text, m.values) })),
+      });
+      cost.modelInput += result.inputTokens;
+      cost.modelOutput += result.outputTokens;
+      if (result.text) answer = extractMoney(result.text);
+    } catch (error) {
+      log.warn(error, 'assistente: resposta da pergunta falhou');
+    }
+  }
+
   const isSaved = (created: Created) =>
     created.transactionIds.length > 0 || Boolean(created.eventId || created.taskId);
   const outcomes: CardOutcome[] = planned.map((p) => ({
@@ -304,13 +337,14 @@ export async function sendMessage(
     saved: isSaved(p.created),
     missing: p.resolution.missing,
   }));
-  const reply = items ? replyText(outcomes, otherIntents) : READ_FAILED;
+  const reply = items ? replyText(outcomes, otherIntents, answer?.text) : READ_FAILED;
 
   const assistantMessage = await prisma.assistantMessage.create({
     data: {
       userId,
       role: 'ASSISTANT',
       text: reply,
+      values: answer?.values ?? [],
       // Um milissegundo depois do pedido, para a ordem não depender do relógio do banco.
       createdAt: new Date(userMessage.createdAt.getTime() + 1),
       cards: {

@@ -105,7 +105,9 @@ export type AssistantCardResponse = z.infer<typeof assistantCardResponseSchema>;
 export const assistantMessageResponseSchema = z.object({
   id: z.string(),
   role: z.enum(['USER', 'ASSISTANT']),
+  /** `{0}`, `{1}`... marcam valores em dinheiro (em `values`, centavos), para o app poder ocultar. */
   text: z.string(),
+  values: z.array(z.number().int()),
   cards: z.array(assistantCardResponseSchema),
   createdAt: isoDateTimeSchema,
 });

@@ -9,14 +9,17 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
+import { answerQuestion } from '@/services/assistant/answer';
 import { extractItems } from '@/services/assistant/haiku';
 import { askJev } from '@/services/assistant/jev';
+import { QUERY_HANDLERS } from '@/services/assistant/queries';
 import type { ExtractedItem } from '@/services/assistant/resolve';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
 
 // O Haiku e o Jev são de fora: o teste decide o que eles "responderam".
 vi.mock('@/services/assistant/haiku', () => ({ extractItems: vi.fn() }));
 vi.mock('@/services/assistant/jev', () => ({ askJev: vi.fn() }));
+vi.mock('@/services/assistant/answer', () => ({ answerQuestion: vi.fn() }));
 
 // 20/10/2026, 17:00 em São Paulo.
 const NOW = new Date('2026-10-20T20:00:00Z');
@@ -64,6 +67,7 @@ describe('assistente', () => {
     vi.stubEnv('ASSISTANT_EMAILS', 'andre@example.com');
     vi.mocked(extractItems).mockReset();
     vi.mocked(askJev).mockReset();
+    vi.mocked(answerQuestion).mockReset();
     await resetDatabase();
     const login = await loginAsOwner(app);
     cookieHeader = login.cookie;
@@ -193,12 +197,20 @@ describe('assistente', () => {
       outputTokens: 120,
     });
     vi.mocked(askJev).mockResolvedValue(null);
+    vi.mocked(answerQuestion).mockResolvedValue({
+      text: 'Neste mês, [[3200]].',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
 
     const reply = await send('gastei 32 no mercado no nubank e quanto gastei no mês?');
     const cards = reply.messages[1].cards;
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ status: 'DRAFT', score: 0.8, missing: [] });
-    expect(reply.messages[1].text).toMatch(/^Confira e salve\. Perguntas sobre/);
+    expect(reply.messages[1]).toMatchObject({
+      text: 'Confira e salve. Neste mês, {0}.',
+      values: [3200],
+    });
 
     const discarded = (await api.post(`/assistant/cards/${cards[0].id}/discard`)).json();
     expect(discarded.status).toBe('DISCARDED');
@@ -389,5 +401,131 @@ describe('assistente', () => {
     ).json() as AssistantCardResponse;
     expect(undone.task).toBeNull();
     expect(await prisma.task.count({ where: { deletedAt: null } })).toBe(0);
+  });
+
+  it('responde pergunta consultando os lançamentos, com os valores à parte', async () => {
+    const alimentacao = await prisma.category.findFirstOrThrow({ where: { name: 'Alimentação' } });
+    const sub = await prisma.category.create({
+      data: {
+        userId: alimentacao.userId,
+        name: 'Restaurantes',
+        kind: 'EXPENSE',
+        parentId: alimentacao.id,
+      },
+    });
+    const post = (body: object) =>
+      api.post('/transactions', { kind: 'EXPENSE', accountId: nubank.id, ...body });
+    await post({ amountCents: 4000, date: '2026-10-19', description: 'iFood', categoryId: sub.id });
+    await post({
+      amountCents: 1500,
+      date: '2026-10-19',
+      description: 'Padaria',
+      categoryId: alimentacao.id,
+    });
+    await post({ amountCents: 9900, date: '2026-10-18', description: 'Pizza', categoryId: sub.id });
+    await post({ amountCents: 2500, date: '2026-10-19', description: 'Uber' });
+
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [
+        item({ intent: 'question', excerpt: 'quanto gastei ontem com comida', amountCents: null }),
+      ],
+      inputTokens: 700,
+      outputTokens: 40,
+    });
+    vi.mocked(answerQuestion).mockImplementation(async (_text, ctx) => {
+      const result = (await QUERY_HANDLERS.lancamentos(ctx, {
+        de: '2026-10-19',
+        ate: '2026-10-19',
+        tipo: 'despesa',
+        categorias: ['alimentacao'],
+        contas: null,
+        busca: null,
+      })) as { despesas_realizadas_centavos: number; quantidade: number };
+      expect(result.quantidade).toBe(2);
+      return {
+        text: `Ontem você gastou R$ [[${result.despesas_realizadas_centavos}]] com comida.`,
+        inputTokens: 3000,
+        outputTokens: 120,
+      };
+    });
+
+    const reply = await send('quanto gastei ontem com comida?');
+    expect(reply.messages[1]).toMatchObject({
+      text: 'Ontem você gastou {0} com comida.',
+      values: [5500],
+      cards: [],
+    });
+    const usage = await prisma.assistantUsage.findFirstOrThrow();
+    expect(usage.modelInputTokens).toBe(3700);
+
+    // A próxima pergunta leva a conversa, com os valores como o modelo escreveu.
+    vi.mocked(answerQuestion).mockResolvedValue({
+      text: 'Anteontem, [[9900]].',
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    await send('e anteontem?');
+    const history = vi.mocked(answerQuestion).mock.calls[1][1].history;
+    expect(history.at(-1)).toEqual({
+      role: 'ASSISTANT',
+      text: 'Ontem você gastou [[5500]] com comida.',
+    });
+
+    // Nome de categoria que não existe volta como erro para o modelo tentar de novo.
+    const ctx = vi.mocked(answerQuestion).mock.calls[0][1];
+    const wrong = (await QUERY_HANDLERS.lancamentos(ctx, {
+      de: '2026-10-19',
+      ate: '2026-10-19',
+      tipo: 'despesa',
+      categorias: ['Pets'],
+      contas: null,
+      busca: null,
+    })) as { erro?: string };
+    expect(wrong.erro).toBeTruthy();
+
+    // As outras consultas respondem com os dados do usuário.
+    await api.post('/events', {
+      title: 'Dentista',
+      startAt: '2026-10-21T18:00:00.000Z',
+      endAt: '2026-10-21T19:00:00.000Z',
+      allDay: false,
+    });
+    await api.post('/tasks', {
+      title: 'Pagar o IPVA',
+      dueAt: '2026-10-20T03:00:00.000Z',
+      hasTime: false,
+    });
+    expect(await QUERY_HANDLERS.agenda(ctx, { de: '2026-10-21', ate: '2026-10-21' })).toMatchObject(
+      {
+        eventos: [{ titulo: 'Dentista', data: '2026-10-21', inicio: '15:00', fim: '16:00' }],
+      }
+    );
+    expect(
+      await QUERY_HANDLERS.tarefas(ctx, { visao: 'hoje', lista: null, busca: null })
+    ).toMatchObject({
+      tarefas: [{ titulo: 'Pagar o IPVA', prazo: '2026-10-20' }],
+    });
+    expect(await QUERY_HANDLERS.contas(ctx, {})).toMatchObject({
+      saldo_total_centavos: -(4000 + 1500 + 9900 + 2500),
+    });
+    expect(await QUERY_HANDLERS.orcamentos(ctx, { mes: '2026-10' })).toEqual({
+      mes: '2026-10',
+      orcamentos: [],
+    });
+    expect(await QUERY_HANDLERS.previsao_saldo(ctx, { dias: 10 })).toMatchObject({
+      primeiro_dia_negativo: '2026-10-20',
+    });
+  });
+
+  it('pergunta que falhou responde que não conseguiu', async () => {
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [item({ intent: 'question', amountCents: null })],
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    vi.mocked(answerQuestion).mockRejectedValue(new Error('fora do ar'));
+    const reply = await send('quanto tenho no nubank?');
+    expect(reply.messages[1].text).toMatch(/^Não consegui responder/);
+    expect(reply.messages[1].values).toEqual([]);
   });
 });

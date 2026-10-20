@@ -2,14 +2,14 @@ import type { AssistantDraft, AssistantMissing } from '@jottape/schemas';
 
 import { describeMissing, type Intent } from './resolve';
 
-// Frases da resposta do Assistente. Sem valores: o app pode estar com os valores ocultos, e o
-// cartão abaixo da frase já mostra o que foi criado.
+// Frases da resposta do Assistente. As frases dos cartões não têm valores (o cartão já mostra o
+// que foi criado); a resposta de uma pergunta tem, como `{n}` + `values`, porque o app pode estar
+// com os valores ocultos.
 
 export const EXAMPLE_HINT =
   'Não entendi o pedido. Tente algo como “gastei 32 reais no mercado”, “dentista amanhã às 15h” ou “me lembra de pagar o IPVA sexta”.';
 
-export const COMING_SOON =
-  'Perguntas sobre gastos e agenda chegam numa próxima versão. Por enquanto eu crio lançamentos, eventos e tarefas.';
+export const ANSWER_FAILED = 'Não consegui responder à pergunta agora. Tente de novo em instantes.';
 
 export const READ_FAILED = 'Não consegui ler o pedido agora. Tente de novo em instantes.';
 
@@ -25,7 +25,36 @@ const SAVED_ONE: Record<AssistantDraft['type'], string> = {
   task: 'Pronto, anotei nas tarefas.',
 };
 
-export function replyText(cards: CardOutcome[], otherIntents: Intent[]): string {
+/**
+ * A resposta de uma pergunta escreve dinheiro como [[centavos]]. Vira `{0}`, `{1}`... com os
+ * valores à parte, como no briefing, para o app poder ocultar.
+ */
+export function extractMoney(text: string): { text: string; values: number[] } {
+  const values: number[] = [];
+  const replaced = text
+    // Chave que o modelo escreveu não pode virar marcador.
+    .replace(/[{}]/g, (brace) => (brace === '{' ? '(' : ')'))
+    .replace(/(?:R\$\s*)?\[\[\s*(-?\d+)\s*\]\]/g, (_, cents: string) => {
+      values.push(Number(cents));
+      return `{${values.length - 1}}`;
+    });
+  return { text: replaced, values };
+}
+
+/** O contrário: o texto como o modelo escreveu, para o histórico que volta para ele. */
+export function restoreMoney(text: string, values: number[]): string {
+  return text.replace(/\{(\d+)\}/g, (_, i: string) => {
+    const cents = values[Number(i)];
+    return cents === undefined ? '' : `[[${cents}]]`;
+  });
+}
+
+export function replyText(
+  cards: CardOutcome[],
+  otherIntents: Intent[],
+  /** Resposta das perguntas (já com `{n}`), ou null se falhou. */
+  answer: string | null = null
+): string {
   const parts: string[] = [];
   const saved = cards.filter((c) => c.saved);
   const drafts = cards.filter((c) => !c.saved);
@@ -50,7 +79,7 @@ export function replyText(cards: CardOutcome[], otherIntents: Intent[]): string 
     );
   }
 
-  if (otherIntents.includes('question')) parts.push(COMING_SOON);
+  if (otherIntents.includes('question')) parts.push(answer || ANSWER_FAILED);
   if (parts.length === 0) return EXAMPLE_HINT;
   return parts.join(' ');
 }

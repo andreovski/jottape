@@ -1,6 +1,6 @@
 import type { AssistantMessageResponse } from '@jottape/schemas';
 import { ArrowUp, Mic, Sparkles, SquarePen, X } from 'lucide-react';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
 import { EmptyState, Skeleton, Spinner } from '@/components/ios/controls';
 import { BarButton, Page } from '@/components/ios/page';
@@ -11,7 +11,9 @@ import {
   useSendAssistantMessage,
   useTranscribe,
 } from '@/features/assistant';
+import { fillValues } from '@/components/today/briefing-card';
 import { useAccounts, useCategories } from '@/features/finance';
+import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
 
 import { AssistantCard } from './assistant-card';
@@ -20,8 +22,10 @@ import { MAX_SECONDS, useVoice, voiceMode } from './use-voice';
 /** Exemplos acima do campo: mostram o que dá para pedir. */
 const SUGGESTIONS = [
   'Gastei 32 reais no mercado',
+  'Quanto gastei ontem com comida?',
   'Dentista amanhã às 15h',
   'Me lembra de pagar o IPVA sexta',
+  'O que tenho amanhã?',
   'Almoço de 45 no crédito',
   'Reunião com a Ana segunda às 10h',
   'Recebi o salário de 5 mil',
@@ -128,7 +132,8 @@ export function AssistantPage() {
           </div>
           <p className='text-body max-w-xs'>
             Conte o que gastou, o que tem marcado ou o que precisa fazer, do jeito que falaria. Eu
-            monto o lançamento, o evento ou a tarefa e, quando tenho certeza, já salvo.
+            monto o lançamento, o evento ou a tarefa e, quando tenho certeza, já salvo. Também
+            respondo sobre seus gastos, saldos, agenda e tarefas.
           </p>
           <p className='text-footnote text-label-2 mt-2 max-w-xs'>
             Tudo que eu salvar pode ser desfeito na hora.
@@ -303,10 +308,25 @@ function Message({
   if (message.role === 'USER') return <Bubble mine>{message.text}</Bubble>;
   return (
     <div className='space-y-2'>
-      <Bubble>{message.text}</Bubble>
+      <Bubble>
+        <AnswerText text={message.text} values={message.values} />
+      </Bubble>
       {message.cards.map((card) => (
         <AssistantCard key={card.id} card={card} accounts={accounts} categories={categories} />
       ))}
     </div>
+  );
+}
+
+/** Texto da resposta com os valores no lugar (ou ocultos, como no Hoje). */
+function AnswerText({ text, values }: { text: string; values: number[] }) {
+  const { format } = useHiddenMoney();
+  if (values.length === 0) return <>{text}</>;
+  return (
+    <>
+      {fillValues(text, values, format).map((part, index) => (
+        <Fragment key={index}>{part}</Fragment>
+      ))}
+    </>
   );
 }
