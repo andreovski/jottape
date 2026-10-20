@@ -10,8 +10,6 @@ interface PageProps {
   actions?: ReactNode;
   /** Botão do canto esquerdo (voltar). */
   leading?: ReactNode;
-  /** Mostra o título pequeno no centro da barra depois de rolar (padrão). */
-  barTitle?: boolean;
   /** Conteúdo preso logo abaixo da barra (segmentos, busca). */
   accessory?: ReactNode;
   children: ReactNode;
@@ -28,7 +26,6 @@ export function Page({
   actions,
   leading,
   accessory,
-  barTitle = true,
   children,
   className,
 }: PageProps) {
@@ -47,27 +44,37 @@ export function Page({
 
   return (
     <div className={cn('min-h-full', className)}>
-      <div
-        className={cn(
-          'pt-safe sticky top-0 z-30 pb-4 transition-[background-color,box-shadow] duration-200',
-          compact && accessory ? 'bg-background hairline-b' : 'top-scrim'
-        )}
-      >
-        <div className='mx-auto grid h-12 max-w-3xl grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8'>
-          <div className='flex min-w-0 items-center justify-start'>{leading}</div>
+      <div className='pt-safe sticky top-0 z-30 pb-4'>
+        {/* Faixa do topo: no início da página só os botões; ao rolar, a barra sólida aparece. */}
+        <div
+          aria-hidden
+          className={cn(
+            'top-scrim absolute inset-0 transition-opacity duration-200',
+            compact && 'opacity-0'
+          )}
+        />
+        <div
+          aria-hidden
+          className={cn(
+            'bg-bar hairline-b absolute inset-x-0 top-0 bottom-4 transition-opacity duration-200',
+            !compact && 'opacity-0'
+          )}
+        />
+        <div className='relative mx-auto flex h-12 max-w-3xl items-center gap-2 px-4 lg:px-8'>
+          {leading}
           <div
             className={cn(
-              'text-headline truncate transition-opacity duration-200',
-              compact && barTitle ? 'opacity-100' : 'opacity-0'
+              'text-headline min-w-0 flex-1 truncate transition-opacity duration-200',
+              compact ? 'opacity-100' : 'opacity-0'
             )}
-            aria-hidden={!compact || !barTitle}
+            aria-hidden={!compact}
           >
             {title}
           </div>
-          <div className='text-tint flex items-center justify-end gap-1'>{actions}</div>
+          <div className='text-tint ml-auto flex items-center justify-end gap-1'>{actions}</div>
         </div>
         {accessory && compact && (
-          <div className='mx-auto max-w-3xl px-4 pb-2 lg:px-8'>{accessory}</div>
+          <div className='relative mx-auto max-w-3xl px-4 pb-2 lg:px-8'>{accessory}</div>
         )}
       </div>
 
