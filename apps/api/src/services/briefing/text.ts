@@ -7,6 +7,8 @@ import type {
   ZodiacSign,
 } from '@jottape/schemas';
 
+import { QUOTE_STRIDE, quotes } from './quotes';
+
 // Frases do briefing. Funções puras: recebem os dados já lidos e devolvem o texto.
 
 export type Line = Omit<BriefingItem, 'plugin'>;
@@ -518,42 +520,9 @@ export function moonLine(at: Date): Line {
   return line(`${name}, ${illumination}% iluminada.`);
 }
 
-const sayings = [
-  'Devagar se vai ao longe.',
-  'Água mole em pedra dura, tanto bate até que fura.',
-  'Quem não arrisca não petisca.',
-  'De grão em grão, a galinha enche o papo.',
-  'Mais vale um pássaro na mão do que dois voando.',
-  'Quem planta colhe.',
-  'Não deixe para amanhã o que pode fazer hoje.',
-  'Cada dia com a sua agonia.',
-  'Antes tarde do que nunca.',
-  'A pressa é inimiga da perfeição.',
-  'Quem espera sempre alcança.',
-  'Deus ajuda quem cedo madruga.',
-  'Uma andorinha só não faz verão.',
-  'Em boca fechada não entra mosquito.',
-  'O seguro morreu de velho.',
-  'Quem tem boca vai a Roma.',
-  'Pouco a pouco se vai ao longe.',
-  'Quem guarda tem.',
-  'Mais vale prevenir do que remediar.',
-  'Roupa suja se lava em casa.',
-  'Depois da tempestade vem a bonança.',
-  'Gentileza gera gentileza.',
-  'Quem semeia vento colhe tempestade.',
-  'O hábito faz o monge.',
-  'Tudo tem seu tempo.',
-  'Errar é humano.',
-  'Saco vazio não para em pé.',
-  'Nem tudo que reluz é ouro.',
-  'Quem procura acha.',
-  'A união faz a força.',
-  'Para bom entendedor, meia palavra basta.',
-];
-
 export function quoteLine(today: string): Line {
   const [y, m, d] = today.split('-').map(Number);
-  const index = Math.floor(Date.UTC(y, m - 1, d) / 86_400_000) % sayings.length;
-  return line(sayings[index]);
+  const day = Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+  const { text, author } = quotes[(day * QUOTE_STRIDE) % quotes.length];
+  return line(`“${text}” — ${author}`);
 }

@@ -10,6 +10,7 @@ import {
   holidayLine,
   monthLine,
   moonPhase,
+  quoteLine,
   staleLine,
   stocksLine,
   streakDays,
@@ -18,6 +19,7 @@ import {
   when,
   yesterdayLine,
 } from './text';
+import { QUOTE_STRIDE, quotes } from './quotes';
 
 const TZ = 'America/Sao_Paulo';
 // Segunda, 19/10/2026, 10:00 em São Paulo.
@@ -300,5 +302,27 @@ describe('tideLine', () => {
     expect(tideLine('Santos', tomorrow, `${TODAY}T02:50`, TODAY).text).toBe(
       'Maré em Santos baixando (0,0 m agora). Baixa às 03:00 (−0,1 m) e alta amanhã às 09:30 (0,7 m).'
     );
+  });
+});
+
+describe('quoteLine', () => {
+  it('traz sempre o autor e muda a cada dia', () => {
+    const first = quoteLine('2026-10-19').text;
+    expect(first).toMatch(/^“.+” — .+$/);
+    expect(quoteLine('2026-10-19').text).toBe(first);
+    expect(quoteLine('2026-10-20').text).not.toBe(first);
+  });
+
+  it('percorre a lista toda sem repetir antes de dar a volta', () => {
+    const days = Array.from({ length: quotes.length }, (_, i) => {
+      const date = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+      return quoteLine(date).text;
+    });
+    expect(new Set(days).size).toBe(quotes.length);
+  });
+
+  it('o passo é primo com o tamanho da lista', () => {
+    const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+    expect(gcd(QUOTE_STRIDE, quotes.length)).toBe(1);
   });
 });
