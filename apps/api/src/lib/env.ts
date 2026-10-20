@@ -109,6 +109,14 @@ export function getTranscriptionConfig(): { apiKey: string; model: string } | nu
   return { apiKey, model: process.env.TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe' };
 }
 
+/** Quem usa o Assistente além do dono (beta): e-mails separados por vírgula. */
+export function getAssistantEmails(): string[] {
+  return (process.env.ASSISTANT_EMAILS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 /** Comandos por usuário por mês. O dono do app não tem limite. */
 export function getAssistantMonthlyLimit(): number {
   const value = Number(process.env.ASSISTANT_MONTHLY_LIMIT);

@@ -14,6 +14,7 @@ import type { AssistantCard, AssistantMessage, Prisma } from '@prisma/client';
 import { todayIn } from '@/lib/dates';
 import {
   getAnthropicConfig,
+  getAssistantEmails,
   getAssistantMonthlyLimit,
   getOwner,
   getTranscriptionConfig,
@@ -56,10 +57,23 @@ export interface Logger {
   warn: (error: unknown, message: string) => void;
 }
 
-export const assistantEnabled = () => getAnthropicConfig() !== null;
+async function userEmail(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+  return user?.email.toLowerCase() ?? null;
+}
 
-function assertEnabled() {
-  if (!assistantEnabled()) throw new AppError(503, 'O Assistente não está disponível.');
+/** Ligado com a chave da Anthropic, só para o dono e os e-mails de ASSISTANT_EMAILS (beta). */
+export async function assistantEnabled(userId: string) {
+  if (!getAnthropicConfig()) return false;
+  const email = await userEmail(userId);
+  if (!email) return false;
+  return email === getOwner()?.email || getAssistantEmails().includes(email);
+}
+
+async function assertEnabled(userId: string) {
+  if (!(await assistantEnabled(userId))) {
+    throw new AppError(503, 'O Assistente não está disponível.');
+  }
 }
 
 // ---------------------------------------------------------------- uso
@@ -67,8 +81,7 @@ function assertEnabled() {
 async function isOwner(userId: string) {
   const owner = getOwner();
   if (!owner) return false;
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
-  return user?.email.toLowerCase() === owner.email;
+  return (await userEmail(userId)) === owner.email;
 }
 
 /** Comandos no mês corrente (no fuso do usuário). O dono não tem limite. */
@@ -144,7 +157,7 @@ export async function assistantState(userId: string): Promise<AssistantStateResp
     take: HISTORY,
   });
   return {
-    enabled: assistantEnabled(),
+    enabled: await assistantEnabled(userId),
     transcription: getTranscriptionConfig() !== null,
     usage: await usageOf(userId, timezone),
     messages: await toMessages(userId, recent.reverse()),
@@ -197,7 +210,7 @@ export async function sendMessage(
   text: string,
   log: Logger
 ): Promise<{ messages: AssistantMessageResponse[]; usage: AssistantUsageResponse }> {
-  assertEnabled();
+  await assertEnabled(userId);
   const timezone = await userTimezone(userId);
   await assertWithinLimit(userId, timezone);
 
@@ -443,7 +456,7 @@ export async function transcribeAudio(
   contentType: string,
   seconds: number
 ): Promise<string> {
-  assertEnabled();
+  await assertEnabled(userId);
   if (!getTranscriptionConfig()) throw new AppError(503, 'A transcrição não está disponível.');
   await assertWithinLimit(userId, await userTimezone(userId));
   const text = await transcribe(audio, contentType);

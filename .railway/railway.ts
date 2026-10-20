@@ -51,6 +51,7 @@ export default defineRailway(() => {
       MICROSOFT_CLIENT_ID: preserve(),
       MICROSOFT_CLIENT_SECRET: preserve(),
       ANTHROPIC_API_KEY: preserve(),
+      ASSISTANT_EMAILS: preserve(),
       ASSISTANT_MODEL: preserve(),
       ASSISTANT_MONTHLY_LIMIT: preserve(),
       JEV_API_KEY: preserve(),

@@ -56,6 +56,7 @@ describe('assistente', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: NOW });
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-test');
     vi.stubEnv('OWNER_EMAIL', '');
+    vi.stubEnv('ASSISTANT_EMAILS', 'andre@example.com');
     vi.mocked(extractItems).mockReset();
     vi.mocked(askJev).mockReset();
     await resetDatabase();
@@ -79,6 +80,16 @@ describe('assistente', () => {
     const state = (await api.get('/assistant')).json() as AssistantStateResponse;
     expect(state.enabled).toBe(false);
     expect((await api.post('/assistant/messages', { text: 'oi' })).statusCode).toBe(503);
+  });
+
+  it('só liga para o dono e os e-mails liberados', async () => {
+    vi.stubEnv('ASSISTANT_EMAILS', 'outra@example.com');
+    expect(((await api.get('/assistant')).json() as AssistantStateResponse).enabled).toBe(false);
+    expect((await api.post('/assistant/messages', { text: 'oi' })).statusCode).toBe(503);
+
+    vi.stubEnv('ASSISTANT_EMAILS', '');
+    vi.stubEnv('OWNER_EMAIL', 'andre@example.com');
+    expect(((await api.get('/assistant')).json() as AssistantStateResponse).enabled).toBe(true);
   });
 
   it('salva sozinho com score alto e desfaz', async () => {

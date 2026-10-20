@@ -50,7 +50,8 @@ openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jot
 | `ENCRYPTION_KEY`                                         | api      | **Obrigatória**: 32 bytes (hex ou base64) que cifram o refresh token do Google no banco. Trocar exige reconectar o Google. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`               | api      | Login com o Google, Agenda e Tarefas (seção 3). Sem elas o app funciona sem Google.                                        |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`         | api      | Agenda do Outlook / Microsoft 365 (seção 3b). Sem elas a opção da Microsoft não aparece.                                   |
-| `ANTHROPIC_API_KEY`                                      | api      | Liga o Assistente (Claude Haiku lê o pedido). Sem ela a aba Assistente não aparece.                                        |
+| `ANTHROPIC_API_KEY`                                      | api      | Liga o Assistente (Claude Haiku lê o pedido), só para o dono e `ASSISTANT_EMAILS`. Sem ela a aba não aparece.              |
+| `ASSISTANT_EMAILS`                                       | api      | Quem usa o Assistente além do dono (beta), e-mails separados por vírgula. Sem ela, só o dono.                              |
 | `JEV_API_KEY`                                            | api      | Jev (TypeSafe): confere tipo, conta e categoria e dá o score. Sem ela nada é salvo sozinho, tudo vira rascunho.            |
 | `OPENAI_API_KEY`                                         | api      | Transcrição do áudio no servidor. Sem ela o microfone usa o reconhecimento de voz do navegador.                            |
 | `ASSISTANT_MONTHLY_LIMIT`                                | api      | Pedidos por usuário por mês (padrão 300). O dono não tem limite.                                                           |
