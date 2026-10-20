@@ -24,6 +24,7 @@ import {
   useUpdateTask,
 } from '@/features/tasks';
 import { appTimeZone, relativeDay, todayKey } from '@/lib/format';
+import { useFormErrors } from '@/lib/use-form-errors';
 import { cn } from '@/lib/utils';
 
 import {
@@ -91,6 +92,9 @@ export function TaskSheet({
   const [subDraft, setSubDraft] = useState('');
   const [pendingSubs, setPendingSubs] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const { errors, validate } = useFormErrors({
+    title: !form.title.trim() && 'Informe o título.',
+  });
 
   const patch = (changes: Partial<TaskForm>) => setForm((current) => ({ ...current, ...changes }));
   const listId = form.listId || inboxId;
@@ -103,7 +107,7 @@ export function TaskSheet({
   }
 
   async function save() {
-    if (!form.title.trim()) return;
+    if (saving || !validate()) return;
     const finalForm = tagDraft.trim() ? { ...form, tags: addTag(form.tags, tagDraft) } : form;
     const body = bodyFromForm({ ...finalForm, listId }, appTimeZone());
     setSaving(true);
@@ -157,11 +161,11 @@ export function TaskSheet({
       tall
       title={task ? 'Detalhes' : 'Novo Lembrete'}
       confirmLabel={task ? 'OK' : 'Adicionar'}
-      confirmDisabled={!form.title.trim() || saving}
+      confirmDisabled={saving}
       onConfirm={save}
     >
       <Section>
-        <FieldRow>
+        <FieldRow error={errors.title}>
           <TextInput
             aria-label='Título'
             placeholder='Título'

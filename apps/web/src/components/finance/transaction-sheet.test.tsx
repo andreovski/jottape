@@ -37,16 +37,23 @@ describe('TransactionSheet', () => {
     createMutate.mockResolvedValue([]);
   });
 
-  it('só libera "Adicionar" com valor e descrição, e cria parcelado', async () => {
+  it('mostra os campos faltando ao tocar em "Adicionar", e cria parcelado', async () => {
     const onOpenChange = vi.fn();
     render(<TransactionSheet open onOpenChange={onOpenChange} />);
 
     const add = await screen.findByRole('button', { name: 'Adicionar' });
-    expect(add).toBeDisabled();
+    expect(add).toBeEnabled();
+    expect(screen.queryByText('Informe o valor.')).not.toBeInTheDocument();
+
+    fireEvent.click(add);
+    expect(createMutate).not.toHaveBeenCalled();
+    expect(screen.getByText('Informe o valor.')).toBeInTheDocument();
+    expect(screen.getByText('Informe a descrição.')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Valor'), { target: { value: '10000' } });
+    expect(screen.queryByText('Informe o valor.')).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText('Descrição'), { target: { value: 'Geladeira' } });
-    expect(add).toBeEnabled();
+    expect(screen.queryByText('Informe a descrição.')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByDisplayValue('Não repete'), { target: { value: 'installments' } });
     fireEvent.click(screen.getByRole('button', { name: 'Mais parcelas' }));

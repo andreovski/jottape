@@ -7,6 +7,7 @@ import { Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
 import { useCategories, useDeleteBudget, useUpsertBudget } from '@/features/finance';
 import { capitalize, monthTitle } from '@/lib/format';
+import { useFormErrors } from '@/lib/use-form-errors';
 
 import { CategoryIcon } from './category-icon';
 import { CategoryPicker } from './category-picker';
@@ -40,11 +41,14 @@ function BudgetForm({ open, onOpenChange, month, budget, usedCategoryIds }: Budg
 
   const category = categories.find((c) => c.id === (budget?.categoryId ?? categoryId));
   const groups = categoryTree(categories, 'EXPENSE');
-  const valid = Boolean(categoryId) && limit > 0;
   const busy = upsert.isPending || remove.isPending;
+  const { errors, validate } = useFormErrors({
+    limit: limit <= 0 && 'Informe o limite do mês.',
+    category: !categoryId && 'Escolha uma categoria.',
+  });
 
   async function save() {
-    if (!valid || busy) return;
+    if (busy || !validate()) return;
     const ok = await upsert.mutateAsync({ categoryId, month, limitCents: limit }).then(
       () => true,
       () => false
@@ -67,7 +71,7 @@ function BudgetForm({ open, onOpenChange, month, budget, usedCategoryIds }: Budg
       onOpenChange={onOpenChange}
       title={budget ? 'Editar Orçamento' : 'Novo Orçamento'}
       confirmLabel={budget ? 'OK' : 'Adicionar'}
-      confirmDisabled={!valid || busy}
+      confirmDisabled={busy}
       onConfirm={save}
     >
       <div className='flex flex-col items-center pt-2 text-center'>
@@ -78,10 +82,10 @@ function BudgetForm({ open, onOpenChange, month, budget, usedCategoryIds }: Budg
         <div className='text-footnote text-label-2'>{capitalize(monthTitle(month))}</div>
       </div>
 
-      <AmountInput value={limit} onChange={setLimit} />
+      <AmountInput value={limit} onChange={setLimit} error={errors.limit} />
 
       <Section footer='O orçamento de uma categoria também cobre as subcategorias dela.'>
-        <FieldRow label='Categoria'>
+        <FieldRow label='Categoria' error={errors.category}>
           {budget ? (
             <span className='text-body text-label-2 truncate'>
               {category ? categoryLabel(category, categories) : '—'}

@@ -19,6 +19,7 @@ import { ActionSheet, Sheet } from '@/components/ios/sheet';
 import { useCreateEvent, useEvent, useUpdateEvent } from '@/features/agenda';
 import { useMe } from '@/features/auth';
 import { appTimeZone, weekdayNarrow } from '@/lib/format';
+import { useFormErrors } from '@/lib/use-form-errors';
 import { cn } from '@/lib/utils';
 
 import { weekdayOrder } from './calendar';
@@ -78,6 +79,9 @@ export function EventFormSheet({
     setForm((current) => ({ ...current, [key]: value }));
 
   const invalid = endBeforeStart(form);
+  const { errors, validate } = useFormErrors({
+    end: invalid && 'O término é antes do início.',
+  });
   const weekStartsOn = me?.weekStartsOn ?? 0;
   const defaultReminder = me?.defaultReminderMin ?? null;
 
@@ -124,6 +128,7 @@ export function EventFormSheet({
   };
 
   const save = (scope?: 'single' | 'all') => {
+    if (pending || !validate()) return;
     const body = bodyOf(form, zone);
     if (!editing) {
       create.mutate(body, { onSuccess: () => finish('Evento adicionado') });
@@ -190,7 +195,7 @@ export function EventFormSheet({
         onOpenChange={onOpenChange}
         title={editing ? 'Editar Evento' : 'Novo Evento'}
         confirmLabel={editing ? 'OK' : 'Adicionar'}
-        confirmDisabled={invalid || pending}
+        confirmDisabled={pending}
         onConfirm={() => save()}
         tall
       >
@@ -239,7 +244,7 @@ export function EventFormSheet({
               )}
             </span>
           </FieldRow>
-          <FieldRow label='Término'>
+          <FieldRow label='Término' error={errors.end}>
             <span className='flex flex-wrap justify-end gap-1.5'>
               <DateInput
                 aria-label='Data de término'

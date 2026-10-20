@@ -11,6 +11,7 @@ interface SheetProps {
   /** Botão da direita ("Adicionar", "OK"). */
   confirmLabel?: string;
   onConfirm?: () => void;
+  /** Só enquanto salva: campos faltando não desabilitam, mostram o erro no campo (useFormErrors). */
   confirmDisabled?: boolean;
   cancelLabel?: string;
   /** Altura cheia (formulários longos). */

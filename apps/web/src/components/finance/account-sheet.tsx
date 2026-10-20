@@ -10,6 +10,7 @@ import { ColorPicker, FieldRow, MoneyField, SelectInput, TextInput } from '@/com
 import { Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
 import { useAccounts, useCreateAccount, useUpdateAccount } from '@/features/finance';
+import { useFormErrors } from '@/lib/use-form-errors';
 
 import { AccountCard } from './account-card';
 
@@ -51,8 +52,12 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
 
   const isCard = type === 'CREDIT_CARD';
   const payers = accounts.filter((a) => a.type !== 'CREDIT_CARD' && a.id !== account?.id);
-  const valid = name.trim().length > 0 && (!isCard || (Boolean(closingDay) && Boolean(dueDay)));
   const busy = create.isPending || update.isPending;
+  const { errors, validate } = useFormErrors({
+    name: !name.trim() && 'Dê um nome para a conta.',
+    closingDay: isCard && !closingDay && 'Escolha o dia de fechamento.',
+    dueDay: isCard && !dueDay && 'Escolha o dia de vencimento.',
+  });
 
   // Prévia ao vivo do cartão, com o que está sendo digitado.
   const preview: AccountResponse = {
@@ -73,7 +78,7 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
   };
 
   async function save() {
-    if (!valid || busy) return;
+    if (busy || !validate()) return;
     const card = {
       closingDay: isCard ? Number(closingDay) : null,
       dueDay: isCard ? Number(dueDay) : null,
@@ -108,7 +113,7 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
       tall
       title={editing ? 'Editar Conta' : 'Nova Conta'}
       confirmLabel={editing ? 'OK' : 'Adicionar'}
-      confirmDisabled={!valid || busy}
+      confirmDisabled={busy}
       onConfirm={save}
     >
       <div className='mx-auto mt-2 mb-6 w-full max-w-[300px]'>
@@ -127,7 +132,7 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
             />
           )}
         </FieldRow>
-        <FieldRow>
+        <FieldRow error={errors.name}>
           <TextInput
             placeholder='Nome'
             value={name}
@@ -144,7 +149,7 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
 
       {isCard && (
         <Section header='Cartão' footer='Compras depois do fechamento entram na fatura seguinte.'>
-          <FieldRow label='Dia de fechamento'>
+          <FieldRow label='Dia de fechamento' error={errors.closingDay}>
             <SelectInput
               value={closingDay}
               onChange={setClosingDay}
@@ -152,7 +157,7 @@ function AccountForm({ open, onOpenChange, account }: AccountSheetProps) {
               options={DAYS}
             />
           </FieldRow>
-          <FieldRow label='Dia de vencimento'>
+          <FieldRow label='Dia de vencimento' error={errors.dueDay}>
             <SelectInput
               value={dueDay}
               onChange={setDueDay}

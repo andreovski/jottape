@@ -1,30 +1,63 @@
 import { parseCents } from '@jottape/finance-engine';
+import { CircleAlert } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 import { money } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const inputClass =
-  'text-body placeholder:text-label-3 w-full min-w-0 bg-transparent outline-none disabled:opacity-50';
+  'text-body placeholder:text-label-3 w-full min-w-0 bg-transparent outline-none disabled:opacity-50 group-data-[invalid]/row:placeholder:text-red/70';
 
-/** Linha com rótulo à esquerda e campo à direita (ou só o campo, sem rótulo). */
+/** Mensagem de erro de um campo (vermelha, com o ícone de alerta). */
+export function FieldError({ message, className }: { message?: string; className?: string }) {
+  if (!message) return null;
+  return (
+    <p
+      role='alert'
+      className={cn('text-footnote text-red flex items-center gap-1 text-left', className)}
+    >
+      <CircleAlert className='size-3.5 shrink-0' strokeWidth={2.4} aria-hidden />
+      {message}
+    </p>
+  );
+}
+
+/**
+ * Linha com rótulo à esquerda e campo à direita (ou só o campo, sem rótulo). Com `error`, o rótulo
+ * fica vermelho e a mensagem aparece embaixo, dentro da própria linha.
+ */
 export function FieldRow({
   label,
   children,
   leading,
+  error,
 }: {
   label?: string;
   children: ReactNode;
   leading?: ReactNode;
+  error?: string;
 }) {
   return (
-    <label className='group/row flex min-h-11 w-full items-center gap-3 pl-4'>
+    <label
+      data-field-error={error ? '' : undefined}
+      data-invalid={error ? '' : undefined}
+      className='group/row flex min-h-11 w-full items-center gap-3 pl-4'
+    >
       {leading}
-      <div className='flex min-h-11 flex-1 items-center gap-3 py-1.5 pr-4 shadow-[inset_0_-0.5px_0_var(--separator)] group-last/row:shadow-none'>
-        {label && <span className='text-body shrink-0'>{label}</span>}
-        <div className={cn('flex min-w-0 flex-1 items-center', label && 'justify-end text-right')}>
-          {children}
+      <div className='flex min-h-11 min-w-0 flex-1 flex-col justify-center py-1.5 pr-4 shadow-[inset_0_-0.5px_0_var(--separator)] group-last/row:shadow-none'>
+        <div className='flex min-h-8 items-center gap-3'>
+          {label && (
+            <span className={cn('text-body shrink-0 transition-colors', error && 'text-red')}>
+              {label}
+            </span>
+          )}
+          <div
+            className={cn('flex min-w-0 flex-1 items-center', label && 'justify-end text-right')}
+          >
+            {children}
+          </div>
         </div>
+        <FieldError message={error} className='pb-0.5' />
       </div>
     </label>
   );
@@ -140,22 +173,34 @@ export function AmountInput({
   onChange,
   color,
   autoFocus,
+  error,
 }: {
   value: number;
   onChange: (cents: number) => void;
   color?: string;
   autoFocus?: boolean;
+  error?: string;
 }) {
   const text = value ? String(value) : '';
 
   return (
-    <div className='relative flex flex-col items-center py-4'>
+    <div
+      data-field-error={error ? '' : undefined}
+      className='relative flex flex-col items-center py-4'
+    >
       <div
         className='font-rounded numeric text-[48px] leading-none font-semibold tracking-tight transition-colors'
-        style={{ color: value ? color : 'var(--label-3)' }}
+        style={{
+          color: value
+            ? color
+            : error
+              ? 'color-mix(in srgb, var(--red) 70%, transparent)'
+              : 'var(--label-3)',
+        }}
       >
         {money(value)}
       </div>
+      <FieldError message={error} className='mt-2' />
       <input
         aria-label='Valor'
         inputMode='numeric'

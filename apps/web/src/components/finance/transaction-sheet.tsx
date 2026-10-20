@@ -28,6 +28,7 @@ import {
   useUpdateTransaction,
 } from '@/features/finance';
 import { todayKey } from '@/lib/format';
+import { useFormErrors } from '@/lib/use-form-errors';
 
 import { CategoryPicker } from './category-picker';
 import {
@@ -118,11 +119,15 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
   const accountOptions = activeAccounts.map((a) => ({ value: a.id, label: a.name }));
   const destinationOptions = accountOptions.filter((a) => a.value !== effectiveAccountId);
 
-  const valid =
-    amount > 0 &&
-    description.trim().length > 0 &&
-    Boolean(effectiveAccountId) &&
-    (kind !== 'TRANSFER' || (Boolean(toAccountId) && toAccountId !== effectiveAccountId));
+  const { errors, validate } = useFormErrors({
+    amount: amount <= 0 && 'Informe o valor.',
+    description: !description.trim() && 'Informe a descrição.',
+    account: !effectiveAccountId && 'Crie uma conta antes de lançar.',
+    toAccount:
+      kind === 'TRANSFER' &&
+      (!toAccountId || toAccountId === effectiveAccountId) &&
+      'Escolha a conta de destino.',
+  });
 
   const doneLabel = kind === 'INCOME' ? 'Recebido' : kind === 'TRANSFER' ? 'Efetivada' : 'Pago';
   const preview = repetition === 'installments' ? installmentPreview(amount, installments) : null;
@@ -177,7 +182,7 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
   }
 
   function confirm() {
-    if (!valid || busy) return;
+    if (busy || !validate()) return;
     if (recurring) setPending({ type: 'save' });
     else void save();
   }
@@ -190,7 +195,7 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
         tall
         title={editing ? 'Editar Lançamento' : 'Novo Lançamento'}
         confirmLabel={editing ? 'OK' : 'Adicionar'}
-        confirmDisabled={!valid || busy}
+        confirmDisabled={busy}
         onConfirm={confirm}
       >
         {!editing ? (
@@ -208,10 +213,15 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
           </div>
         )}
 
-        <AmountInput value={amount} onChange={setAmount} color={AMOUNT_COLORS[kind]} />
+        <AmountInput
+          value={amount}
+          onChange={setAmount}
+          color={AMOUNT_COLORS[kind]}
+          error={errors.amount}
+        />
 
         <Section>
-          <FieldRow>
+          <FieldRow error={errors.description}>
             <TextInput
               placeholder='Descrição'
               value={description}
@@ -230,7 +240,7 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
               />
             </FieldRow>
           )}
-          <FieldRow label={kind === 'TRANSFER' ? 'De' : 'Conta'}>
+          <FieldRow label={kind === 'TRANSFER' ? 'De' : 'Conta'} error={errors.account}>
             <SelectInput
               value={effectiveAccountId}
               onChange={(value) => {
@@ -242,7 +252,7 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
             />
           </FieldRow>
           {kind === 'TRANSFER' && (
-            <FieldRow label='Para'>
+            <FieldRow label='Para' error={errors.toAccount}>
               <SelectInput
                 value={toAccountId}
                 onChange={setToAccountId}
