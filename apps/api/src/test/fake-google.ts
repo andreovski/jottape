@@ -56,6 +56,26 @@ export class FakeGoogle {
   ]);
   private seq = 0;
 
+  // ---- Microsoft (Graph): uma conta, calendários e ocorrências; o delta devolve tudo na primeira
+  // vez e depois só o que entrou em `msChanges`.
+  msProfile = {
+    id: 'ms-user-1',
+    mail: 'andre@outlook.com',
+    userPrincipalName: 'andre@outlook.com',
+  };
+  /** Refresh tokens válidos: a Microsoft troca o token a cada renovação. */
+  msRefreshTokens = new Set(['ms-refresh-1']);
+  msCalendars = [
+    { id: 'ms-cal-1', name: 'Calendário', hexColor: '#ff8c00', isDefaultCalendar: true },
+    { id: 'ms-cal-2', name: 'Feriados no Brasil', hexColor: '' },
+  ];
+  msEvents = new Map<string, any[]>([
+    ['ms-cal-1', []],
+    ['ms-cal-2', []],
+  ]);
+  msChanges = new Map<string, any[]>();
+  msDeltaGone = false;
+
   install() {
     vi.stubGlobal(
       'fetch',
@@ -63,6 +83,8 @@ export class FakeGoogle {
     );
     process.env.GOOGLE_CLIENT_ID = 'client-id';
     process.env.GOOGLE_CLIENT_SECRET = 'client-secret';
+    process.env.MICROSOFT_CLIENT_ID = 'ms-client-id';
+    process.env.MICROSOFT_CLIENT_SECRET = 'ms-client-secret';
     return this;
   }
 
@@ -70,6 +92,126 @@ export class FakeGoogle {
     vi.unstubAllGlobals();
     delete process.env.GOOGLE_CLIENT_ID;
     delete process.env.GOOGLE_CLIENT_SECRET;
+    delete process.env.MICROSOFT_CLIENT_ID;
+    delete process.env.MICROSOFT_CLIENT_SECRET;
+  }
+
+  /** Simula uma mudança no Outlook: entra no calendário e no próximo delta. */
+  msChange(calendarId: string, item: any) {
+    const list = this.msEvents.get(calendarId)!;
+    const index = list.findIndex((e) => e.id === item.id);
+    if (item['@removed']) {
+      if (index >= 0) list.splice(index, 1);
+    } else if (index >= 0) list[index] = { ...list[index], ...item };
+    else list.push(item);
+    // O delta devolve o evento inteiro, não só o que mudou.
+    const sent = item['@removed'] ? item : list.find((e) => e.id === item.id);
+    this.msChanges.set(calendarId, [...(this.msChanges.get(calendarId) ?? []), sent]);
+  }
+
+  /** O Graph responde em UTC (Prefer). Os testes usam America/Sao_Paulo (UTC-3, sem horário de verão). */
+  private msUtc(value: any) {
+    if (!value || value.timeZone === 'UTC') return value;
+    const instant = new Date(`${value.dateTime}-03:00`).toISOString().slice(0, 19);
+    return { dateTime: `${instant}.0000000`, timeZone: 'UTC' };
+  }
+
+  private handleMicrosoft(url: URL, method: string, raw: any): Response {
+    const path = decodeURIComponent(url.pathname);
+    const body = raw?.start
+      ? { ...raw, start: this.msUtc(raw.start), end: this.msUtc(raw.end) }
+      : raw;
+    if (url.host === 'login.microsoftonline.com' && path.endsWith('/token')) {
+      if (body.grant_type === 'refresh_token') {
+        if (!this.msRefreshTokens.has(body.refresh_token))
+          return this.json(400, { error: 'invalid_grant' });
+        this.msRefreshTokens.delete(body.refresh_token);
+      }
+      const refresh = `ms-refresh-${++this.seq}`;
+      this.msRefreshTokens.add(refresh);
+      return this.json(200, {
+        access_token: 'ms-access',
+        expires_in: 3600,
+        refresh_token: refresh,
+        scope: 'Calendars.ReadWrite User.Read offline_access',
+      });
+    }
+    const graph = path.replace(/^\/v1\.0/, '');
+    if (graph === '/me') return this.json(200, this.msProfile);
+    if (graph === '/me/calendars') return this.json(200, { value: this.msCalendars });
+
+    let match = graph.match(/^\/me\/calendars\/([^/]+)\/calendarView\/delta$/);
+    if (match) {
+      const calendarId = match[1];
+      const deltaLink = `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/calendarView/delta?$deltatoken=${++this.seq}`;
+      if (url.searchParams.get('$deltatoken')) {
+        if (this.msDeltaGone) {
+          this.msDeltaGone = false;
+          return this.json(410, { error: { code: 'SyncStateNotFound' } });
+        }
+        const changes = this.msChanges.get(calendarId) ?? [];
+        this.msChanges.set(calendarId, []);
+        return this.json(200, { value: changes, '@odata.deltaLink': deltaLink });
+      }
+      this.msChanges.set(calendarId, []);
+      return this.json(200, {
+        value: this.msEvents.get(calendarId),
+        '@odata.deltaLink': deltaLink,
+      });
+    }
+    match = graph.match(/^\/me\/calendars\/([^/]+)\/events$/);
+    if (match && method === 'POST') {
+      const calendarId = match[1];
+      const id = `ms-${++this.seq}`;
+      if (body.recurrence) {
+        // Série: o Graph guarda o mestre; o delta do calendarView traz as ocorrências.
+        const start = new Date(`${body.start.dateTime.slice(0, 19)}Z`);
+        for (let i = 0; i < 3; i++) {
+          const at = (offset: number) =>
+            new Date(start.getTime() + i * 7 * 86_400_000 + offset).toISOString().slice(0, 19);
+          this.msChange(calendarId, {
+            id: `${id}-occ-${i}`,
+            type: 'occurrence',
+            seriesMasterId: id,
+            subject: body.subject,
+            start: { dateTime: `${at(0)}.0000000`, timeZone: 'UTC' },
+            end: { dateTime: `${at(3_600_000)}.0000000`, timeZone: 'UTC' },
+          });
+        }
+        return this.json(201, { ...body, id, type: 'seriesMaster', changeKey: 'ck' });
+      }
+      const created = { ...body, id, type: 'singleInstance', changeKey: 'ck' };
+      this.msChange(calendarId, created);
+      return this.json(201, created);
+    }
+    match = graph.match(/^\/me\/events\/([^/]+)$/);
+    if (match) {
+      const id = match[1];
+      const calendarId = [...this.msEvents.entries()].find(([, list]) =>
+        list.some((e) => e.id === id)
+      )?.[0];
+      if (!calendarId) return this.json(404, { error: { code: 'ErrorItemNotFound' } });
+      if (method === 'PATCH') {
+        this.msChange(calendarId, { ...body, id, changeKey: `ck-${++this.seq}` });
+        return this.json(
+          200,
+          this.msEvents.get(calendarId)!.find((e) => e.id === id)
+        );
+      }
+      if (method === 'DELETE') {
+        this.msChange(calendarId, { id, '@removed': { reason: 'deleted' } });
+        return this.json(204, null);
+      }
+    }
+    if (graph === '/subscriptions' && method === 'POST') {
+      return this.json(201, {
+        id: `sub-${++this.seq}`,
+        expirationDateTime: body.expirationDateTime,
+      });
+    }
+    if (graph.startsWith('/subscriptions/'))
+      return this.json(method === 'DELETE' ? 204 : 200, method === 'DELETE' ? null : {});
+    return this.json(404, { error: `fake microsoft: no route for ${method} ${path}` });
   }
 
   account(sub: string) {
@@ -105,6 +247,9 @@ export class FakeGoogle {
     }
     this.calls.push({ method, url: raw, body });
     const path = decodeURIComponent(url.pathname);
+    if (url.host === 'login.microsoftonline.com' || url.host === 'graph.microsoft.com') {
+      return this.handleMicrosoft(url, method, body);
+    }
 
     if (url.host === 'oauth2.googleapis.com' && path === '/token') {
       const account =

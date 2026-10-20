@@ -177,8 +177,12 @@ export function SettingsPage() {
                 <GoogleGlyph />
               </IconChip>
             }
-            title='Google'
-            subtitle='Calendário, Tarefas e login'
+            title={google.data?.microsoftConfigured ? 'Google e Microsoft' : 'Google'}
+            subtitle={
+              google.data?.microsoftConfigured
+                ? 'Agendas, Tarefas e login'
+                : 'Calendário, Tarefas e login'
+            }
             detail={googleDetail}
           />
         </Link>
@@ -527,6 +531,18 @@ function PasswordSheet({
         </FieldRow>
       </Section>
     </Sheet>
+  );
+}
+
+/** Os quatro quadrados da Microsoft. */
+export function MicrosoftGlyph({ className = 'size-[17px]' }: { className?: string }) {
+  return (
+    <svg viewBox='0 0 24 24' className={className} aria-hidden>
+      <rect x='1' y='1' width='10.5' height='10.5' fill='#F25022' />
+      <rect x='12.5' y='1' width='10.5' height='10.5' fill='#7FBA00' />
+      <rect x='1' y='12.5' width='10.5' height='10.5' fill='#00A4EF' />
+      <rect x='12.5' y='12.5' width='10.5' height='10.5' fill='#FFB900' />
+    </svg>
   );
 }
 

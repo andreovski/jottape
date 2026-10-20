@@ -134,10 +134,15 @@ export async function listOccurrences(userId: string, from: Date, to: Date) {
   return result.sort((a, b) => a.startAt.localeCompare(b.startAt));
 }
 
+/** Confere o calendário e diz de que provedor ele é (null = só no Jottape). */
 async function assertCalendar(userId: string, calendarId: string | null | undefined) {
-  if (!calendarId) return;
-  const calendar = await prisma.googleCalendar.findFirst({ where: { id: calendarId, userId } });
+  if (!calendarId) return null;
+  const calendar = await prisma.googleCalendar.findFirst({
+    where: { id: calendarId, userId },
+    include: { connection: { select: { provider: true } } },
+  });
   if (!calendar) throw notFound('Calendário');
+  return calendar.connection.provider;
 }
 
 async function eventResponse(event: Event) {
@@ -162,7 +167,7 @@ export async function getEvent(userId: string, id: string) {
 }
 
 export async function createEvent(userId: string, body: CreateEventBody) {
-  await assertCalendar(userId, body.calendarId);
+  const provider = await assertCalendar(userId, body.calendarId);
   let times = { startAt: new Date(body.startAt), endAt: new Date(body.endAt) };
   if (body.allDay) times = normalizeAllDay(times.startAt, times.endAt);
 
@@ -178,7 +183,7 @@ export async function createEvent(userId: string, body: CreateEventBody) {
       color: body.color ?? null,
       rrule: body.rrule ?? null,
       calendarId: body.calendarId ?? null,
-      source: body.calendarId ? 'GOOGLE' : 'LOCAL',
+      source: provider ?? 'LOCAL',
       syncState: body.calendarId ? 'PENDING' : 'SYNCED',
     },
   });
@@ -188,7 +193,10 @@ export async function createEvent(userId: string, body: CreateEventBody) {
     (user.defaultReminderMin !== null && !body.allDay ? [user.defaultReminderMin] : []);
   await setReminders(userId, 'EVENT', event.id, reminders);
 
-  if (event.calendarId) await pushEventToGoogle(event.id);
+  // Série nova num calendário da Microsoft volta como ocorrências: responde com a primeira.
+  const replacedBy = event.calendarId ? await pushEventToGoogle(event.id) : undefined;
+  if (replacedBy) return getEvent(userId, replacedBy);
+  if (!(await prisma.event.count({ where: { id: event.id } }))) return toEvent(event, []);
   return getEvent(userId, event.id);
 }
 
@@ -199,6 +207,9 @@ export async function updateEvent(userId: string, id: string, body: UpdateEventB
 
   if (calendarId !== undefined && calendarId !== event.calendarId) {
     throw new AppError(400, 'Para trocar o calendário, apague e crie o evento de novo.');
+  }
+  if (event.source === 'MICROSOFT' && fields.rrule) {
+    throw new AppError(400, 'A repetição de um evento do Outlook se muda no próprio Outlook.');
   }
 
   const data: Prisma.EventUncheckedUpdateInput = {

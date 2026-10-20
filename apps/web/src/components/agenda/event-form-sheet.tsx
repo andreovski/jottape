@@ -264,80 +264,83 @@ export function EventFormSheet({
           </FieldRow>
         </Section>
 
-        <Section
-          footer={
-            editing?.isRecurring
-              ? 'Mudar a repetição vale para todos os eventos da série.'
-              : undefined
-          }
-        >
-          <FieldRow label='Repetir'>
-            <SelectInput
-              value={form.repeat}
-              options={repeatOptions}
-              onChange={(value) => set('repeat', value as RepeatKind)}
-            />
-          </FieldRow>
-          {(form.repeat === 'weekly' || form.repeat === 'biweekly') && (
-            <div className='flex justify-between gap-1 px-4 py-2.5 shadow-[inset_0_-0.5px_0_var(--separator)]'>
-              {weekdayOrder(weekStartsOn).map((weekday) => {
-                const active = form.weekdays.includes(weekday);
-                return (
-                  <button
-                    key={weekday}
-                    type='button'
-                    aria-pressed={active}
-                    aria-label={`Dia da semana ${weekday}`}
-                    onClick={() =>
-                      setForm((current) => {
-                        const next = active
-                          ? current.weekdays.filter((d) => d !== weekday)
-                          : [...current.weekdays, weekday];
-                        return { ...current, weekdays: next.length ? next : current.weekdays };
-                      })
-                    }
-                    className={cn(
-                      'text-footnote flex size-9 items-center justify-center rounded-full font-semibold transition-colors duration-150 active:scale-95',
-                      active ? 'bg-tint text-white' : 'bg-fill text-foreground'
-                    )}
-                  >
-                    {weekdayNarrow(addDays(SUNDAY, weekday))}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {form.repeat !== 'never' && form.repeat !== 'custom' && (
-            <>
-              <FieldRow label='Fim da repetição'>
-                <SelectInput
-                  value={form.repeatEnd}
-                  options={[
-                    { value: 'never', label: 'Nunca' },
-                    { value: 'date', label: 'Em data' },
-                  ]}
-                  onChange={(value) => set('repeatEnd', value as 'never' | 'date')}
-                />
-              </FieldRow>
-              {form.repeatEnd === 'date' && (
-                <FieldRow label='Termina em'>
-                  <DateInput
-                    aria-label='Fim da repetição'
-                    value={form.untilDate}
-                    min={form.startDate}
-                    onChange={(event) =>
-                      event.target.value &&
-                      set(
-                        'untilDate',
-                        event.target.value < form.startDate ? form.startDate : event.target.value
-                      )
-                    }
+        {/* Evento do Outlook chega como ocorrência solta: a repetição se muda lá (a API recusa). */}
+        {editing?.source !== 'MICROSOFT' && (
+          <Section
+            footer={
+              editing?.isRecurring
+                ? 'Mudar a repetição vale para todos os eventos da série.'
+                : undefined
+            }
+          >
+            <FieldRow label='Repetir'>
+              <SelectInput
+                value={form.repeat}
+                options={repeatOptions}
+                onChange={(value) => set('repeat', value as RepeatKind)}
+              />
+            </FieldRow>
+            {(form.repeat === 'weekly' || form.repeat === 'biweekly') && (
+              <div className='flex justify-between gap-1 px-4 py-2.5 shadow-[inset_0_-0.5px_0_var(--separator)]'>
+                {weekdayOrder(weekStartsOn).map((weekday) => {
+                  const active = form.weekdays.includes(weekday);
+                  return (
+                    <button
+                      key={weekday}
+                      type='button'
+                      aria-pressed={active}
+                      aria-label={`Dia da semana ${weekday}`}
+                      onClick={() =>
+                        setForm((current) => {
+                          const next = active
+                            ? current.weekdays.filter((d) => d !== weekday)
+                            : [...current.weekdays, weekday];
+                          return { ...current, weekdays: next.length ? next : current.weekdays };
+                        })
+                      }
+                      className={cn(
+                        'text-footnote flex size-9 items-center justify-center rounded-full font-semibold transition-colors duration-150 active:scale-95',
+                        active ? 'bg-tint text-white' : 'bg-fill text-foreground'
+                      )}
+                    >
+                      {weekdayNarrow(addDays(SUNDAY, weekday))}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {form.repeat !== 'never' && form.repeat !== 'custom' && (
+              <>
+                <FieldRow label='Fim da repetição'>
+                  <SelectInput
+                    value={form.repeatEnd}
+                    options={[
+                      { value: 'never', label: 'Nunca' },
+                      { value: 'date', label: 'Em data' },
+                    ]}
+                    onChange={(value) => set('repeatEnd', value as 'never' | 'date')}
                   />
                 </FieldRow>
-              )}
-            </>
-          )}
-        </Section>
+                {form.repeatEnd === 'date' && (
+                  <FieldRow label='Termina em'>
+                    <DateInput
+                      aria-label='Fim da repetição'
+                      value={form.untilDate}
+                      min={form.startDate}
+                      onChange={(event) =>
+                        event.target.value &&
+                        set(
+                          'untilDate',
+                          event.target.value < form.startDate ? form.startDate : event.target.value
+                        )
+                      }
+                    />
+                  </FieldRow>
+                )}
+              </>
+            )}
+          </Section>
+        )}
 
         <Section>
           <FieldRow label='Calendário'>

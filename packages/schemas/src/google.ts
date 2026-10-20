@@ -19,8 +19,13 @@ export const googleCalendarResponseSchema = z.object({
 });
 export type GoogleCalendarResponse = z.infer<typeof googleCalendarResponseSchema>;
 
+export const calendarProviderSchema = z.enum(['GOOGLE', 'MICROSOFT']);
+export type CalendarProvider = z.infer<typeof calendarProviderSchema>;
+
+/** Conta de agenda conectada: Google ou Microsoft (Outlook, Microsoft 365). */
 export const googleAccountResponseSchema = z.object({
   id: z.string(),
+  provider: calendarProviderSchema,
   email: z.string(),
   /** Esta conta sincroniza o Google Tasks. */
   syncTasks: z.boolean(),
@@ -34,6 +39,8 @@ export type GoogleAccountResponse = z.infer<typeof googleAccountResponseSchema>;
 export const googleStatusResponseSchema = z.object({
   /** O servidor tem GOOGLE_CLIENT_ID/SECRET configurados. */
   configured: z.boolean(),
+  /** O servidor tem MICROSOFT_CLIENT_ID/SECRET configurados. */
+  microsoftConfigured: z.boolean(),
   connected: z.boolean(),
   accounts: z.array(googleAccountResponseSchema),
   /** Calendários de todas as contas, na ordem das contas. */

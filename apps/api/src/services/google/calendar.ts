@@ -3,6 +3,14 @@ import { createHmac, randomUUID } from 'node:crypto';
 
 import { getAppUrl, getJwtSecret } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
+import {
+  deleteEventFromMicrosoft,
+  ensureMicrosoftWatch,
+  pushEventToMicrosoft,
+  stopMicrosoftWatch,
+  syncMicrosoftCalendar,
+  syncMicrosoftCalendarList,
+} from '@/services/microsoft/calendar';
 
 import {
   connectionsOf,
@@ -251,14 +259,35 @@ export function instanceId(masterGoogleId: string, originalStart: Date, allDay: 
   return `${masterGoogleId}_${allDay ? iso.slice(0, 8) : iso}`;
 }
 
-/** Envia o evento (criação, edição, cancelamento de ocorrência). Falha fica marcada como ERROR. */
-export async function pushEventToGoogle(eventId: string): Promise<void> {
+async function providerOf(calendar: GoogleCalendar) {
+  const connection = await prisma.googleConnection.findUnique({
+    where: { id: calendar.connectionId },
+    select: { provider: true },
+  });
+  return connection?.provider ?? 'GOOGLE';
+}
+
+/**
+ * Envia o evento ao calendário de origem (Google ou Microsoft). Falha fica marcada como ERROR.
+ * Devolve outro id quando o evento local foi trocado pelo que voltou (série nova na Microsoft).
+ */
+export async function pushEventToGoogle(eventId: string): Promise<string | undefined> {
   const event = await prisma.event.findUnique({
     where: { id: eventId },
     include: { calendar: true, user: true, recurring: true },
   });
   if (!event?.calendar || !(await isConnectionActive(event.calendar.connectionId))) return;
   const connectionId = event.calendar.connectionId;
+
+  if ((await providerOf(event.calendar)) === 'MICROSOFT') {
+    try {
+      return await pushEventToMicrosoft(event.id);
+    } catch (error) {
+      await prisma.event.updateMany({ where: { id: event.id }, data: { syncState: 'ERROR' } });
+      await recordError(connectionId, error);
+      return;
+    }
+  }
   const base = `${API}/calendars/${enc(event.calendar.googleCalendarId)}/events`;
 
   try {
@@ -319,6 +348,10 @@ export async function deleteEventFromGoogle(event: Event): Promise<void> {
   const calendar = await prisma.googleCalendar.findUnique({ where: { id: event.calendarId } });
   if (!calendar || !(await isConnectionActive(calendar.connectionId))) return;
   try {
+    if ((await providerOf(calendar)) === 'MICROSOFT') {
+      await deleteEventFromMicrosoft(event, calendar);
+      return;
+    }
     await googleFetch(
       calendar.connectionId,
       `${API}/calendars/${enc(calendar.googleCalendarId)}/events/${enc(event.googleEventId)}`,
@@ -339,6 +372,7 @@ function webhookAddress(): string | null {
 }
 
 export async function stopWatch(calendar: GoogleCalendar) {
+  if ((await providerOf(calendar)) === 'MICROSOFT') return stopMicrosoftWatch(calendar);
   if (!calendar.watchChannelId || !calendar.watchResourceId) return;
   await googleFetch(calendar.connectionId, `${API}/channels/stop`, {
     method: 'POST',
@@ -376,15 +410,26 @@ export async function ensureWatch(calendar: GoogleCalendar) {
 
 /** Sincronização de uma conta: lista, calendários marcados, pendências locais, webhooks. */
 export async function syncAccount(connectionId: string) {
-  await prisma.googleConnection.update({ where: { id: connectionId }, data: { lastError: null } });
+  const connection = await prisma.googleConnection.update({
+    where: { id: connectionId },
+    data: { lastError: null },
+  });
+  const microsoft = connection.provider === 'MICROSOFT';
   try {
-    await ensureGoogleSub(connectionId).catch(() => undefined);
-    await syncCalendarList(connectionId);
+    if (microsoft) {
+      await syncMicrosoftCalendarList(connectionId);
+    } else {
+      await ensureGoogleSub(connectionId).catch(() => undefined);
+      await syncCalendarList(connectionId);
+    }
     const calendars = await prisma.googleCalendar.findMany({ where: { connectionId } });
     for (const calendar of calendars) {
       if (calendar.selected) {
-        await syncCalendar(calendar.id);
-        await ensureWatch(calendar).catch((error) => recordError(connectionId, error));
+        if (microsoft) await syncMicrosoftCalendar(calendar.id);
+        else await syncCalendar(calendar.id);
+        await (microsoft ? ensureMicrosoftWatch(calendar) : ensureWatch(calendar)).catch((error) =>
+          recordError(connectionId, error)
+        );
       } else if (calendar.watchChannelId) {
         await stopWatch(calendar);
       }

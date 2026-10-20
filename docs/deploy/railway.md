@@ -49,6 +49,7 @@ openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jot
 | `JWT_SECRET`                                             | api      | **Obrigatória**: assina a sessão. Sem ela a API não sobe em produção. Trocar derruba as sessões.                           |
 | `ENCRYPTION_KEY`                                         | api      | **Obrigatória**: 32 bytes (hex ou base64) que cifram o refresh token do Google no banco. Trocar exige reconectar o Google. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`               | api      | Login com o Google, Agenda e Tarefas (seção 3). Sem elas o app funciona sem Google.                                        |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`         | api      | Agenda do Outlook / Microsoft 365 (seção 3b). Sem elas a opção da Microsoft não aparece.                                   |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | api      | Notificações (seção 4). Sem elas não há lembretes por push.                                                                |
 | `HOST`                                                   | api      | `::` (já no arquivo): a rede privada do Railway pode ser só IPv6.                                                          |
 | `PORT`                                                   | api, web | `8080` e `4173` (já no arquivo).                                                                                           |
@@ -71,6 +72,23 @@ openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jot
    cada 5 minutos.
 
 O login pelo Google só aceita quem já tem conta (pelo e-mail ou pela conta Google ligada em Ajustes): ele não cria usuário.
+
+## 3b. Microsoft (Agenda do Outlook)
+
+1. No [Microsoft Entra](https://entra.microsoft.com/) (portal do Azure, serve conta pessoal), em
+   "Registros de aplicativo" › **Novo registro**: tipos de conta **"Contas em qualquer diretório
+   organizacional e contas pessoais da Microsoft"**, plataforma **Web** e URI de redirecionamento
+   `https://<domínio do web>/api/microsoft/callback` (e `http://localhost:5173/api/microsoft/callback`
+   para o dev).
+2. Em "Permissões de API", adicione do Microsoft Graph, do tipo **delegada**: `Calendars.ReadWrite`,
+   `User.Read` e `offline_access`.
+3. Em "Certificados e segredos", crie um **segredo do cliente** e copie o **Valor** (não o ID). O
+   segredo vence (até 24 meses): anote a data e troque antes.
+4. Defina `MICROSOFT_CLIENT_ID` (o "ID do aplicativo (cliente)") e `MICROSOFT_CLIENT_SECRET` na API.
+5. No app, Ajustes › Calendários › Adicionar conta Microsoft. A Microsoft é só para a Agenda (sem
+   login nem tarefas); as mudanças chegam por webhook (assinatura renovada sozinha, só em HTTPS) e
+   a cada 15 minutos. Eventos repetidos do Outlook aparecem como ocorrências soltas: a repetição se
+   muda no próprio Outlook.
 
 ## 4. Notificações (Web Push)
 

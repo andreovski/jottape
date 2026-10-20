@@ -2,11 +2,11 @@ import { Link } from '@tanstack/react-router';
 import { type ReactNode, useEffect } from 'react';
 
 // Páginas públicas exigidas pelo Google na tela de consentimento do OAuth. O texto descreve o que o
-// código faz de fato (escopos em apps/api/src/services/google/client.ts, criptografia em
-// apps/api/src/lib/crypto.ts): mudou o uso dos dados do Google, mude aqui também.
+// código faz de fato (escopos em apps/api/src/services/google/client.ts e microsoft/client.ts,
+// criptografia em apps/api/src/lib/crypto.ts): mudou o uso dos dados, mude aqui também.
 
 const CONTACT = 'andre14luiz21@gmail.com';
-const UPDATED_AT = '19 de outubro de 2026';
+const UPDATED_AT = '20 de outubro de 2026';
 
 function LegalLayout({ title, children }: { title: string; children: ReactNode }) {
   useEffect(() => {
@@ -123,6 +123,23 @@ export function PrivacyPage() {
         </li>
       </ul>
 
+      <H2>Dados da Microsoft</H2>
+      <p>
+        Se você ligar uma conta da Microsoft (Outlook, Hotmail ou Microsoft 365) em Ajustes, o
+        Jottape usa o Microsoft Graph com as permissões <code>Calendars.ReadWrite</code>,{' '}
+        <code>User.Read</code> e <code>offline_access</code>: lê a lista dos seus calendários e os
+        eventos dos que você escolher, para mostrá-los na Agenda, e cria, altera e apaga eventos no
+        Outlook quando você faz isso no Jottape. Não há login com a Microsoft nem acesso a e-mails,
+        contatos ou arquivos.
+      </p>
+      <p>
+        Guardamos o e-mail e o identificador da conta, o token de atualização (criptografado com
+        AES-256-GCM, como o do Google), nome e cor dos calendários e cópias dos eventos necessárias
+        para a sincronização. Esses dados seguem as mesmas regras de uso limitado acima: só servem
+        para mostrar e sincronizar sua agenda, não são vendidos, repassados nem usados para treinar
+        modelos de inteligência artificial.
+      </p>
+
       <H2>Onde os dados ficam</H2>
       <p>
         O Jottape roda na Railway (Railway Corp.), que hospeda o servidor e o banco de dados
@@ -156,6 +173,14 @@ export function PrivacyPage() {
           </a>
           .
         </li>
+        <li>
+          Desligar a Microsoft: em Ajustes, toque em desconectar na conta. O Jottape apaga o token,
+          os calendários e os eventos importados. Você também pode revogar o acesso em{' '}
+          <a href='https://account.live.com/consent/Manage' target='_blank' rel='noreferrer'>
+            account.live.com/consent/Manage
+          </a>{' '}
+          (conta pessoal) ou em myapps.microsoft.com (conta de trabalho ou escola).
+        </li>
         <li>Exportar: em Ajustes, baixe todos os seus dados em JSON ou os lançamentos em CSV.</li>
         <li>
           Apagar a conta: peça por e-mail para <Contact />. A conta e todos os dados ligados a ela
@@ -165,8 +190,8 @@ export function PrivacyPage() {
 
       <H2>Retenção</H2>
       <p>
-        Os dados ficam guardados enquanto sua conta existir. Os dados do Google ficam enquanto a
-        conexão estiver ligada e são apagados quando você desconecta ou apaga a conta.
+        Os dados ficam guardados enquanto sua conta existir. Os dados do Google e da Microsoft ficam
+        enquanto a conexão estiver ligada e são apagados quando você desconecta ou apaga a conta.
       </p>
 
       <H2>Alterações e contato</H2>
@@ -193,7 +218,7 @@ export function TermsPage() {
         </li>
         <li>
           Ele organiza compromissos, tarefas e finanças pessoais e, se você quiser, sincroniza com o
-          Google Agenda e o Google Tasks.
+          Google Agenda, o Google Tasks e o calendário do Outlook.
         </li>
         <li>
           Os números de finanças e de previsão de saldo são só organização pessoal, não
@@ -216,7 +241,8 @@ export function TermsPage() {
         O que você coloca no Jottape continua seu. Você pode exportar tudo em Ajustes, desligar o
         Google quando quiser e pedir para apagar a conta. Ao ligar o Google, você autoriza o Jottape
         a ler e alterar eventos e tarefas da sua conta Google conforme você usa o app, nos termos da{' '}
-        <Link to='/privacidade'>política de privacidade</Link>.
+        <Link to='/privacidade'>política de privacidade</Link>. O mesmo vale para os eventos do
+        Outlook, se você ligar uma conta da Microsoft.
       </p>
 
       <H2>Disponibilidade</H2>

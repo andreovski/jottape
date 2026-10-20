@@ -2,7 +2,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 
 import { getEncryptionKey } from './env';
 
-// AES-256-GCM: iv (12) + tag (16) + texto cifrado, em base64. Só para o refresh token do Google.
+// AES-256-GCM: iv (12) + tag (16) + texto cifrado, em base64. Para os refresh tokens do Google e da
+// Microsoft.
 
 export function encrypt(plain: string): string {
   const iv = randomBytes(12);
