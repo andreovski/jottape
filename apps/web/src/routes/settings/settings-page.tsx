@@ -11,6 +11,7 @@ import {
   Newspaper,
   Server,
   Shapes,
+  Smartphone,
   Sunrise,
   Timer,
   User,
@@ -28,11 +29,10 @@ import { Sheet } from '@/components/ios/sheet';
 import { useChangePassword, useCurrentUser, useLogout, useUpdateProfile } from '@/features/auth';
 import { useGoogleStatus } from '@/features/google';
 import { useApiHealth } from '@/features/health';
-import { usePush } from '@/features/push';
+import { isStandalone, usePush } from '@/features/push';
 import { errorMessage } from '@/lib/api';
 import { useFormErrors } from '@/lib/use-form-errors';
 
-import { InstallGuide } from './install-guide';
 import { REMINDER_OPTIONS, SUMMARY_OPTIONS, TIMEZONES } from './options';
 
 function initials(name: string) {
@@ -274,7 +274,22 @@ export function SettingsPage() {
         </a>
       </Section>
 
-      <InstallGuide />
+      {!isStandalone() && (
+        <Section footer='Notificações e tela cheia, como um app da loja.'>
+          <Link to='/ajustes/instalar' className='block'>
+            <Row
+              chevron
+              leading={
+                <IconChip color='var(--blue)'>
+                  <Smartphone />
+                </IconChip>
+              }
+              title='Instalar o app'
+              subtitle='Passo a passo para o seu aparelho'
+            />
+          </Link>
+        </Section>
+      )}
 
       <Section header='Sobre'>
         <Row

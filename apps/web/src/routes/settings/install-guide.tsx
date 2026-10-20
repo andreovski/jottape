@@ -1,9 +1,19 @@
-import { Download, EllipsisVertical, Share, Smartphone, SquarePlus } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import {
+  Check,
+  ChevronLeft,
+  Download,
+  EllipsisVertical,
+  Share,
+  Smartphone,
+  SquarePlus,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
-import { Button, Segmented } from '@/components/ios/controls';
+import { Button } from '@/components/ios/controls';
 import { IconChip, Row, Section } from '@/components/ios/list';
+import { Page } from '@/components/ios/page';
 import { isStandalone } from '@/features/push';
 
 type Platform = 'ios' | 'android';
@@ -13,10 +23,11 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-function detectPlatform(): Platform {
+function detectPlatform(): Platform | null {
   const ua = navigator.userAgent;
   const iPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  return /iPhone|iPad|iPod/.test(ua) || iPadOs ? 'ios' : /Android/i.test(ua) ? 'android' : 'ios';
+  if (/iPhone|iPad|iPod/.test(ua) || iPadOs) return 'ios';
+  return /Android/i.test(ua) ? 'android' : null;
 }
 
 interface Step {
@@ -76,10 +87,18 @@ const STEPS: Record<Platform, Step[]> = {
   ],
 };
 
-export function InstallGuide() {
-  const [platform, setPlatform] = useState<Platform>(detectPlatform);
+const PLATFORM_LABEL: Record<Platform, string> = {
+  ios: 'iPhone (Safari)',
+  android: 'Android (Chrome)',
+};
+
+export function InstallPage() {
+  const navigate = useNavigate();
   const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(isStandalone());
+  // Celular detectado: só a instrução dele. Computador/desconhecido: mostra as duas.
+  const detected = detectPlatform();
+  const platforms: Platform[] = detected ? [detected] : ['ios', 'android'];
 
   useEffect(() => {
     const onPrompt = (event: Event) => {
@@ -95,8 +114,6 @@ export function InstallGuide() {
     };
   }, []);
 
-  if (installed) return null;
-
   async function install() {
     if (!prompt) return;
     await prompt.prompt();
@@ -104,37 +121,56 @@ export function InstallGuide() {
     setPrompt(null);
   }
 
-  return (
-    <Section
-      header='Instalar o app'
-      footer='No app instalado as notificações funcionam e o Jottape abre em tela cheia, como um app da loja.'
+  const back = (
+    <button
+      type='button'
+      onClick={() => navigate({ to: '/ajustes' })}
+      className='text-tint text-body -ml-2 flex items-center active:opacity-40'
     >
-      <div className='px-4 py-3'>
-        <Segmented<Platform>
-          value={platform}
-          onChange={setPlatform}
-          options={[
-            { value: 'ios', label: 'iPhone' },
-            { value: 'android', label: 'Android' },
-          ]}
-        />
-      </div>
-      {platform === 'android' && prompt && (
-        <div className='px-4 pb-3'>
-          <Button className='w-full' onClick={install}>
-            Instalar agora
-          </Button>
-        </div>
+      <ChevronLeft className='size-7' strokeWidth={2.2} />
+      Ajustes
+    </button>
+  );
+
+  return (
+    <Page title='Instalar o app' leading={back}>
+      {installed ? (
+        <Section footer='O Jottape já está instalado neste aparelho.'>
+          <Row
+            leading={
+              <IconChip color='var(--green)'>
+                <Check />
+              </IconChip>
+            }
+            title='App instalado'
+          />
+        </Section>
+      ) : (
+        <>
+          <p className='text-subhead text-label-2 -mt-2 mb-5'>
+            No app instalado as notificações funcionam e o Jottape abre em tela cheia, como um app
+            da loja.
+          </p>
+          {prompt && (
+            <Button className='mb-7 w-full' onClick={install}>
+              Instalar agora
+            </Button>
+          )}
+          {platforms.map((platform) => (
+            <Section key={platform} header={detected ? 'Passo a passo' : PLATFORM_LABEL[platform]}>
+              {STEPS[platform].map((step, index) => (
+                <Row
+                  key={step.title}
+                  leading={<IconChip color={step.color}>{step.icon}</IconChip>}
+                  title={`${index + 1}. ${step.title}`}
+                  subtitle={step.subtitle}
+                  wrapSubtitle
+                />
+              ))}
+            </Section>
+          ))}
+        </>
       )}
-      {STEPS[platform].map((step, index) => (
-        <Row
-          key={step.title}
-          leading={<IconChip color={step.color}>{step.icon}</IconChip>}
-          title={`${index + 1}. ${step.title}`}
-          subtitle={step.subtitle}
-          wrapSubtitle
-        />
-      ))}
-    </Section>
+    </Page>
   );
 }

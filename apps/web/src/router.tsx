@@ -16,6 +16,7 @@ import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
 import { BriefingSettingsPage } from '@/routes/settings/briefing-page';
 import { CategoriesPage } from '@/routes/settings/categories-page';
 import { GooglePage } from '@/routes/settings/google-page';
+import { InstallPage } from '@/routes/settings/install-guide';
 import { SettingsPage } from '@/routes/settings/settings-page';
 import { TasksPage } from '@/routes/tasks/tasks-page';
 import { TodayPage } from '@/routes/today-page';
@@ -111,6 +112,7 @@ const appRoutes = appRoute.addChildren([
   route('/ajustes/categorias', CategoriesPage),
   route('/ajustes/google', GooglePage),
   route('/ajustes/briefing', BriefingSettingsPage),
+  route('/ajustes/instalar', InstallPage),
 ]);
 
 const routeTree = rootRoute.addChildren([...publicRoutes, appRoutes]);
