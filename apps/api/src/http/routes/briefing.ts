@@ -3,6 +3,7 @@ import {
   citySearchQuerySchema,
   nextEventQuerySchema,
   type NextEventResponse,
+  stockLookupQuerySchema,
 } from '@jottape/schemas';
 import type { FastifyInstance } from 'fastify';
 
@@ -13,7 +14,7 @@ import {
   nextEvent,
   saveBriefingSettings,
 } from '@/services/briefing';
-import { searchCities } from '@/services/briefing/external';
+import { searchCities, stockQuote } from '@/services/briefing/external';
 
 import { authenticate } from '../session';
 
@@ -41,6 +42,20 @@ export async function briefingRoutes(app: FastifyInstance) {
       request.log.warn({ err: error }, 'busca de cidade falhou');
       throw new AppError(502, 'A busca de cidades não respondeu. Tente de novo.');
     }
+  });
+
+  /** Confere o código antes de a ação entrar na lista. */
+  app.get('/briefing/stocks', async (request) => {
+    const { ticker } = stockLookupQuerySchema.parse(request.query);
+    let quote;
+    try {
+      quote = await stockQuote(ticker);
+    } catch (error) {
+      request.log.warn({ err: error }, 'cotação de ação falhou');
+      throw new AppError(502, 'A cotação não respondeu. Tente de novo.');
+    }
+    if (!quote) throw new AppError(404, `Não achamos a ação ${ticker}.`);
+    return quote;
   });
 
   app.get('/events/next', async (request): Promise<NextEventResponse> => {

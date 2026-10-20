@@ -20,10 +20,21 @@ import {
   type BriefingCurrency,
   type BriefingPluginId,
   type BriefingSettings,
+  briefingStocksMax,
+  stockTickerSchema,
   zodiacSigns,
 } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
-import { Check, ChevronLeft, CloudSun, Equal, MapPin, Search, Sparkles } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  CircleMinus,
+  CloudSun,
+  Equal,
+  MapPin,
+  Search,
+  Sparkles,
+} from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 import { Spinner, Switch } from '@/components/ios/controls';
@@ -32,7 +43,13 @@ import { IconChip, Row, Section } from '@/components/ios/list';
 import { Page } from '@/components/ios/page';
 import { Sheet } from '@/components/ios/sheet';
 import { briefingCatalog } from '@/components/today/briefing-catalog';
-import { useBriefingSettings, useCitySearch, useSaveBriefingSettings } from '@/features/briefing';
+import {
+  useBriefingSettings,
+  useCitySearch,
+  useSaveBriefingSettings,
+  useStockLookup,
+} from '@/features/briefing';
+import { errorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const SIGN_LABELS: Record<(typeof zodiacSigns)[number], string> = {
@@ -198,11 +215,91 @@ function CitySheet({
   );
 }
 
+/** Digita o código, confere na cotação e só então adiciona. */
+function StockSheet({
+  open,
+  onOpenChange,
+  current,
+  onAdd,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  current: string[];
+  onAdd: (ticker: string) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const lookup = useStockLookup();
+  const parsed = stockTickerSchema.safeParse(value);
+
+  function close(next: boolean) {
+    onOpenChange(next);
+    if (!next) {
+      setValue('');
+      setError(null);
+      lookup.reset();
+    }
+  }
+
+  async function add() {
+    if (!parsed.success) return;
+    if (current.includes(parsed.data)) {
+      setError(`${parsed.data} já está na lista.`);
+      return;
+    }
+    setError(null);
+    try {
+      const quote = await lookup.mutateAsync(parsed.data);
+      onAdd(quote.ticker);
+      close(false);
+    } catch (e) {
+      setError(await errorMessage(e));
+    }
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={close}
+      title='Adicionar ação'
+      confirmLabel={lookup.isPending ? 'Buscando…' : 'Adicionar'}
+      confirmDisabled={!parsed.success || lookup.isPending}
+      onConfirm={add}
+    >
+      <Section footer='Use o código da bolsa, como PETR4, VALE3 ou BOVA11. Ações de fora da B3 também valem, como AAPL.'>
+        <Row
+          title={
+            <TextInput
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value.toUpperCase());
+                setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void add();
+              }}
+              placeholder='Código da ação'
+              autoCapitalize='characters'
+              autoCorrect='off'
+              spellCheck={false}
+              enterKeyHint='done'
+              aria-label='Código da ação'
+            />
+          }
+          trailing={lookup.isPending ? <Spinner className='text-label-2' /> : undefined}
+        />
+      </Section>
+      {error && <p className='text-footnote text-red px-4'>{error}</p>}
+    </Sheet>
+  );
+}
+
 export function BriefingSettingsPage() {
   const navigate = useNavigate();
   const settings = useBriefingSettings();
   const save = useSaveBriefingSettings();
   const [citySheet, setCitySheet] = useState(false);
+  const [stockSheet, setStockSheet] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -298,7 +395,7 @@ export function BriefingSettingsPage() {
 
       <Section
         header='Ajustes dos plugins'
-        footer='Clima, horóscopo, cotação e feriados vêm de serviços públicos gratuitos (Open-Meteo, Horoscope App API com tradução do MyMemory, Frankfurter, CoinGecko e BrasilAPI). Só a cidade e o signo saem do app, sem nada que identifique você.'
+        footer='Clima, maré, horóscopo, cotação, ações e feriados vêm de serviços públicos gratuitos (Open-Meteo, Horoscope App API com tradução do MyMemory, Frankfurter, CoinGecko, Yahoo Finance, brapi e BrasilAPI). Só a cidade, o signo e os códigos das ações saem do app, sem nada que identifique você.'
       >
         <Row
           leading={
@@ -323,7 +420,7 @@ export function BriefingSettingsPage() {
               <CloudSun />
             </IconChip>
           }
-          title='Cidade do clima'
+          title='Cidade'
           detail={data.city ? data.city.name.split(', ')[0] : 'Nenhuma'}
           chevron
           onClick={() => setCitySheet(true)}
@@ -352,6 +449,42 @@ export function BriefingSettingsPage() {
           );
         })}
       </Section>
+
+      <Section
+        header='Ações'
+        footer={
+          data.stocks.length === 0
+            ? 'Nenhuma ação escolhida ainda.'
+            : 'Preço de até 15 minutos atrás, com a variação desde o último fechamento.'
+        }
+      >
+        {data.stocks.map((ticker) => (
+          <Row
+            key={ticker}
+            leading={
+              <button
+                type='button'
+                aria-label={`Remover ${ticker}`}
+                onClick={() => update({ stocks: data.stocks.filter((t) => t !== ticker) })}
+                className='text-red -ml-1 p-1 active:opacity-40'
+              >
+                <CircleMinus className='size-5' fill='currentColor' stroke='white' />
+              </button>
+            }
+            title={ticker}
+          />
+        ))}
+        {data.stocks.length < briefingStocksMax && (
+          <Row action title='Adicionar ação' onClick={() => setStockSheet(true)} />
+        )}
+      </Section>
+
+      <StockSheet
+        open={stockSheet}
+        onOpenChange={setStockSheet}
+        current={data.stocks}
+        onAdd={(ticker) => update({ stocks: [...data.stocks, ticker] })}
+      />
 
       <CitySheet
         open={citySheet}

@@ -11,7 +11,10 @@ import {
   monthLine,
   moonPhase,
   staleLine,
+  stocksLine,
   streakDays,
+  tideExtremes,
+  tideLine,
   when,
   yesterdayLine,
 } from './text';
@@ -214,5 +217,67 @@ describe('de fora', () => {
 
   it('primeiras frases', () => {
     expect(firstSentences('One. Two! Three?', 9)).toBe('One. Two!');
+  });
+});
+
+describe('stocksLine', () => {
+  it('mostra preço na moeda da bolsa e a variação', () => {
+    expect(
+      stocksLine([
+        { ticker: 'PETR4', name: null, currency: 'BRL', price: 57.64, change: -0.00621 },
+        { ticker: 'AAPL', name: null, currency: 'USD', price: 340.672, change: 0.012 },
+        { ticker: 'XPTO3', name: null, currency: 'BRL', price: 1, change: null },
+      ])?.text
+    ).toBe('PETR4 R$ 57,64 (−0,6%), AAPL US$ 340,67 (+1,2%), XPTO3 R$ 1,00.');
+    expect(stocksLine([])).toBeNull();
+  });
+});
+
+describe('tideLine', () => {
+  // Meia maré de 15 em 15 minutos: baixa às 03:00, alta às 09:15, baixa às 15:30.
+  const levels: [string, number][] = [
+    ['02:30', 0.1],
+    ['02:45', 0.0],
+    ['03:00', -0.1],
+    ['03:15', 0.0],
+    ['09:00', 0.6],
+    ['09:15', 0.7],
+    ['09:30', 0.7],
+    ['09:45', 0.5],
+    ['15:15', 0.15],
+    ['15:30', 0.1],
+    ['15:45', 0.2],
+  ];
+  const points = levels.map(([time, level]) => ({ time: `${TODAY}T${time}`, level }));
+
+  it('acha altas e baixas, com pico repetido contando uma vez', () => {
+    expect(tideExtremes(points).map((e) => `${e.kind} ${e.time.slice(11)}`)).toEqual([
+      'baixa 03:00',
+      'alta 09:30',
+      'baixa 15:30',
+    ]);
+  });
+
+  it('ignora a ondulação pequena entre uma maré e outra', () => {
+    // Santos em 20/10/2026: a "subida" de 0,10 para 0,14 m às 17h não é maré alta.
+    const santos = [0.63, 0.36, 0.18, 0.11, 0.1, 0.13, 0.14, 0.05, -0.05, -0.04, 0.14, 0.39].map(
+      (level, i) => ({ time: `${TODAY}T${String(11 + i).padStart(2, '0')}:00`, level })
+    );
+    expect(tideExtremes([{ time: `${TODAY}T10:00`, level: 0.5 }, ...santos])).toEqual([
+      { time: `${TODAY}T11:00`, level: 0.63, kind: 'alta' },
+      { time: `${TODAY}T19:00`, level: -0.05, kind: 'baixa' },
+    ]);
+  });
+
+  it('diz se sobe ou baixa e as próximas duas', () => {
+    expect(tideLine('Santos, São Paulo, Brasil', points, `${TODAY}T03:20`, TODAY).text).toBe(
+      'Maré em Santos subindo (0,0 m agora). Alta às 09:30 (0,7 m) e baixa às 15:30 (0,1 m).'
+    );
+    const tomorrow = points.map((p, i) =>
+      i < 4 ? p : { ...p, time: p.time.replace(TODAY, '2026-10-20') }
+    );
+    expect(tideLine('Santos', tomorrow, `${TODAY}T02:50`, TODAY).text).toBe(
+      'Maré em Santos baixando (0,0 m agora). Baixa às 03:00 (−0,1 m) e alta amanhã às 09:30 (0,7 m).'
+    );
   });
 });

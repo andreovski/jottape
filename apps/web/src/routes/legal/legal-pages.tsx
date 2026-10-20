@@ -149,9 +149,10 @@ export function PrivacyPage() {
       </p>
       <p>
         Se você ligar os plugins de fora no briefing da tela Hoje, o servidor do Jottape consulta
-        serviços públicos gratuitos: Open-Meteo (clima e busca de cidade, com a cidade escolhida),
-        Horoscope App API e MyMemory (horóscopo e tradução, com o signo), Frankfurter e CoinGecko
-        (cotações) e BrasilAPI (feriados). Só a cidade e o signo saem do app, sem nome, e-mail ou
+        serviços públicos gratuitos: Open-Meteo (clima, maré e busca de cidade, com a cidade
+        escolhida), Horoscope App API e MyMemory (horóscopo e tradução, com o signo), Frankfurter e
+        CoinGecko (cotações), Yahoo Finance e brapi (ações, com os códigos escolhidos) e BrasilAPI
+        (feriados). Só a cidade, o signo e os códigos das ações saem do app, sem nome, e-mail ou
         qualquer dado que identifique você, e as respostas ficam guardadas para todos os usuários.
       </p>
 

@@ -3,6 +3,7 @@ import type {
   BriefingResponse,
   BriefingSettings,
   NextEventResponse,
+  StockQuote,
 } from '@jottape/schemas';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -50,6 +51,14 @@ export function useCitySearch(query: string) {
     enabled: q.length >= 2,
     placeholderData: keepPreviousData,
     staleTime: Infinity,
+  });
+}
+
+/** Cotação de uma ação, para conferir o código antes de adicionar. */
+export function useStockLookup() {
+  return useMutation({
+    mutationFn: (ticker: string) =>
+      api.get('briefing/stocks', { searchParams: { ticker } }).json<StockQuote>(),
   });
 }
 

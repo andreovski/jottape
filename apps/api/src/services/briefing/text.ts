@@ -1,5 +1,5 @@
 import { addDays, diffInDays, wallTimeToInstant } from '@jottape/finance-engine';
-import type { BriefingItem, BriefingPluginId, ZodiacSign } from '@jottape/schemas';
+import type { BriefingItem, BriefingPluginId, StockQuote, ZodiacSign } from '@jottape/schemas';
 
 // Frases do briefing. Funções puras: recebem os dados já lidos e devolvem o texto.
 
@@ -379,19 +379,91 @@ const currencyNames: Record<string, string> = {
   BTC: 'Bitcoin',
 };
 
+const decimal = (value: number, digits: number) =>
+  value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+/** " (+1,2%)", " (−0,6%)" ou nada. */
+const changeText = (change: number | null) =>
+  change === null ? '' : ` (${change >= 0 ? '+' : '−'}${decimal(Math.abs(change) * 100, 1)}%)`;
+
 export function currencyLine(rates: Rate[]): Line | null {
   if (rates.length === 0) return null;
-  const brl = (value: number, digits: number) =>
-    value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
   const parts = rates.map((r) => {
-    const value = `R$ ${brl(r.valueBrl, r.valueBrl >= 1000 ? 0 : 2)}`;
-    const change =
-      r.change === null
-        ? ''
-        : ` (${r.change >= 0 ? '+' : '−'}${brl(Math.abs(r.change) * 100, 1)}%)`;
-    return `${currencyNames[r.code] ?? r.code} ${value}${change}`;
+    const value = `R$ ${decimal(r.valueBrl, r.valueBrl >= 1000 ? 0 : 2)}`;
+    return `${currencyNames[r.code] ?? r.code} ${value}${changeText(r.change)}`;
   });
   return line(`${parts.join(', ')}.`);
+}
+
+const currencySymbols: Record<string, string> = { BRL: 'R$', USD: 'US$', EUR: '€', GBP: '£' };
+
+export function stocksLine(quotes: StockQuote[]): Line | null {
+  if (quotes.length === 0) return null;
+  const parts = quotes.map((q) => {
+    const symbol = currencySymbols[q.currency] ?? q.currency;
+    return `${q.ticker} ${symbol} ${decimal(q.price, 2)}${changeText(q.change)}`;
+  });
+  return line(`${parts.join(', ')}.`);
+}
+
+// ---------------------------------------------------------------- maré
+
+/** Nível do mar (metros, em relação ao nível médio) com o horário local ("2026-10-20T11:15"). */
+export type TideSeries = { time: string; level: number }[];
+
+type TideExtreme = { time: string; level: number; kind: 'alta' | 'baixa' };
+
+/** Abaixo disso, a subida e descida é marola da previsão, não maré. */
+const TIDE_MIN_RANGE = 0.1;
+
+/** Marés altas e baixas: os picos e vales da série, sem as ondulações pequenas. */
+export function tideExtremes(points: TideSeries) {
+  const extremes: TideExtreme[] = [];
+  for (let i = 1; i < points.length - 1; i++) {
+    const [prev, cur, next] = [points[i - 1].level, points[i].level, points[i + 1].level];
+    // `>=` com o anterior: com duas casas, o pico às vezes se repete por 15 minutos.
+    if (cur >= prev && cur > next) extremes.push({ ...points[i], kind: 'alta' });
+    else if (cur <= prev && cur < next) extremes.push({ ...points[i], kind: 'baixa' });
+  }
+  // Tira o par vizinho que quase não muda; os de fora ficam com o mais extremo de cada tipo.
+  const more = (a: TideExtreme, b: TideExtreme) =>
+    (a.kind === 'alta' ? b.level > a.level : b.level < a.level) ? b : a;
+  for (let i = 0; i < extremes.length - 1; ) {
+    if (Math.abs(extremes[i].level - extremes[i + 1].level) >= TIDE_MIN_RANGE) {
+      i++;
+      continue;
+    }
+    const [a, b] = [extremes[i], extremes[i + 1]];
+    if (i > 0) extremes[i - 1] = more(extremes[i - 1], b);
+    if (i + 2 < extremes.length) extremes[i + 2] = more(extremes[i + 2], a);
+    extremes.splice(i, 2);
+    i = Math.max(i - 1, 0);
+  }
+  return extremes;
+}
+
+/** `now` no horário local, como os pontos ("2026-10-20T10:00"). */
+export function tideLine(city: string, points: TideSeries, now: string, today: string): Line {
+  const place = city.split(',')[0];
+  const meters = (level: number) => `${level < 0 ? '−' : ''}${decimal(Math.abs(level), 1)} m`;
+  const index = Math.max(points.filter((p) => p.time <= now).length - 1, 0);
+  const current = points[index];
+  const after = points[index + 1];
+  let text = `Maré em ${place}`;
+  if (after) text += after.level >= current.level ? ' subindo' : ' baixando';
+  text += ` (${meters(current.level)} agora).`;
+  const next = tideExtremes(points)
+    .filter((e) => e.time > now)
+    .slice(0, 2)
+    .map((e) => {
+      const day = e.time.slice(0, 10) === today ? '' : 'amanhã ';
+      return `${e.kind} ${day}às ${e.time.slice(11, 16)} (${meters(e.level)})`;
+    });
+  if (next.length) {
+    const joined = next.join(' e ');
+    text += ` ${joined[0].toUpperCase()}${joined.slice(1)}.`;
+  }
+  return line(text);
 }
 
 export function holidayLine(
