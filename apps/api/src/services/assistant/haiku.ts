@@ -3,12 +3,12 @@ import { z } from 'zod';
 
 import { getAnthropicConfig } from '@/lib/env';
 
-import type { AccountOption, CategoryOption, ExtractedItem } from './resolve';
+import type { AccountOption, CategoryOption, ExtractedItem, TaskListOption } from './resolve';
 
 // Claude Haiku lê o pedido em texto livre e devolve os itens em JSON (saída estruturada). Ele
 // extrai valores, datas e nomes, que o Jev não faz bem; a escolha final é conferida pelo Jev.
 
-const MAX_TOKENS = 1024;
+const MAX_TOKENS = 1500;
 
 const ITEM_SCHEMA = {
   type: 'object',
@@ -23,6 +23,11 @@ const ITEM_SCHEMA = {
     'to_account',
     'category',
     'installments',
+    'time',
+    'end_time',
+    'all_day',
+    'list',
+    'location',
     'confidence',
   ],
   properties: {
@@ -38,6 +43,11 @@ const ITEM_SCHEMA = {
     to_account: { type: ['string', 'null'] },
     category: { type: ['string', 'null'] },
     installments: { type: ['integer', 'null'] },
+    time: { type: ['string', 'null'] },
+    end_time: { type: ['string', 'null'] },
+    all_day: { type: 'boolean' },
+    list: { type: ['string', 'null'] },
+    location: { type: ['string', 'null'] },
     confidence: { type: 'number' },
   },
 } as const;
@@ -63,6 +73,11 @@ const outputSchema = z.object({
         to_account: z.string().nullable(),
         category: z.string().nullable(),
         installments: z.number().int().nullable(),
+        time: z.string().nullable(),
+        end_time: z.string().nullable(),
+        all_day: z.boolean(),
+        list: z.string().nullable(),
+        location: z.string().nullable(),
         confidence: z.number(),
       })
     )
@@ -76,14 +91,21 @@ export interface ExtractContext {
   timezone: string;
   accounts: AccountOption[];
   categories: CategoryOption[];
+  lists: TaskListOption[];
 }
 
-export function systemPrompt({ today, timezone, accounts, categories }: ExtractContext): string {
+export function systemPrompt({
+  today,
+  timezone,
+  accounts,
+  categories,
+  lists,
+}: ExtractContext): string {
   const weekday = WEEKDAYS[new Date(`${today}T12:00:00Z`).getUTCDay()];
   const accountList = accounts.map((a) => `- ${a.name} (${a.type})`).join('\n') || '- (nenhuma)';
   const expense = categories.filter((c) => c.kind === 'EXPENSE').map((c) => c.name);
   const income = categories.filter((c) => c.kind === 'INCOME').map((c) => c.name);
-  return `Você lê pedidos de um app de finanças pessoais brasileiro (Jottape) e devolve cada pedido como um item estruturado. Não converse: só extraia.
+  return `Você lê pedidos feitos ao Jottape, um app brasileiro de finanças, agenda e tarefas, e devolve cada pedido como um item estruturado. Não converse: só extraia.
 
 Hoje é ${weekday}, ${today} (fuso ${timezone}).
 
@@ -92,18 +114,23 @@ ${accountList}
 
 Categorias de despesa: ${expense.join(', ') || '(nenhuma)'}
 Categorias de receita: ${income.join(', ') || '(nenhuma)'}
+Listas de tarefas: ${lists.map((l) => l.name).join(', ') || '(nenhuma)'}
 
 Regras:
-- Um item por lançamento citado ("30 no uber e 50 no mercado" são dois). Texto sem lançamento vira um item só com o intent certo.
-- intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso para a agenda), task (algo a fazer), question (pergunta sobre saldo, gastos etc.), other (o resto).
+- Um item por coisa pedida ("30 no uber e 50 no mercado" são dois; "marca dentista amanhã e me lembra de comprar pão" também). Texto sem pedido vira um item só com o intent certo.
+- intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso com dia e hora para a agenda: consulta, reunião, aula, viagem, aniversário), task (algo a fazer ou lembrar, sem ser um compromisso marcado: "me lembra de", "preciso", "anota para"), question (pergunta sobre saldo, gastos, agenda), other (o resto).
 - excerpt: o trecho do pedido que fala deste item, como o usuário escreveu.
-- amount_cents: valor em centavos inteiros ("R$ 32,50" = 3250, "mil e duzentos" = 120000, "50 conto" = 5000). Sem valor: null. Em compra parcelada, o valor TOTAL (12x de 100 = 120000).
+- amount_cents: valor em centavos inteiros ("R$ 32,50" = 3250, "mil e duzentos" = 120000, "50 conto" = 5000). Sem valor ou fora de finanças: null. Em compra parcelada, o valor TOTAL (12x de 100 = 120000).
 - installments: número de parcelas quando o pedido disser ("em 3x"), senão null.
-- description: curta, do jeito que apareceria no extrato ("Uber", "Mercado", "Salário"), sem o valor.
-- date: AAAA-MM-DD. "ontem", "sexta passada", "dia 5" são relativos a hoje. Sem data: null.
+- description: em finanças, curta como no extrato ("Uber", "Mercado", "Salário"), sem o valor. Em evento e tarefa, o título, com a primeira letra maiúscula e sem a data ("Dentista", "Reunião com a Ana", "Pagar o IPVA").
+- date: AAAA-MM-DD. "ontem", "amanhã", "sexta", "dia 5", "semana que vem" são relativos a hoje (dia da semana sem "passada" é o próximo). Sem data: null.
+- time e end_time: HH:MM em 24 h ("15h" = 15:00, "3 da tarde" = 15:00, "meio-dia" = 12:00), de início e de fim; sem horário: null. Em tarefa, time é o horário do prazo.
+- all_day: true só em evento que o pedido diz ser o dia todo, ou que é de dia inteiro por natureza (aniversário, feriado, viagem de vários dias). Senão false.
+- location: o local do evento quando o pedido disser, senão null.
+- list: o nome EXATO de uma lista de tarefas quando o pedido apontar para ela ("na lista do mercado", "no trabalho"), senão null.
 - account e to_account: o nome EXATO de uma conta da lista quando o pedido apontar para ela ("no nubank", "no crédito", "no cartão"), senão null. Não invente.
 - category: o nome EXATO de uma categoria da lista do tipo certo que combine com o gasto (uber = Transporte, ifood = Alimentação), ou null se nenhuma servir.
-- confidence: de 0 a 1, o quanto você tem certeza do item inteiro. Use menos de 0.7 quando houver dúvida real sobre tipo, valor ou conta.`;
+- confidence: de 0 a 1, o quanto você tem certeza do item inteiro. Use menos de 0.7 quando houver dúvida real sobre o tipo, o valor, a conta, a data ou o horário.`;
 }
 
 export interface ExtractResult {
@@ -150,6 +177,11 @@ export async function extractItems(text: string, context: ExtractContext): Promi
       toAccount: item.to_account,
       category: item.category,
       installments: item.installments,
+      time: item.time,
+      endTime: item.end_time,
+      allDay: item.all_day,
+      list: item.list,
+      location: item.location,
       confidence: item.confidence,
     })),
     ...usage,

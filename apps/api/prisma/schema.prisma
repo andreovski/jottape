@@ -524,8 +524,9 @@ enum AssistantCardStatus {
   DISCARDED
 }
 
-/// Lançamento proposto pelo Assistente: rascunho até ser salvo (sozinho, com score alto, ou pelo
-/// usuário). `draft` segue o corpo de POST /transactions; `transactionIds` são os criados.
+/// Lançamento, evento ou tarefa proposto pelo Assistente: rascunho até ser salvo (sozinho, com
+/// score alto, ou pelo usuário). `draft` tem o `type`; `transactionIds`, `eventId` e `taskId` são
+/// o que foi criado.
 model AssistantCard {
   id             String              @id @default(uuid())
   userId         String              @map("user_id")
@@ -536,6 +537,9 @@ model AssistantCard {
   missing        String[]
   uncertain      String[]
   transactionIds String[]            @map("transaction_ids")
+  /// Evento ou tarefa criados (sem chave estrangeira: somem por fora e o cartão fica).
+  eventId        String?             @map("event_id")
+  taskId         String?             @map("task_id")
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 

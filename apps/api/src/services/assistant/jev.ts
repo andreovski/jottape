@@ -6,9 +6,12 @@ import {
   type ExtractedItem,
   type JevAnswers,
   type JevChoice,
+  isFinanceIntent,
   NO_ACCOUNT,
   NO_CATEGORY,
+  NO_LIST,
   optionKey,
+  type TaskListOption,
 } from './resolve';
 
 // Jev (TypeSafe, System One): responde perguntas de escolha com a probabilidade de cada opção.
@@ -40,30 +43,53 @@ function accountCriteria(accounts: AccountOption[]): Record<string, string> {
   return criteria;
 }
 
+export interface JevOptions {
+  accounts: AccountOption[];
+  categories: CategoryOption[];
+  lists: TaskListOption[];
+}
+
 /** As perguntas de um item. Instruções em inglês (língua principal do Jev); o pedido vai em pt-BR. */
 export function buildQuestions(
   item: ExtractedItem,
-  accounts: AccountOption[],
-  categories: CategoryOption[]
+  { accounts, categories, lists }: JevOptions
 ): Record<string, ChoiceQuestion> {
   const questions: Record<string, ChoiceQuestion> = {
     kind: {
       type: 'choice',
       instructions:
-        'The user wrote this request (in Brazilian Portuguese) to a personal finance app. What kind of money movement is it?',
+        'The user wrote this request (in Brazilian Portuguese) to an app for personal finance, calendar and to-dos. What does the user want to record?',
       criteria: {
         expense: 'Money spent: a purchase, a bill, a payment for something',
         income: 'Money received: salary, a sale, a refund, a transfer from someone else',
         transfer:
           "Money moved between the user's own accounts, a deposit into savings or paying a credit card bill",
+        event:
+          'A calendar appointment at a set day and time: a doctor visit, a meeting, a class, a trip, a birthday',
+        task: 'Something to do or to be reminded of, not an appointment: a to-do, an errand, a chore',
       },
     },
-    account: {
+  };
+
+  if (item.intent === 'task' && lists.length > 0) {
+    const criteria: Record<string, string> = {};
+    lists.forEach((list, i) => {
+      criteria[optionKey(i)] = list.name;
+    });
+    criteria[NO_LIST] = 'The request does not say which list';
+    questions.list = {
       type: 'choice',
-      instructions:
-        'Which of the user accounts or cards does the money come out of (or go into, for income)?',
-      criteria: accountCriteria(accounts),
-    },
+      instructions: 'Which of the user to-do lists does this task belong to?',
+      criteria,
+    };
+  }
+  if (!isFinanceIntent(item.intent) || accounts.length === 0) return questions;
+
+  questions.account = {
+    type: 'choice',
+    instructions:
+      'Which of the user accounts or cards does the money come out of (or go into, for income)?',
+    criteria: accountCriteria(accounts),
   };
   if (item.intent === 'transfer') {
     questions.toAccount = {
@@ -103,18 +129,14 @@ export interface JevResult {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Pergunta ao Jev sobre um item. Sem a chave, ou se ele falhar, devolve null (o Haiku decide sozinho). */
-export async function askJev(
-  item: ExtractedItem,
-  accounts: AccountOption[],
-  categories: CategoryOption[]
-): Promise<JevResult | null> {
+export async function askJev(item: ExtractedItem, options: JevOptions): Promise<JevResult | null> {
   const config = getJevConfig();
   if (!config) return null;
 
   const body = JSON.stringify({
     model: config.model,
     state: { request: item.excerpt },
-    questions: buildQuestions(item, accounts, categories),
+    questions: buildQuestions(item, options),
   });
 
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
@@ -143,6 +165,7 @@ export async function askJev(
         account: choice('account'),
         toAccount: choice('toAccount'),
         category: choice('category'),
+        list: choice('list'),
       },
       inputTokens: data.usage?.input_tokens ?? 0,
     };

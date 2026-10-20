@@ -32,6 +32,11 @@ function item(overrides: Partial<ExtractedItem> = {}): ExtractedItem {
     toAccount: null,
     category: 'Mercado',
     installments: null,
+    time: null,
+    endTime: null,
+    allDay: false,
+    list: null,
+    location: null,
     confidence: 0.95,
     ...overrides,
   };
@@ -182,18 +187,18 @@ describe('assistente', () => {
     vi.mocked(extractItems).mockResolvedValue({
       items: [
         item({ confidence: 1 }),
-        item({ intent: 'event', excerpt: 'dentista amanhã', amountCents: null }),
+        item({ intent: 'question', excerpt: 'quanto gastei?', amountCents: null }),
       ],
       inputTokens: 900,
       outputTokens: 120,
     });
     vi.mocked(askJev).mockResolvedValue(null);
 
-    const reply = await send('gastei 32 no mercado no nubank e marca dentista amanhã');
+    const reply = await send('gastei 32 no mercado no nubank e quanto gastei no mês?');
     const cards = reply.messages[1].cards;
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ status: 'DRAFT', score: 0.8, missing: [] });
-    expect(reply.messages[1].text).toMatch(/^Confira e salve\. Agenda, tarefas/);
+    expect(reply.messages[1].text).toMatch(/^Confira e salve\. Perguntas sobre/);
 
     const discarded = (await api.post(`/assistant/cards/${cards[0].id}/discard`)).json();
     expect(discarded.status).toBe('DISCARDED');
@@ -262,5 +267,127 @@ describe('assistente', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it('marca evento na agenda sozinho e desfaz', async () => {
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [
+        item({
+          intent: 'event',
+          excerpt: 'dentista amanhã às 15h',
+          amountCents: null,
+          description: 'Dentista',
+          date: '2026-10-21',
+          time: '15:00',
+          account: null,
+          category: null,
+        }),
+      ],
+      inputTokens: 900,
+      outputTokens: 80,
+    });
+    vi.mocked(askJev).mockResolvedValue({ answers: { kind: sure('event') }, inputTokens: 200 });
+
+    const reply = await send('dentista amanhã às 15h');
+    const [card] = reply.messages[1].cards;
+    expect(reply.messages[1].text).toBe('Pronto, está na agenda.');
+    expect(card.status).toBe('SAVED');
+    expect(card.event).toMatchObject({
+      title: 'Dentista',
+      allDay: false,
+      // 15h em São Paulo (UTC-3).
+      startAt: '2026-10-21T18:00:00.000Z',
+      endAt: '2026-10-21T19:00:00.000Z',
+    });
+    expect(await prisma.event.count()).toBe(1);
+
+    const undone = (
+      await api.post(`/assistant/cards/${card.id}/undo`)
+    ).json() as AssistantCardResponse;
+    expect(undone.status).toBe('UNDONE');
+    expect(undone.event).toBeNull();
+    expect(await prisma.event.count()).toBe(0);
+  });
+
+  it('evento sem horário vira rascunho e salva com o que veio da folha', async () => {
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [
+        item({
+          intent: 'event',
+          excerpt: 'reunião sexta',
+          amountCents: null,
+          description: 'Reunião',
+          date: '2026-10-23',
+        }),
+      ],
+      inputTokens: 900,
+      outputTokens: 80,
+    });
+    vi.mocked(askJev).mockResolvedValue({ answers: { kind: sure('event') }, inputTokens: 200 });
+
+    const [card] = (await send('reunião sexta')).messages[1].cards;
+    expect(card).toMatchObject({ status: 'DRAFT', missing: ['time'] });
+    expect((await api.post(`/assistant/cards/${card.id}/save`, {})).statusCode).toBe(400);
+
+    const saved = (
+      await api.post(`/assistant/cards/${card.id}/save`, {
+        event: {
+          title: 'Reunião de equipe',
+          startAt: '2026-10-23T13:00:00.000Z',
+          endAt: '2026-10-23T14:00:00.000Z',
+          allDay: false,
+        },
+      })
+    ).json() as AssistantCardResponse;
+    expect(saved.status).toBe('SAVED');
+    expect(saved.event?.title).toBe('Reunião de equipe');
+  });
+
+  it('anota tarefa na lista com prazo e desfaz', async () => {
+    const list = await prisma.taskList.create({
+      data: { userId: (await prisma.user.findFirstOrThrow()).id, name: 'Casa' },
+    });
+    const lists = await prisma.taskList.findMany({
+      where: { userId: list.userId },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [
+        item({
+          intent: 'task',
+          excerpt: 'me lembra de trocar a lâmpada sexta',
+          amountCents: null,
+          description: 'Trocar a lâmpada',
+          date: '2026-10-23',
+          list: 'Casa',
+        }),
+      ],
+      inputTokens: 900,
+      outputTokens: 80,
+    });
+    vi.mocked(askJev).mockResolvedValue({
+      answers: {
+        kind: sure('task'),
+        list: sure(`opcao_${lists.findIndex((l) => l.id === list.id) + 1}`),
+      },
+      inputTokens: 200,
+    });
+
+    const reply = await send('me lembra de trocar a lâmpada sexta');
+    const [card] = reply.messages[1].cards;
+    expect(reply.messages[1].text).toBe('Pronto, anotei nas tarefas.');
+    expect(card.task).toMatchObject({
+      title: 'Trocar a lâmpada',
+      listId: list.id,
+      hasTime: false,
+      // Meia-noite de sexta em São Paulo.
+      dueAt: '2026-10-23T03:00:00.000Z',
+    });
+
+    const undone = (
+      await api.post(`/assistant/cards/${card.id}/undo`)
+    ).json() as AssistantCardResponse;
+    expect(undone.task).toBeNull();
+    expect(await prisma.task.count({ where: { deletedAt: null } })).toBe(0);
   });
 });

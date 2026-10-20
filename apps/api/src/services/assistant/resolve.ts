@@ -1,8 +1,15 @@
 import { addDays } from '@jottape/finance-engine';
-import type { AssistantDraft, AssistantMissing, AssistantUncertain } from '@jottape/schemas';
+import type {
+  AssistantDraft,
+  AssistantEventDraft,
+  AssistantMissing,
+  AssistantTaskDraft,
+  AssistantTransactionDraft,
+  AssistantUncertain,
+} from '@jottape/schemas';
 
-// Funções puras do Assistente: do que o Haiku leu e do que o Jev escolheu até o rascunho do
-// lançamento, com o score que decide se ele salva sozinho.
+// Funções puras do Assistente: do que o Haiku leu e do que o Jev escolheu até o rascunho (de
+// lançamento, evento ou tarefa), com o score que decide se ele salva sozinho.
 
 /** Com score a partir daqui e nada faltando, o lançamento é salvo sem perguntar (com Desfazer). */
 export const AUTO_SAVE_SCORE = 0.85;
@@ -28,6 +35,13 @@ export interface ExtractedItem {
   toAccount: string | null;
   category: string | null;
   installments: number | null;
+  /** "HH:MM" do início (evento) ou do prazo (tarefa). */
+  time: string | null;
+  endTime: string | null;
+  allDay: boolean;
+  /** Lista de tarefas que o pedido nomeou. */
+  list: string | null;
+  location: string | null;
   confidence: number;
 }
 
@@ -35,6 +49,11 @@ export interface AccountOption {
   id: string;
   name: string;
   type: 'WALLET' | 'CHECKING' | 'SAVINGS' | 'CREDIT_CARD';
+}
+
+export interface TaskListOption {
+  id: string;
+  name: string;
 }
 
 export interface CategoryOption {
@@ -54,6 +73,7 @@ export interface JevAnswers {
   account?: JevChoice;
   toAccount?: JevChoice;
   category?: JevChoice;
+  list?: JevChoice;
 }
 
 export interface Resolution {
@@ -67,7 +87,11 @@ export interface Resolution {
 export const isFinanceIntent = (intent: Intent): intent is FinanceIntent =>
   intent === 'expense' || intent === 'income' || intent === 'transfer';
 
-const KIND: Record<FinanceIntent, AssistantDraft['kind']> = {
+/** O que o Assistente sabe criar. Perguntas ("quanto gastei?") ainda não. */
+export const isActionIntent = (intent: Intent): intent is FinanceIntent | 'event' | 'task' =>
+  isFinanceIntent(intent) || intent === 'event' || intent === 'task';
+
+const KIND: Record<FinanceIntent, AssistantTransactionDraft['kind']> = {
   expense: 'EXPENSE',
   income: 'INCOME',
   transfer: 'TRANSFER',
@@ -77,6 +101,7 @@ const KIND: Record<FinanceIntent, AssistantDraft['kind']> = {
 export const optionKey = (index: number) => `opcao_${index + 1}`;
 export const NO_ACCOUNT = 'nao_informada';
 export const NO_CATEGORY = 'nenhuma';
+export const NO_LIST = 'entrada';
 
 export function normalize(value: string): string {
   return value
@@ -147,6 +172,43 @@ function pickOption<T extends { id: string }>(
   return { value: null, confidence: 0 };
 }
 
+/** Score e decisão a partir da confiança de cada campo (a menor manda). */
+function finish(
+  draft: AssistantDraft,
+  missing: AssistantMissing[],
+  confidences: Partial<Record<AssistantUncertain, number>>,
+  item: ExtractedItem,
+  withJev: boolean
+): Resolution {
+  const modelConfidence = Math.max(0, Math.min(1, item.confidence));
+  const uncertain = (Object.keys(confidences) as AssistantUncertain[]).filter(
+    (field) => (confidences[field] ?? 1) < AUTO_SAVE_SCORE
+  );
+  const fieldScore = Math.min(1, ...Object.values(confidences).map((c) => c ?? 1));
+  const base = withJev
+    ? Math.min(fieldScore, modelConfidence)
+    : Math.min(fieldScore, modelConfidence, MODEL_ONLY_CAP);
+  const score = Math.round(Math.max(0, Math.min(1, base)) * 100) / 100;
+  return {
+    draft,
+    missing,
+    uncertain,
+    score,
+    autoSave: missing.length === 0 && score >= AUTO_SAVE_SCORE,
+  };
+}
+
+/** Tipo: o do Haiku, conferido pelo Jev (a probabilidade que ele deu a esse tipo). */
+const kindConfidence = (item: ExtractedItem, jev: JevAnswers | null) =>
+  jev?.kind ? (jev.kind.probabilities[item.intent] ?? 0) : 1;
+
+const isTime = (value: string | null): value is string =>
+  Boolean(value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
+
+const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
+const timeOf = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
 export interface ResolveInput {
   item: ExtractedItem & { intent: FinanceIntent };
   accounts: AccountOption[];
@@ -166,11 +228,8 @@ export function resolveItem({
   usualAccountId,
 }: ResolveInput): Resolution {
   const kind = KIND[item.intent];
-  const modelConfidence = Math.max(0, Math.min(1, item.confidence));
   const confidences: Partial<Record<AssistantUncertain, number>> = {};
-
-  // Tipo: o do Haiku, conferido pelo Jev.
-  confidences.kind = jev?.kind ? (jev.kind.probabilities[item.intent] ?? 0) : 1;
+  confidences.kind = kindConfidence(item, jev);
 
   // Conta de origem (no cartão, o próprio cartão).
   const sources = kind === 'INCOME' ? accounts.filter((a) => a.type !== 'CREDIT_CARD') : accounts;
@@ -232,7 +291,8 @@ export function resolveItem({
     category.value?.name ||
     (kind === 'INCOME' ? 'Receita' : kind === 'TRANSFER' ? 'Transferência' : 'Despesa');
 
-  const draft: AssistantDraft = {
+  const draft: AssistantTransactionDraft = {
+    type: 'transaction',
     kind,
     amountCents,
     date: resolveDate(item.date, today),
@@ -248,23 +308,76 @@ export function resolveItem({
   if (!draft.accountId) missing.push('account');
   if (kind === 'TRANSFER' && !draft.toAccountId) missing.push('toAccount');
 
-  const uncertain = (Object.keys(confidences) as AssistantUncertain[]).filter(
-    (field) => (confidences[field] ?? 1) < AUTO_SAVE_SCORE
-  );
+  return finish(draft, missing, confidences, item, Boolean(jev));
+}
 
-  const fieldScore = Math.min(...Object.values(confidences).map((c) => c ?? 1));
-  const base = jev
-    ? Math.min(fieldScore, modelConfidence)
-    : Math.min(fieldScore, modelConfidence, MODEL_ONLY_CAP);
-  const score = Math.round(Math.max(0, Math.min(1, base)) * 100) / 100;
-
-  return {
-    draft,
-    missing,
-    uncertain,
-    score,
-    autoSave: missing.length === 0 && score >= AUTO_SAVE_SCORE,
+/** Evento: sem horário e sem ser o dia todo, falta o horário. Sem fim, dura uma hora. */
+export function resolveEvent({
+  item,
+  jev,
+  today,
+}: {
+  item: ExtractedItem;
+  jev: JevAnswers | null;
+  today: string;
+}): Resolution {
+  const startTime = isTime(item.time) ? item.time : null;
+  const allDay = item.allDay || false;
+  let endTime: string | null = null;
+  if (startTime && !allDay) {
+    const start = minutesOf(startTime);
+    const end = isTime(item.endTime) ? minutesOf(item.endTime) : start + 60;
+    // Termina no mesmo dia (o Assistente não cria evento que vira a noite).
+    endTime = timeOf(Math.min(end > start ? end : start + 60, 23 * 60 + 59));
+  }
+  const draft: AssistantEventDraft = {
+    type: 'event',
+    title: item.description.trim().slice(0, 200) || 'Evento',
+    date: resolveDate(item.date, today),
+    startTime: allDay ? null : startTime,
+    endTime,
+    allDay,
+    location: item.location?.trim().slice(0, 300) || null,
   };
+  const missing: AssistantMissing[] = !allDay && !startTime ? ['time'] : [];
+  return finish(draft, missing, { kind: kindConfidence(item, jev) }, item, Boolean(jev));
+}
+
+/** Tarefa: sem lista vai para a Entrada; horário só vale com data. */
+export function resolveTask({
+  item,
+  lists,
+  jev,
+  today,
+}: {
+  item: ExtractedItem;
+  lists: TaskListOption[];
+  jev: JevAnswers | null;
+  today: string;
+}): Resolution {
+  const confidences: Partial<Record<AssistantUncertain, number>> = {
+    kind: kindConfidence(item, jev),
+  };
+  const named = matchByName(lists, item.list);
+  let list: Pick<TaskListOption> = { value: null, confidence: 1 };
+  if (named) {
+    list = pickOption(lists, named, jev?.list, NO_LIST);
+  } else if (item.list) {
+    // Nomeou uma lista que não achamos: a do Jev, se ele tiver certeza; senão a Entrada, marcada.
+    list = pickOption(lists, null, jev?.list, NO_LIST);
+    if (!list.value) list = { value: null, confidence: 0.5 };
+  }
+  confidences.list = list.confidence;
+
+  const date = item.date ? resolveDate(item.date, today) : null;
+  const draft: AssistantTaskDraft = {
+    type: 'task',
+    title: item.description.trim().slice(0, 300) || 'Tarefa',
+    date,
+    time: date && isTime(item.time) ? item.time : null,
+    listId: list.value?.id ?? null,
+  };
+  return finish(draft, [], confidences, item, Boolean(jev));
 }
 
 /** O que falta, em português, para a resposta do Assistente. */
@@ -273,6 +386,7 @@ export function describeMissing(missing: AssistantMissing[]): string {
     amount: 'o valor',
     account: 'a conta',
     toAccount: 'a conta de destino',
+    time: 'o horário',
   };
   const parts = missing.map((m) => names[m]);
   if (parts.length <= 1) return parts.join('');

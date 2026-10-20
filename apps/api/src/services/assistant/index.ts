@@ -1,6 +1,5 @@
 import {
   type AssistantCardResponse,
-  type AssistantDraft,
   assistantDraftSchema,
   type AssistantMessageResponse,
   type AssistantMissing,
@@ -21,9 +20,17 @@ import {
 } from '@/lib/env';
 import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
-import { createTransactions, userTimezone } from '@/services/finance';
+import { userTimezone } from '@/services/finance';
 import { toTransaction } from '@/services/serializers';
 
+import {
+  type Created,
+  createFromDraft,
+  loadCreated,
+  missingOf,
+  NOTHING,
+  removeCreated,
+} from './create';
 import { extractItems } from './haiku';
 import { askJev } from './jev';
 import {
@@ -32,14 +39,18 @@ import {
   type ExtractedItem,
   type FinanceIntent,
   type Intent,
+  isActionIntent,
   isFinanceIntent,
   type Resolution,
+  resolveEvent,
   resolveItem,
+  resolveTask,
+  type TaskListOption,
 } from './resolve';
 import { type CardOutcome, READ_FAILED, replyText } from './text';
 import { transcribe } from './transcribe';
 
-/** Itens de lançamento por pedido: o resto é ignorado (o Haiku pode exagerar). */
+/** Itens por pedido: o resto é ignorado (o Haiku pode exagerar). */
 const MAX_ITEMS = 5;
 /** Mensagens que voltam com a tela. */
 const HISTORY = 60;
@@ -126,26 +137,31 @@ async function toMessages(userId: string, messages: MessageWithCards[]) {
         });
   const byId = new Map(transactions.map((t) => [t.id, toTransaction(t)]));
 
-  return messages.map(
-    (message): AssistantMessageResponse => ({
-      id: message.id,
-      role: message.role,
-      text: message.text,
-      createdAt: message.createdAt.toISOString(),
-      cards: [...message.cards]
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-        .map(
-          (card): AssistantCardResponse => ({
-            id: card.id,
-            status: card.status,
-            score: card.score,
-            draft: card.draft as unknown as AssistantDraft,
-            missing: card.missing as AssistantMissing[],
-            uncertain: card.uncertain as AssistantUncertain[],
-            transactions: card.transactionIds.flatMap((id) => byId.get(id) ?? []),
-          })
+  return Promise.all(
+    messages.map(
+      async (message): Promise<AssistantMessageResponse> => ({
+        id: message.id,
+        role: message.role,
+        text: message.text,
+        createdAt: message.createdAt.toISOString(),
+        cards: await Promise.all(
+          [...message.cards]
+            .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+            .map(
+              async (card): Promise<AssistantCardResponse> => ({
+                id: card.id,
+                status: card.status,
+                score: card.score,
+                draft: assistantDraftSchema.parse(card.draft),
+                missing: card.missing as AssistantMissing[],
+                uncertain: card.uncertain as AssistantUncertain[],
+                transactions: card.transactionIds.flatMap((id) => byId.get(id) ?? []),
+                ...(await loadCreated(userId, card)),
+              })
+            )
         ),
-    })
+      })
+    )
   );
 }
 
@@ -186,24 +202,9 @@ async function usualAccount(userId: string, accounts: AccountOption[]): Promise<
   return rows[0]?.accountId ?? null;
 }
 
-function toCreateBody(draft: AssistantDraft) {
-  if (!draft.amountCents || !draft.accountId) return null;
-  if (draft.kind === 'TRANSFER' && !draft.toAccountId) return null;
-  return {
-    kind: draft.kind,
-    amountCents: draft.amountCents,
-    date: draft.date,
-    accountId: draft.accountId,
-    toAccountId: draft.kind === 'TRANSFER' ? draft.toAccountId : null,
-    categoryId: draft.kind === 'TRANSFER' ? null : draft.categoryId,
-    description: draft.description,
-    ...(draft.installments ? { installments: draft.installments } : {}),
-  };
-}
-
 interface PlannedCard {
   resolution: Resolution;
-  transactionIds: string[];
+  created: Created;
 }
 
 export async function sendMessage(
@@ -216,7 +217,7 @@ export async function sendMessage(
   await assertWithinLimit(userId, timezone);
 
   const today = todayIn(timezone);
-  const [accountRows, categoryRows] = await Promise.all([
+  const [accountRows, categoryRows, listRows] = await Promise.all([
     prisma.account.findMany({
       where: { userId, archivedAt: null },
       orderBy: [{ type: 'asc' }, { createdAt: 'asc' }],
@@ -227,9 +228,15 @@ export async function sendMessage(
       orderBy: { name: 'asc' },
       select: { id: true, name: true, kind: true },
     }),
+    prisma.taskList.findMany({
+      where: { userId },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, name: true, isInbox: true },
+    }),
   ]);
   const accounts: AccountOption[] = accountRows;
   const categories: CategoryOption[] = categoryRows;
+  const lists: TaskListOption[] = listRows;
 
   const userMessage = await prisma.assistantMessage.create({
     data: { userId, role: 'USER', text },
@@ -238,7 +245,7 @@ export async function sendMessage(
   let items: ExtractedItem[] | null = null;
   const cost = { modelInput: 0, modelOutput: 0, jevInput: 0 };
   try {
-    const extracted = await extractItems(text, { today, timezone, accounts, categories });
+    const extracted = await extractItems(text, { today, timezone, accounts, categories, lists });
     items = extracted.items;
     cost.modelInput = extracted.inputTokens;
     cost.modelOutput = extracted.outputTokens;
@@ -249,29 +256,27 @@ export async function sendMessage(
   const planned: PlannedCard[] = [];
   const otherIntents: Intent[] = [];
   if (items) {
-    const finance = items
-      .filter((item): item is ExtractedItem & { intent: FinanceIntent } =>
-        isFinanceIntent(item.intent)
-      )
-      .slice(0, MAX_ITEMS);
-    otherIntents.push(...items.filter((i) => !isFinanceIntent(i.intent)).map((i) => i.intent));
+    const actions = items.filter((item) => isActionIntent(item.intent)).slice(0, MAX_ITEMS);
+    otherIntents.push(...items.filter((i) => !isActionIntent(i.intent)).map((i) => i.intent));
 
-    const usualAccountId = finance.length > 0 ? await usualAccount(userId, accounts) : null;
+    const usualAccountId = actions.some((item) => isFinanceIntent(item.intent))
+      ? await usualAccount(userId, accounts)
+      : null;
     const resolutions = await Promise.all(
-      finance.map(async (item) => {
-        const jev =
-          accounts.length > 0
-            ? await askJev(item, accounts, categories).catch((error) => {
-                log.warn(error, 'assistente: Jev falhou');
-                return null;
-              })
-            : null;
+      actions.map(async (item) => {
+        const jev = await askJev(item, { accounts, categories, lists }).catch((error) => {
+          log.warn(error, 'assistente: Jev falhou');
+          return null;
+        });
         cost.jevInput += jev?.inputTokens ?? 0;
+        const answers = jev?.answers ?? null;
+        if (item.intent === 'event') return resolveEvent({ item, jev: answers, today });
+        if (item.intent === 'task') return resolveTask({ item, lists, jev: answers, today });
         return resolveItem({
-          item,
+          item: item as ExtractedItem & { intent: FinanceIntent },
           accounts,
           categories,
-          jev: jev?.answers ?? null,
+          jev: answers,
           today,
           usualAccountId,
         });
@@ -280,21 +285,23 @@ export async function sendMessage(
 
     // Salva em ordem, um por vez (cada um abre a sua transação no banco).
     for (const resolution of resolutions) {
-      const body = resolution.autoSave ? toCreateBody(resolution.draft) : null;
-      let transactionIds: string[] = [];
-      if (body) {
+      let created = NOTHING;
+      if (resolution.autoSave) {
         try {
-          transactionIds = (await createTransactions(userId, body)).map((t) => t.id);
+          created = (await createFromDraft(userId, resolution.draft, timezone)) ?? NOTHING;
         } catch (error) {
           log.warn(error, 'assistente: salvar sozinho falhou');
         }
       }
-      planned.push({ resolution, transactionIds });
+      planned.push({ resolution, created });
     }
   }
 
+  const isSaved = (created: Created) =>
+    created.transactionIds.length > 0 || Boolean(created.eventId || created.taskId);
   const outcomes: CardOutcome[] = planned.map((p) => ({
-    saved: p.transactionIds.length > 0,
+    type: p.resolution.draft.type,
+    saved: isSaved(p.created),
     missing: p.resolution.missing,
   }));
   const reply = items ? replyText(outcomes, otherIntents) : READ_FAILED;
@@ -309,12 +316,12 @@ export async function sendMessage(
       cards: {
         create: planned.map((p, i) => ({
           userId,
-          status: p.transactionIds.length > 0 ? 'SAVED' : 'DRAFT',
+          status: isSaved(p.created) ? 'SAVED' : 'DRAFT',
           score: p.resolution.score,
           draft: p.resolution.draft as unknown as Prisma.InputJsonValue,
           missing: p.resolution.missing,
           uncertain: p.resolution.uncertain,
-          transactionIds: p.transactionIds,
+          ...p.created,
           createdAt: new Date(Date.now() + i),
         })),
       },
@@ -354,7 +361,7 @@ export async function sendMessage(
 
 async function ownedCard(userId: string, id: string) {
   const card = await prisma.assistantCard.findFirst({ where: { id, userId } });
-  if (!card) throw notFound('Lançamento do Assistente');
+  if (!card) throw notFound('Pedido do Assistente');
   return card;
 }
 
@@ -375,36 +382,21 @@ export async function saveCard(
 ): Promise<AssistantCardResponse> {
   const card = await ownedCard(userId, id);
   if (card.status === 'SAVED') return cardResponse(userId, id);
-  if (card.status === 'DISCARDED') throw new AppError(409, 'Este lançamento foi descartado.');
+  if (card.status === 'DISCARDED') throw new AppError(409, 'Este pedido foi descartado.');
 
-  const draft = assistantDraftSchema.parse(
-    body.transaction
-      ? {
-          kind: body.transaction.kind,
-          amountCents: body.transaction.amountCents,
-          date: body.transaction.date,
-          accountId: body.transaction.accountId,
-          toAccountId: body.transaction.toAccountId ?? null,
-          categoryId: body.transaction.categoryId ?? null,
-          description: body.transaction.description,
-          installments: body.transaction.installments ?? null,
-        }
-      : { ...(card.draft as object), ...body.draft }
-  );
-  const create = body.transaction ?? toCreateBody(draft);
-  if (!create) {
-    const missing: AssistantMissing[] = [];
-    if (!draft.amountCents) missing.push('amount');
-    if (!draft.accountId) missing.push('account');
-    if (draft.kind === 'TRANSFER' && !draft.toAccountId) missing.push('toAccount');
+  const current = assistantDraftSchema.parse(card.draft);
+  // As escolhas do cartão (conta, valor) só valem para lançamento.
+  const draft =
+    current.type === 'transaction' && body.draft ? { ...current, ...body.draft } : current;
+  const created = await createFromDraft(userId, draft, await userTimezone(userId), body);
+  if (!created) {
     await prisma.assistantCard.update({
       where: { id },
-      data: { draft: draft as unknown as Prisma.InputJsonValue, missing },
+      data: { draft: draft as unknown as Prisma.InputJsonValue, missing: missingOf(draft) },
     });
-    throw new AppError(400, 'Complete o lançamento antes de salvar.');
+    throw new AppError(400, 'Complete o pedido antes de salvar.');
   }
 
-  const created = await createTransactions(userId, create);
   await prisma.assistantCard.update({
     where: { id },
     data: {
@@ -412,34 +404,29 @@ export async function saveCard(
       draft: draft as unknown as Prisma.InputJsonValue,
       missing: [],
       uncertain: [],
-      transactionIds: created.map((t) => t.id),
+      ...created,
     },
   });
   return cardResponse(userId, id);
 }
 
-/** Desfaz o que o Assistente salvou: apaga os lançamentos (todas as parcelas). */
+/** Desfaz o que o Assistente salvou. */
 export async function undoCard(userId: string, id: string): Promise<AssistantCardResponse> {
   const card = await ownedCard(userId, id);
   if (card.status !== 'SAVED') return cardResponse(userId, id);
-  await prisma.$transaction([
-    prisma.transaction.deleteMany({ where: { userId, id: { in: card.transactionIds } } }),
-    prisma.assistantCard.update({
-      where: { id },
-      data: { status: 'UNDONE', transactionIds: [] },
-    }),
-  ]);
+  await removeCreated(userId, card);
+  await prisma.assistantCard.update({ where: { id }, data: { status: 'UNDONE', ...NOTHING } });
   return cardResponse(userId, id);
 }
 
 export async function discardCard(userId: string, id: string): Promise<AssistantCardResponse> {
   const card = await ownedCard(userId, id);
-  if (card.status === 'SAVED') throw new AppError(409, 'Desfaça o lançamento antes de descartar.');
+  if (card.status === 'SAVED') throw new AppError(409, 'Desfaça antes de descartar.');
   await prisma.assistantCard.update({ where: { id }, data: { status: 'DISCARDED' } });
   return cardResponse(userId, id);
 }
 
-/** "Nova conversa": apaga as mensagens. Os lançamentos salvos ficam. */
+/** "Nova conversa": apaga as mensagens. O que foi salvo fica. */
 export async function clearConversation(userId: string) {
   await prisma.assistantMessage.deleteMany({ where: { userId } });
 }

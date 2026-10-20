@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   type AccountOption,
+  NO_LIST,
+  resolveEvent,
+  resolveTask,
   type CategoryOption,
   type ExtractedItem,
   type FinanceIntent,
@@ -37,6 +40,11 @@ function item(
     toAccount: null,
     category: 'Transporte',
     installments: null,
+    time: null,
+    endTime: null,
+    allDay: false,
+    list: null,
+    location: null,
     confidence: 0.95,
     ...overrides,
   } as ExtractedItem & { intent: FinanceIntent };
@@ -76,6 +84,7 @@ describe('resolveItem', () => {
       usualAccountId: null,
     });
     expect(result.draft).toEqual({
+      type: 'transaction',
       kind: 'EXPENSE',
       amountCents: 3000,
       date: TODAY,
@@ -209,20 +218,107 @@ describe('resolveItem', () => {
 
 describe('replyText', () => {
   it('fala do que salvou, do que falta e do que ainda não sabe fazer', () => {
-    expect(replyText([{ saved: true, missing: [] }], [])).toBe('Pronto, salvei.');
-    expect(replyText([{ saved: false, missing: ['amount', 'account'] }], [])).toBe(
-      'Falta o valor e a conta para salvar.'
+    expect(replyText([{ type: 'transaction', saved: true, missing: [] }], [])).toBe(
+      'Pronto, salvei.'
     );
+    expect(
+      replyText([{ type: 'transaction', saved: false, missing: ['amount', 'account'] }], [])
+    ).toBe('Falta o valor e a conta para salvar.');
     expect(
       replyText(
         [
-          { saved: true, missing: [] },
-          { saved: false, missing: [] },
+          { type: 'transaction', saved: true, missing: [] },
+          { type: 'transaction', saved: false, missing: [] },
         ],
         []
       )
     ).toBe('Pronto, salvei. O outro ficou para você conferir.');
-    expect(replyText([], ['event'])).toMatch(/^Agenda, tarefas/);
+    expect(replyText([{ type: 'event', saved: true, missing: [] }], [])).toBe(
+      'Pronto, está na agenda.'
+    );
+    expect(replyText([{ type: 'event', saved: false, missing: ['time'] }], [])).toBe(
+      'Falta o horário para salvar.'
+    );
+    expect(replyText([], ['question'])).toMatch(/^Perguntas sobre/);
     expect(replyText([], ['other'])).toMatch(/^Não entendi/);
+  });
+});
+
+describe('resolveEvent', () => {
+  const event = (overrides: Partial<ExtractedItem>) =>
+    item({ intent: 'event' as never, description: 'Dentista', excerpt: 'dentista', ...overrides });
+
+  it('com horário e Jev de acordo, salva sozinho e dura uma hora', () => {
+    const result = resolveEvent({
+      item: event({ date: '2026-10-21', time: '15:00' }),
+      jev: { kind: sure('event') },
+      today: TODAY,
+    });
+    expect(result.draft).toEqual({
+      type: 'event',
+      title: 'Dentista',
+      date: '2026-10-21',
+      startTime: '15:00',
+      endTime: '16:00',
+      allDay: false,
+      location: null,
+    });
+    expect(result.autoSave).toBe(true);
+  });
+
+  it('sem horário falta o horário; dia todo não precisa; fim não passa da meia-noite', () => {
+    expect(resolveEvent({ item: event({}), jev: null, today: TODAY }).missing).toEqual(['time']);
+    const allDay = resolveEvent({
+      item: event({ allDay: true, time: '10:00' }),
+      jev: null,
+      today: TODAY,
+    });
+    expect(allDay.missing).toEqual([]);
+    expect(allDay.draft).toMatchObject({ allDay: true, startTime: null, endTime: null });
+    const late = resolveEvent({ item: event({ time: '23:30' }), jev: null, today: TODAY });
+    expect(late.draft).toMatchObject({ startTime: '23:30', endTime: '23:59' });
+  });
+});
+
+describe('resolveTask', () => {
+  const lists = [
+    { id: 'l-entrada', name: 'Entrada' },
+    { id: 'l-mercado', name: 'Mercado' },
+  ];
+  const task = (overrides: Partial<ExtractedItem>) =>
+    item({
+      intent: 'task' as never,
+      description: 'Comprar pão',
+      excerpt: 'comprar pão',
+      ...overrides,
+    });
+
+  it('vai para a lista nomeada, com prazo só quando tem data', () => {
+    const result = resolveTask({
+      item: task({ list: 'mercado', time: '18:00' }),
+      lists,
+      jev: { kind: sure('task'), list: sure('opcao_2') },
+      today: TODAY,
+    });
+    expect(result.draft).toEqual({
+      type: 'task',
+      title: 'Comprar pão',
+      date: null,
+      time: null,
+      listId: 'l-mercado',
+    });
+    expect(result.autoSave).toBe(true);
+  });
+
+  it('lista que não existe cai na Entrada e fica marcada', () => {
+    const result = resolveTask({
+      item: task({ list: 'trabalho', date: '2026-10-23' }),
+      lists,
+      jev: { kind: sure('task'), list: sure(NO_LIST) },
+      today: TODAY,
+    });
+    expect(result.draft).toMatchObject({ listId: null, date: '2026-10-23' });
+    expect(result.uncertain).toEqual(['list']);
+    expect(result.autoSave).toBe(false);
   });
 });
