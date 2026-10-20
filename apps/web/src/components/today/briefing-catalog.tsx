@@ -135,7 +135,8 @@ export const briefingCatalog: Record<BriefingPluginId, BriefingPluginInfo> = {
   },
   quote: {
     name: 'Ditado do dia',
-    description: 'Um ditado popular diferente a cada dia.',
+    description:
+      'Uma frase diferente a cada dia, com o autor: ditados, filosofia e sabedoria do Oriente e do Ocidente.',
     icon: <Quote />,
     color: 'var(--brown)',
   },
