@@ -71,6 +71,11 @@ export const stockTickerSchema = z
 
 export const briefingStocksMax = 10;
 
+/** Período do gráfico das ações: o pregão de hoje, os últimos 7 dias ou o último mês. */
+export const stockPeriods = ['day', 'week', 'month'] as const;
+export const stockPeriodSchema = z.enum(stockPeriods);
+export type StockPeriod = z.infer<typeof stockPeriodSchema>;
+
 export const briefingCitySchema = z.object({
   /** Nome para mostrar ("Goiânia, Goiás"). */
   name: z.string().trim().min(1).max(160),
@@ -92,6 +97,7 @@ export const briefingSettingsSchema = z.object({
   autoOrder: z.boolean().default(true),
   /** Ações do plugin de ações, na ordem em que aparecem. */
   stocks: z.array(stockTickerSchema).max(briefingStocksMax).default([]),
+  stockPeriod: stockPeriodSchema.default('day'),
 });
 export type BriefingSettings = z.infer<typeof briefingSettingsSchema>;
 
@@ -103,6 +109,7 @@ export function defaultBriefingSettings(): BriefingSettings {
     currencies: ['USD', 'EUR'],
     autoOrder: true,
     stocks: [],
+    stockPeriod: 'day',
   };
 }
 
@@ -138,8 +145,29 @@ export function normalizeBriefingSettings(saved: unknown): BriefingSettings {
     currencies: currencies.success ? [...new Set(currencies.data)] : fallback.currencies,
     autoOrder: typeof raw.autoOrder === 'boolean' ? raw.autoOrder : true,
     stocks: stocks.success ? [...new Set(stocks.data)].slice(0, briefingStocksMax) : [],
+    stockPeriod: stockPeriodSchema.safeParse(raw.stockPeriod).data ?? 'day',
   };
 }
+
+/** Cotação de uma ação no período, com a série do gráfico. */
+export const stockQuoteSchema = z.object({
+  ticker: z.string(),
+  period: stockPeriodSchema,
+  name: z.string().nullable(),
+  /** Moeda da cotação ("BRL", "USD"). */
+  currency: z.string(),
+  price: z.number(),
+  /**
+   * Base da comparação: o fechamento de ontem (dia) ou o começo do período. Vazia quando a fonte
+   * não manda série.
+   */
+  reference: z.number().nullable(),
+  /** Variação desde a base (0,012 = +1,2%). */
+  change: z.number().nullable(),
+  /** Preços em ordem, do mais antigo ao de agora (vazio sem série). */
+  points: z.array(z.number()),
+});
+export type StockQuote = z.infer<typeof stockQuoteSchema>;
 
 export const briefingToneSchema = z.enum(['neutral', 'good', 'warning', 'bad']);
 export type BriefingTone = z.infer<typeof briefingToneSchema>;
@@ -155,6 +183,8 @@ export const briefingItemSchema = z.object({
   tone: briefingToneSchema,
   /** Para onde o toque leva, quando faz sentido. */
   href: z.string().nullable(),
+  /** Só no plugin de ações: as cotações para o app desenhar os gráficos. */
+  stocks: z.array(stockQuoteSchema).optional(),
 });
 export type BriefingItem = z.infer<typeof briefingItemSchema>;
 
@@ -176,18 +206,6 @@ export const briefingResponseSchema = z.object({
   autoOrder: z.boolean().default(true),
 });
 export type BriefingResponse = z.infer<typeof briefingResponseSchema>;
-
-/** Uma ação conferida antes de entrar na lista. */
-export const stockQuoteSchema = z.object({
-  ticker: z.string(),
-  name: z.string().nullable(),
-  /** Moeda da cotação ("BRL", "USD"). */
-  currency: z.string(),
-  price: z.number(),
-  /** Variação desde o fechamento anterior (0,012 = +1,2%). */
-  change: z.number().nullable(),
-});
-export type StockQuote = z.infer<typeof stockQuoteSchema>;
 
 export const stockLookupQuerySchema = z.object({ ticker: stockTickerSchema });
 

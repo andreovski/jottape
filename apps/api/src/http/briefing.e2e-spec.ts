@@ -154,9 +154,10 @@ describe('briefing', () => {
                   symbol,
                   currency: 'BRL',
                   regularMarketPrice: 57.64,
-                  regularMarketChangePercent: -0.621,
+                  chartPreviousClose: 58,
                   longName: 'Petrobras',
                 },
+                indicators: { quote: [{ close: [58.1, 57.8, null, 57.7] }] },
               },
             ],
           },
@@ -202,6 +203,11 @@ describe('briefing', () => {
       'PETR4 R$ 57,64 (−0,6%).',
       'Goiânia não fica no litoral, então não há maré para mostrar. Escolha uma cidade da costa ou desligue este plugin.',
     ]);
+    // O gráfico: pregão de hoje terminando no preço de agora, contra o fechamento de ontem.
+    expect(items[0].stocks?.[0]).toMatchObject({
+      reference: 58,
+      points: [58.1, 57.8, 57.7, 57.64],
+    });
   });
 
   it('próximo compromisso depois de hoje', async () => {

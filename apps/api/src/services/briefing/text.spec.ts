@@ -221,15 +221,36 @@ describe('de fora', () => {
 });
 
 describe('stocksLine', () => {
-  it('mostra preço na moeda da bolsa e a variação', () => {
-    expect(
-      stocksLine([
-        { ticker: 'PETR4', name: null, currency: 'BRL', price: 57.64, change: -0.00621 },
-        { ticker: 'AAPL', name: null, currency: 'USD', price: 340.672, change: 0.012 },
-        { ticker: 'XPTO3', name: null, currency: 'BRL', price: 1, change: null },
-      ])?.text
-    ).toBe('PETR4 R$ 57,64 (−0,6%), AAPL US$ 340,67 (+1,2%), XPTO3 R$ 1,00.');
+  const quote = (ticker: string, currency: string, price: number, change: number | null) => ({
+    ticker,
+    period: 'day' as const,
+    name: null,
+    currency,
+    price,
+    reference: null,
+    change,
+    points: [],
+  });
+
+  it('mostra preço na moeda da bolsa e a variação, e leva as cotações para o gráfico', () => {
+    const quotes = [
+      quote('PETR4', 'BRL', 57.64, -0.00621),
+      quote('AAPL', 'USD', 340.672, 0.012),
+      quote('XPTO3', 'BRL', 1, null),
+    ];
+    const result = stocksLine(quotes);
+    expect(result?.text).toBe('PETR4 R$ 57,64 (−0,6%), AAPL US$ 340,67 (+1,2%), XPTO3 R$ 1,00.');
+    expect(result?.stocks).toBe(quotes);
     expect(stocksLine([])).toBeNull();
+  });
+
+  it('diz o período quando não é o dia', () => {
+    expect(stocksLine([quote('VALE3', 'BRL', 66.09, -0.089)], 'month')?.text).toBe(
+      'VALE3 R$ 66,09 (−8,9% no mês).'
+    );
+    expect(stocksLine([quote('VALE3', 'BRL', 66.09, 0.021)], 'week')?.text).toBe(
+      'VALE3 R$ 66,09 (+2,1% em 7 dias).'
+    );
   });
 });
 
