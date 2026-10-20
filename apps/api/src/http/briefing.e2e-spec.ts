@@ -143,6 +143,67 @@ describe('briefing', () => {
     expect((await briefing()).items[0].plugin).toBe('weather');
   });
 
+  it('ações conferidas e maré só no litoral', async () => {
+    const yahoo = (symbol: string) =>
+      new Response(
+        JSON.stringify({
+          chart: {
+            result: [
+              {
+                meta: {
+                  symbol,
+                  currency: 'BRL',
+                  regularMarketPrice: 57.64,
+                  regularMarketChangePercent: -0.621,
+                  longName: 'Petrobras',
+                },
+              },
+            ],
+          },
+        })
+      );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('PETR4.SA') ? yahoo('PETR4.SA') : new Response('{}', { status: 404 })
+      )
+    );
+    const found = await api.get('/briefing/stocks?ticker=petr4');
+    expect(found.json()).toMatchObject({ ticker: 'PETR4', price: 57.64, name: 'Petrobras' });
+    expect((await api.get('/briefing/stocks?ticker=AAAA')).statusCode).toBe(404);
+
+    const settings = (await api.get('/briefing/settings')).json() as BriefingSettings;
+    expect(settings.stocks).toEqual([]);
+    await api.put('/briefing/settings', {
+      ...settings,
+      plugins: [
+        { id: 'stocks', enabled: true },
+        { id: 'tide', enabled: true },
+      ],
+      city: { name: 'Goiânia, Goiás, Brasil', latitude: -16.68, longitude: -49.25 },
+      stocks: ['PETR4', 'AAAA'],
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('marine-api')
+          ? new Response(
+              JSON.stringify({
+                minutely_15: { time: ['2026-10-19T00:00'], sea_level_height_msl: [null] },
+              })
+            )
+          : new Response('{}', { status: 404 })
+      )
+    );
+    const items = (await briefing()).items;
+    // PETR4 veio do guardado; AAAA não existe e fica de fora.
+    expect(items.map((i) => i.text)).toEqual([
+      'PETR4 R$ 57,64 (−0,6%).',
+      'Goiânia não fica no litoral, então não há maré para mostrar. Escolha uma cidade da costa ou desligue este plugin.',
+    ]);
+  });
+
   it('próximo compromisso depois de hoje', async () => {
     const from = '2026-10-20T03:00:00.000Z';
     const next = async () =>

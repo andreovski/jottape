@@ -2,6 +2,7 @@ import type { BriefingPluginId } from '@jottape/schemas';
 import {
   CalendarDays,
   CalendarHeart,
+  ChartCandlestick,
   CircleDollarSign,
   Clock,
   CloudSun,
@@ -15,6 +16,7 @@ import {
   Sunset,
   TrendingDown,
   TrendingUp,
+  Waves,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -90,6 +92,13 @@ export const briefingCatalog: Record<BriefingPluginId, BriefingPluginInfo> = {
     color: 'var(--cyan)',
     external: true,
   },
+  tide: {
+    name: 'Maré',
+    description: 'Se a maré está subindo ou baixando e as próximas alta e baixa.',
+    icon: <Waves />,
+    color: 'var(--blue)',
+    external: true,
+  },
   horoscope: {
     name: 'Horóscopo',
     description: 'O horóscopo do dia para o seu signo.',
@@ -102,6 +111,13 @@ export const briefingCatalog: Record<BriefingPluginId, BriefingPluginInfo> = {
     description: 'Dólar, euro, libra e bitcoin em reais, com a variação.',
     icon: <CircleDollarSign />,
     color: 'var(--green)',
+    external: true,
+  },
+  stocks: {
+    name: 'Ações',
+    description: 'O preço das ações que você escolher, com a variação do dia.',
+    icon: <ChartCandlestick />,
+    color: 'var(--indigo)',
     external: true,
   },
   holidays: {
