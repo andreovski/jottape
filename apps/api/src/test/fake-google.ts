@@ -11,6 +11,8 @@ export interface FakeAccount {
   refreshToken: string;
   /** Ids dos calendários que a conta enxerga (os eventos ficam em `events`, por calendário). */
   calendarIds: string[];
+  /** Conta sem o Google Agenda ativado: o Calendar responde 403 notACalendarUser. */
+  noCalendar?: boolean;
 }
 
 export class FakeGoogle {
@@ -126,6 +128,15 @@ export class FakeGoogle {
     }
 
     // ---- Calendar
+    if (path.startsWith('/calendar/') && caller.noCalendar) {
+      return this.json(403, {
+        error: {
+          errors: [{ domain: 'calendar', reason: 'notACalendarUser' }],
+          code: 403,
+          message: 'The user must be signed up for Google Calendar.',
+        },
+      });
+    }
     if (path === '/calendar/v3/users/me/calendarList')
       return this.json(200, {
         items: this.calendars.filter((c) => caller.calendarIds.includes(c.id)),

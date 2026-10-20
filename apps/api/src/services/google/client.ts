@@ -131,6 +131,20 @@ async function accessTokenFor(connectionId: string): Promise<string> {
 
 export const RECONNECT_MESSAGE = 'O acesso ao Google expirou ou foi revogado. Conecte de novo.';
 
+/** Conta Google sem o Google Agenda ativado (403 notACalendarUser): reconectar não resolve. */
+export const NOT_CALENDAR_USER_MESSAGE =
+  'Esta conta Google não tem o Google Agenda ativado. Abra calendar.google.com com ela uma vez e depois toque em "Tentar de novo".';
+
+function errorMessage(error: unknown) {
+  if (
+    error instanceof GoogleApiError &&
+    error.status === 403 &&
+    error.body.includes('notACalendarUser')
+  )
+    return NOT_CALENDAR_USER_MESSAGE;
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** fetch autenticado com a conta `connectionId`. Devolve o JSON (ou null em 204). */
 export async function googleFetch<T = unknown>(
   connectionId: string,
@@ -180,8 +194,8 @@ export async function isConnectionActive(connectionId: string): Promise<boolean>
 
 export async function recordError(connectionId: string, error: unknown) {
   if (error instanceof GoogleAuthError) return;
-  const message = error instanceof Error ? error.message : String(error);
-  console.error('[google]', message);
+  console.error('[google]', error instanceof Error ? error.message : String(error));
+  const message = errorMessage(error);
   await prisma.googleConnection
     .update({ where: { id: connectionId }, data: { lastError: message.slice(0, 500) } })
     .catch(() => undefined);

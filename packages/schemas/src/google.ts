@@ -26,6 +26,8 @@ export const googleAccountResponseSchema = z.object({
   syncTasks: z.boolean(),
   tasksSyncedAt: z.string().nullable(),
   lastError: z.string().nullable(),
+  /** O token expirou ou foi revogado: só conectando a conta de novo. */
+  needsReconnect: z.boolean(),
 });
 export type GoogleAccountResponse = z.infer<typeof googleAccountResponseSchema>;
 

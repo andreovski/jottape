@@ -25,6 +25,7 @@ import {
   exchangeCode,
   fetchUserInfo,
   forgetAccessToken,
+  RECONNECT_MESSAGE,
   REVOKE_URL,
 } from '@/services/google/client';
 import { syncTasks, unlinkTasksOps } from '@/services/google/tasks';
@@ -64,6 +65,7 @@ export async function googleStatus(userId: string): Promise<GoogleStatusResponse
       syncTasks: a.syncTasks,
       tasksSyncedAt: a.tasksSyncedAt?.toISOString() ?? null,
       lastError: a.lastError,
+      needsReconnect: a.lastError === RECONNECT_MESSAGE,
     })),
     calendars: visible.map((c) => ({
       id: c.id,

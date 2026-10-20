@@ -97,6 +97,21 @@ export function useSyncGoogle() {
   });
 }
 
+export function useSyncGoogleAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api
+        .post(`google/accounts/${accountId}/sync`, { timeout: 120_000 })
+        .json<GoogleStatusResponse>(),
+    onSuccess: (status) => {
+      client.setQueryData(['google'], status);
+      client.invalidateQueries({ queryKey: ['events'] });
+      client.invalidateQueries({ queryKey: ['agenda'] });
+    },
+  });
+}
+
 export function useDisconnectGoogleAccount() {
   const client = useQueryClient();
   return useMutation({
