@@ -56,7 +56,7 @@ export default defineRailway(() => {
       ASSISTANT_MONTHLY_LIMIT: preserve(),
       JEV_API_KEY: preserve(),
       JEV_MODEL: preserve(),
-      OPENAI_API_KEY: preserve(),
+      GROQ_API_KEY: preserve(),
       TRANSCRIPTION_MODEL: preserve(),
       VAPID_PUBLIC_KEY: preserve(),
       VAPID_PRIVATE_KEY: preserve(),

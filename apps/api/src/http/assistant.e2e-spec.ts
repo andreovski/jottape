@@ -239,8 +239,8 @@ describe('assistente', () => {
     expect(state.messages).toEqual([]);
   });
 
-  it('transcreve o áudio pela OpenAI e registra os segundos', async () => {
-    vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
+  it('transcreve o áudio pela Groq e registra os segundos', async () => {
+    vi.stubEnv('GROQ_API_KEY', 'gsk-test');
     const fetchMock = vi.fn(async () => Response.json({ text: ' gastei 20 no café ' }));
     vi.stubGlobal('fetch', fetchMock);
     try {
@@ -258,7 +258,7 @@ describe('assistente', () => {
       expect(response.json()).toEqual({ text: 'gastei 20 no café' });
       expect(fetchMock).toHaveBeenCalledOnce();
       const usage = await prisma.assistantUsage.findFirstOrThrow();
-      expect(usage).toMatchObject({ kind: 'TRANSCRIPTION', audioSeconds: 6, costMicros: 300 });
+      expect(usage).toMatchObject({ kind: 'TRANSCRIPTION', audioSeconds: 6, costMicros: 111 });
     } finally {
       vi.unstubAllGlobals();
     }

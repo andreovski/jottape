@@ -1,9 +1,9 @@
 import { getTranscriptionConfig } from '@/lib/env';
 
-// Áudio do microfone para texto, pela API da OpenAI. O app manda o arquivo como veio do
-// MediaRecorder (webm no Chrome, mp4 no Safari).
+// Áudio do microfone para texto, pelo Whisper na Groq (API no formato da OpenAI). O app manda o
+// arquivo como veio do MediaRecorder (webm no Chrome, mp4 no Safari).
 
-const ENDPOINT = 'https://api.openai.com/v1/audio/transcriptions';
+const ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
 
 const EXTENSION: Record<string, string> = {
   'audio/webm': 'webm',
@@ -18,7 +18,7 @@ export const AUDIO_TYPES = Object.keys(EXTENSION);
 
 export async function transcribe(audio: Buffer, contentType: string): Promise<string> {
   const config = getTranscriptionConfig();
-  if (!config) throw new Error('OPENAI_API_KEY não configurada');
+  if (!config) throw new Error('GROQ_API_KEY não configurada');
 
   const type = contentType.split(';')[0].trim();
   const form = new FormData();

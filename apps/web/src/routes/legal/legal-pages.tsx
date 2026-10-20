@@ -159,7 +159,7 @@ export function PrivacyPage() {
       <p>
         Quando você usa o Assistente, o texto do pedido, os nomes das suas contas e categorias e a
         data de hoje vão para a Anthropic (Claude), que lê o pedido, e para a TypeSafe (Jev), que
-        confere a conta e a categoria. Se você ditar, o áudio vai para a OpenAI, que o transforma em
+        confere a conta e a categoria. Se você ditar, o áudio vai para a Groq, que o transforma em
         texto. Esses serviços processam o pedido para responder e não recebem seu nome nem seu
         e-mail. A conversa fica guardada por 30 dias (ou até você começar uma nova) e o áudio não é
         guardado.

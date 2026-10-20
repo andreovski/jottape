@@ -50,8 +50,9 @@ export const RETENTION_DAYS = 30;
 const HAIKU_INPUT = 0.1;
 const HAIKU_OUTPUT = 0.5;
 const JEV_INPUT = 0.042;
-/** gpt-4o-mini-transcribe: US$ 0,003 por minuto. */
-const TRANSCRIPTION_PER_SECOND = 50;
+/** whisper-large-v3-turbo na Groq: US$ 0,04 por hora, cobrando no mínimo 10 s por áudio. */
+const TRANSCRIPTION_PER_SECOND = (0.04 / 3600) * 1_000_000;
+const TRANSCRIPTION_MIN_SECONDS = 10;
 
 export interface Logger {
   warn: (error: unknown, message: string) => void;
@@ -466,7 +467,9 @@ export async function transcribeAudio(
       userId,
       kind: 'TRANSCRIPTION',
       audioSeconds,
-      costMicros: Math.round(audioSeconds * TRANSCRIPTION_PER_SECOND),
+      costMicros: Math.round(
+        Math.max(audioSeconds, TRANSCRIPTION_MIN_SECONDS) * TRANSCRIPTION_PER_SECOND
+      ),
     },
   });
   return text;

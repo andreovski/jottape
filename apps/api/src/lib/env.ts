@@ -102,11 +102,11 @@ export function getJevConfig(): { apiKey: string; model: string } | null {
   return { apiKey, model: process.env.JEV_MODEL || 'jev-latest' };
 }
 
-/** Transcrição do áudio no servidor (OpenAI). Sem ela, o app usa a voz do navegador. */
+/** Transcrição do áudio no servidor (Whisper na Groq). Sem ela, o app usa a voz do navegador. */
 export function getTranscriptionConfig(): { apiKey: string; model: string } | null {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
-  return { apiKey, model: process.env.TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe' };
+  return { apiKey, model: process.env.TRANSCRIPTION_MODEL || 'whisper-large-v3-turbo' };
 }
 
 /** Quem usa o Assistente além do dono (beta): e-mails separados por vírgula. */
