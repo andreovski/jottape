@@ -1,6 +1,6 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { CalendarDays, CircleCheck, Settings, Sun, Wallet } from 'lucide-react';
-import { type CSSProperties, useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -12,9 +12,6 @@ export const SECTIONS = [
   { to: '/ajustes', label: 'Ajustes', icon: Settings, tint: 'var(--blue)' },
 ] as const;
 
-/** Abas do celular: Tarefas abre pela Hoje ("Ver todas") e não ocupa uma aba. */
-const TABS = SECTIONS.filter((s) => s.to !== '/tarefas');
-
 function sectionOf(pathname: string) {
   return (
     [...SECTIONS]
@@ -24,7 +21,7 @@ function sectionOf(pathname: string) {
 }
 
 /**
- * Celular: abas embaixo (UITabBar). Computador: barra lateral (como o app no iPad e no
+ * Celular: abas translúcidas embaixo (UITabBar). Computador: barra lateral (como o app no iPad e no
  * Mac). A cor da seção aberta vira `--tint`, usada por botões, links e destaques.
  */
 export function AppShell() {
@@ -70,62 +67,31 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      <TabBar currentTo={current.to} />
+      <nav
+        aria-label='Seções'
+        className='material hairline-t pb-safe fixed inset-x-0 bottom-0 z-40 lg:hidden'
+      >
+        <ul className='mx-auto grid h-[50px] max-w-xl grid-cols-5'>
+          {SECTIONS.map(({ to, label, icon: Icon }) => {
+            const active = current.to === to;
+            return (
+              <li key={to}>
+                <Link
+                  to={to}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex h-full flex-col items-center justify-center gap-[3px] text-[10px] font-medium tracking-normal transition-colors',
+                    active ? 'text-tint' : 'text-gray'
+                  )}
+                >
+                  <Icon className='size-[25px]' strokeWidth={active ? 2.4 : 1.9} aria-hidden />
+                  {label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </div>
-  );
-}
-
-/** Fecha a barra quando o teclado abre, para ela não subir junto. */
-function useKeyboardOpen() {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
-    const update = () => setOpen(window.innerHeight - viewport.height > 120);
-    viewport.addEventListener('resize', update);
-    return () => viewport.removeEventListener('resize', update);
-  }, []);
-  return open;
-}
-
-/**
- * Barra de abas do celular (UITabBar): faixa de cor sólida (`--bar`, vem do tema) colada embaixo,
- * quatro abas. Tocar na aba ativa rola a tela até o topo.
- */
-function TabBar({ currentTo }: { currentTo: string }) {
-  const keyboardOpen = useKeyboardOpen();
-
-  return (
-    <nav
-      aria-label='Seções'
-      className={cn(
-        'bg-bar hairline-t pb-safe fixed inset-x-0 bottom-0 z-40 transition-transform duration-300 lg:hidden',
-        keyboardOpen && 'translate-y-full'
-      )}
-    >
-      <ul className='mx-auto grid h-[50px] max-w-xl grid-cols-4'>
-        {TABS.map(({ to, label, icon: Icon }) => {
-          const active = currentTo === to;
-          return (
-            <li key={to}>
-              <Link
-                to={to}
-                aria-current={active ? 'page' : undefined}
-                onClick={() => {
-                  if (active) window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className={cn(
-                  'flex h-full flex-col items-center justify-center gap-[3px] text-[10px] font-medium transition-colors',
-                  active ? 'text-tint' : 'text-gray'
-                )}
-              >
-                <Icon className='size-[25px]' strokeWidth={active ? 2.4 : 1.9} aria-hidden />
-                {label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
   );
 }
