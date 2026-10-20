@@ -9,7 +9,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 
 import { decrypt, encrypt } from '@/lib/crypto';
-import { getAppUrl, getGoogleConfig, isSecureCookie } from '@/lib/env';
+import { getAppUrl, getGoogleConfig, getMicrosoftConfig, isSecureCookie } from '@/lib/env';
 import { AppError } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
 import {
@@ -29,13 +29,14 @@ import {
   REVOKE_URL,
 } from '@/services/google/client';
 import { syncTasks, unlinkTasksOps } from '@/services/google/tasks';
+import { forgetMicrosoftAccessToken } from '@/services/microsoft/client';
 
 import { authenticate, sessionUserId, startSession } from '../session';
 
-const STATE_COOKIE = 'jottape_oauth';
+export const STATE_COOKIE = 'jottape_oauth';
 
 /** Sincroniza em segundo plano (a resposta não espera o Google). Nos testes, nada. */
-function background(job: () => Promise<unknown>) {
+export function background(job: () => Promise<unknown>) {
   if (process.env.NODE_ENV === 'test') return;
   void job().catch((error) => console.error('[google]', error));
 }
@@ -58,9 +59,11 @@ export async function googleStatus(userId: string): Promise<GoogleStatusResponse
 
   return {
     configured: Boolean(getGoogleConfig()),
+    microsoftConfigured: Boolean(getMicrosoftConfig()),
     connected: accounts.length > 0,
     accounts: accounts.map((a) => ({
       id: a.id,
+      provider: a.provider,
       email: a.googleEmail,
       syncTasks: a.syncTasks,
       tasksSyncedAt: a.tasksSyncedAt?.toISOString() ?? null,
@@ -97,17 +100,21 @@ async function disconnectAccount(connection: GoogleConnection) {
     where: { connectionId: connection.id },
   });
   for (const calendar of calendars) await stopWatch(calendar).catch(() => undefined);
-  await fetch(
-    `${REVOKE_URL}?token=${encodeURIComponent(decrypt(connection.refreshTokenEncrypted))}`,
-    { method: 'POST' }
-  ).catch(() => undefined);
+  // A Microsoft não tem um endpoint simples de revogar: o token só é apagado (e expira).
+  if (connection.provider === 'GOOGLE') {
+    await fetch(
+      `${REVOKE_URL}?token=${encodeURIComponent(decrypt(connection.refreshTokenEncrypted))}`,
+      { method: 'POST' }
+    ).catch(() => undefined);
+  }
 
-  // Os eventos do Google somem com os calendários; as tarefas ficam, só sem o vínculo.
+  // Os eventos somem com os calendários; as tarefas ficam, só sem o vínculo.
   await prisma.$transaction([
     ...(connection.syncTasks ? unlinkTasksOps(userId) : []),
     prisma.googleConnection.delete({ where: { id: connection.id } }),
   ]);
   forgetAccessToken(connection.id);
+  forgetMicrosoftAccessToken(connection.id);
 
   // O calendário padrão era desta conta: passa para o principal de outra que esteja marcado.
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
@@ -122,7 +129,7 @@ async function disconnectAccount(connection: GoogleConnection) {
   }
 }
 
-function safeEqual(a: string, b: string) {
+export function safeEqual(a: string, b: string) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
@@ -164,7 +171,7 @@ export async function googleRoutes(app: FastifyInstance) {
     } catch {
       return reply.redirect(`${appUrl}/entrar?erro=google`);
     }
-    const back = state.intent === 'login' ? `${appUrl}/entrar` : `${appUrl}/ajustes`;
+    const back = state.intent === 'login' ? `${appUrl}/entrar` : `${appUrl}/ajustes/google`;
     const cookieNonce = request.cookies[STATE_COOKIE];
     reply.clearCookie(STATE_COOKIE, { path: '/' });
     if (!cookieNonce || !safeEqual(cookieNonce, state.nonce) || query.error || !query.code) {
@@ -182,7 +189,7 @@ export async function googleRoutes(app: FastifyInstance) {
         where: {
           OR: [
             { googleSub: info.sub },
-            { googleConnections: { some: { googleSub: info.sub } } },
+            { googleConnections: { some: { provider: 'GOOGLE', googleSub: info.sub } } },
             ...(info.email_verified !== false ? [{ email }] : []),
           ],
         },
@@ -197,7 +204,7 @@ export async function googleRoutes(app: FastifyInstance) {
     const userId = state.sub;
     // Uma conta Google fica ligada a um usuário do Jottape por vez.
     const usedElsewhere = await prisma.googleConnection.count({
-      where: { googleSub: info.sub, userId: { not: userId } },
+      where: { provider: 'GOOGLE', googleSub: info.sub, userId: { not: userId } },
     });
     if (usedElsewhere) return reply.redirect(`${back}?erro=conta-em-uso`);
 
@@ -205,6 +212,7 @@ export async function googleRoutes(app: FastifyInstance) {
     const existing = await prisma.googleConnection.findFirst({
       where: {
         userId,
+        provider: 'GOOGLE',
         OR: [{ googleSub: info.sub }, { googleSub: null, googleEmail: email }],
       },
     });
@@ -226,7 +234,9 @@ export async function googleRoutes(app: FastifyInstance) {
             ...fields,
             userId,
             // A primeira conta sincroniza o Google Tasks; as outras só a agenda.
-            syncTasks: (await prisma.googleConnection.count({ where: { userId } })) === 0,
+            syncTasks:
+              (await prisma.googleConnection.count({ where: { userId, provider: 'GOOGLE' } })) ===
+              0,
           },
         });
     forgetAccessToken(connection.id);
@@ -297,7 +307,7 @@ export async function googleRoutes(app: FastifyInstance) {
       const { accountId } = updateGoogleTasksAccountBodySchema.parse(request.body);
       const userId = request.userId;
       const accounts = await connectionsOf(userId);
-      if (accountId && !accounts.some((a) => a.id === accountId)) {
+      if (accountId && !accounts.some((a) => a.id === accountId && a.provider === 'GOOGLE')) {
         throw new AppError(404, 'Conta não encontrada.');
       }
       const current = accounts.find((a) => a.syncTasks);

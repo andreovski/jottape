@@ -64,20 +64,28 @@ model LoginAttempt {
 
 // ---------------------------------------------------------------- Google
 
+enum ConnectionProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+// Uma conta de agenda conectada (Google ou Microsoft; o nome do modelo é da época só do Google).
+// googleSub/googleEmail guardam o id e o e-mail da conta no provedor.
 // Uma conta Google conectada. O usuário pode ter várias; só uma (syncTasks) sincroniza o Google
 // Tasks, garantido por um índice único parcial na migration.
 model GoogleConnection {
-  id                    String    @id @default(uuid())
-  userId                String    @map("user_id")
-  googleSub             String?   @map("google_sub")
-  googleEmail           String    @map("google_email")
-  refreshTokenEncrypted String    @map("refresh_token_encrypted")
+  id                    String             @id @default(uuid())
+  userId                String             @map("user_id")
+  provider              ConnectionProvider @default(GOOGLE)
+  googleSub             String?            @map("google_sub")
+  googleEmail           String             @map("google_email")
+  refreshTokenEncrypted String             @map("refresh_token_encrypted")
   scope                 String
-  syncTasks             Boolean   @default(false) @map("sync_tasks")
-  tasksSyncedAt         DateTime? @map("tasks_synced_at")
-  lastError             String?   @map("last_error")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+  syncTasks             Boolean            @default(false) @map("sync_tasks")
+  tasksSyncedAt         DateTime?          @map("tasks_synced_at")
+  lastError             String?            @map("last_error")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
 
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   calendars GoogleCalendar[]
@@ -99,6 +107,8 @@ model GoogleCalendar {
   primary          Boolean   @default(false)
   selected         Boolean   @default(false)
   syncToken        String?   @map("sync_token")
+  /// Microsoft: início da janela do calendarView/delta (a janela anda de tempos em tempos).
+  syncWindowStart  DateTime? @map("sync_window_start")
   syncedAt         DateTime? @map("synced_at")
   watchChannelId   String?   @unique @map("watch_channel_id")
   watchResourceId  String?   @map("watch_resource_id")
@@ -121,6 +131,7 @@ model GoogleCalendar {
 enum EventSource {
   LOCAL
   GOOGLE
+  MICROSOFT
 }
 
 enum EventStatus {

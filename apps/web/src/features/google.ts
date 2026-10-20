@@ -1,4 +1,5 @@
 import type {
+  GoogleAccountResponse,
   GoogleCalendarResponse,
   GoogleStatusResponse,
   UpdateGoogleCalendarsBody,
@@ -124,3 +125,16 @@ export function useDisconnectGoogleAccount() {
 export function startGoogle(intent: 'login' | 'connect') {
   window.location.href = `/api/google/auth?intent=${intent}`;
 }
+
+/** Conectar uma conta da Microsoft (Outlook, Microsoft 365) para a Agenda. */
+export function startMicrosoft() {
+  window.location.href = '/api/microsoft/auth';
+}
+
+/** Reconectar a conta pelo provedor dela. */
+export function reconnect(account: GoogleAccountResponse) {
+  if (account.provider === 'MICROSOFT') startMicrosoft();
+  else startGoogle('connect');
+}
+
+export const PROVIDER_NAME = { GOOGLE: 'Google', MICROSOFT: 'Microsoft' } as const;

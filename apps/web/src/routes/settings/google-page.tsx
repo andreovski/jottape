@@ -19,7 +19,10 @@ import { ActionSheet, Sheet } from '@/components/ios/sheet';
 import {
   alsoInLabel,
   calendarsBody,
+  PROVIDER_NAME,
+  reconnect,
   startGoogle,
+  startMicrosoft,
   useDisconnectGoogleAccount,
   useGoogleStatus,
   useSetTasksAccount,
@@ -27,8 +30,9 @@ import {
   useSyncGoogleAccount,
   useUpdateGoogleCalendars,
 } from '@/features/google';
+import { cn } from '@/lib/utils';
 
-import { GoogleGlyph } from './settings-page';
+import { GoogleGlyph, MicrosoftGlyph } from './settings-page';
 
 function ago(iso: string | null) {
   if (!iso) return 'nunca';
@@ -59,8 +63,14 @@ export function GooglePage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('google') === 'ok') toast.success('Conta Google conectada. Sincronizando…');
+    if (params.get('microsoft') === 'ok')
+      toast.success('Conta da Microsoft conectada. Sincronizando…');
     const error = params.get('erro');
-    if (error) toast.error(ERRORS[error] ?? 'Não deu para conectar o Google. Tente de novo.');
+    if (error)
+      toast.error(
+        ERRORS[error] ??
+          `Não deu para conectar ${error === 'microsoft' ? 'a Microsoft' : 'o Google'}. Tente de novo.`
+      );
     if (params.size) window.history.replaceState(null, '', window.location.pathname);
   }, []);
 
@@ -99,8 +109,8 @@ export function GooglePage() {
         <div className='text-label-2 flex justify-center py-16'>
           <Spinner />
         </div>
-      ) : !data.configured ? (
-        <Section footer='Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET na API (veja docs/deploy/railway.md).'>
+      ) : !data.configured && !data.microsoftConfigured ? (
+        <Section footer='Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET (ou MICROSOFT_CLIENT_ID e MICROSOFT_CLIENT_SECRET) na API (veja docs/deploy/railway.md).'>
           <Row
             leading={
               <IconChip color='var(--orange)'>
@@ -112,25 +122,50 @@ export function GooglePage() {
         </Section>
       ) : !data.connected ? (
         <div className='bg-surface flex flex-col items-center rounded-[var(--radius)] px-6 py-8 text-center'>
-          <span className='bg-background mb-4 flex size-16 items-center justify-center rounded-[18px]'>
-            <GoogleGlyph className='size-9' />
+          <span className='mb-4 flex gap-3'>
+            {data.configured && (
+              <span className='bg-background flex size-16 items-center justify-center rounded-[18px]'>
+                <GoogleGlyph className='size-9' />
+              </span>
+            )}
+            {data.microsoftConfigured && (
+              <span className='bg-background flex size-16 items-center justify-center rounded-[18px]'>
+                <MicrosoftGlyph className='size-8' />
+              </span>
+            )}
           </span>
-          <h2 className='text-title-2'>Conectar ao Google</h2>
+          <h2 className='text-title-2'>Conectar suas agendas</h2>
           <p className='text-subhead text-label-2 mt-2 max-w-sm'>
-            Seus compromissos do Google Agenda aparecem aqui e o que você criar no Jottape vai para
-            lá. As listas do Google Tasks viram listas de tarefas, nos dois sentidos. Dá para
-            conectar mais de uma conta.
+            Seus compromissos do Google Agenda{data.microsoftConfigured && ' e do Outlook'} aparecem
+            aqui e o que você criar no Jottape vai para lá.
+            {data.configured &&
+              ' As listas do Google Tasks viram listas de tarefas, nos dois sentidos.'}{' '}
+            Dá para conectar mais de uma conta.
           </p>
-          <Button className='mt-6 w-full max-w-xs' onClick={() => startGoogle('connect')}>
-            Conectar conta Google
-          </Button>
+          {data.configured && (
+            <Button className='mt-6 w-full max-w-xs' onClick={() => startGoogle('connect')}>
+              Conectar conta Google
+            </Button>
+          )}
+          {data.microsoftConfigured && (
+            <Button
+              variant={data.configured ? 'gray' : 'filled'}
+              className={cn('w-full max-w-xs', data.configured ? 'mt-3' : 'mt-6')}
+              onClick={startMicrosoft}
+            >
+              Conectar conta Microsoft
+            </Button>
+          )}
         </div>
       ) : (
         <>
           {data.accounts.map((account) => {
             const calendars = data.calendars.filter((c) => c.accountId === account.id);
             return (
-              <Section key={account.id} header={account.email}>
+              <Section
+                key={account.id}
+                header={`${account.email} · ${PROVIDER_NAME[account.provider]}`}
+              >
                 {account.lastError && (
                   <Row
                     leading={
@@ -150,9 +185,7 @@ export function GooglePage() {
                       )
                     }
                     onClick={() =>
-                      account.needsReconnect
-                        ? startGoogle('connect')
-                        : syncAccount.mutate(account.id)
+                      account.needsReconnect ? reconnect(account) : syncAccount.mutate(account.id)
                     }
                   />
                 )}
@@ -198,16 +231,30 @@ export function GooglePage() {
           })}
 
           <Section>
-            <Row
-              leading={
-                <IconChip color='var(--blue)'>
-                  <Plus />
-                </IconChip>
-              }
-              action
-              title='Adicionar conta Google'
-              onClick={() => startGoogle('connect')}
-            />
+            {data.configured && (
+              <Row
+                leading={
+                  <IconChip color='var(--blue)'>
+                    <Plus />
+                  </IconChip>
+                }
+                action
+                title='Adicionar conta Google'
+                onClick={() => startGoogle('connect')}
+              />
+            )}
+            {data.microsoftConfigured && (
+              <Row
+                leading={
+                  <IconChip color='var(--blue)'>
+                    <Plus />
+                  </IconChip>
+                }
+                action
+                title='Adicionar conta Microsoft'
+                onClick={startMicrosoft}
+              />
+            )}
           </Section>
 
           <Section footer='Os calendários ligados aparecem na Agenda. Eventos novos vão para o calendário padrão.'>
@@ -235,35 +282,39 @@ export function GooglePage() {
             />
           </Section>
 
-          <Section
-            header='Google Tasks'
-            footer={
-              data.tasksAccountId
-                ? `Sincronizado ${ago(data.tasksSyncedAt)}. O Google Tasks guarda só o dia do prazo; hora, repetição e lembretes ficam no Jottape.`
-                : 'As tarefas ficam só no Jottape.'
-            }
-          >
-            <Row
-              leading={
-                <IconChip color='var(--blue)'>
-                  <CircleCheck />
-                </IconChip>
+          {data.configured && (
+            <Section
+              header='Google Tasks'
+              footer={
+                data.tasksAccountId
+                  ? `Sincronizado ${ago(data.tasksSyncedAt)}. O Google Tasks guarda só o dia do prazo; hora, repetição e lembretes ficam no Jottape.`
+                  : 'As tarefas ficam só no Jottape.'
               }
-              title='Conta'
-              trailing={
-                setTasksAccount.isPending ? (
-                  <Spinner />
-                ) : (
-                  <SelectInput
-                    value={data.tasksAccountId ?? ''}
-                    onChange={(value) => setTasksTarget(value || null)}
-                    placeholder='Nenhuma'
-                    options={data.accounts.map((a) => ({ value: a.id, label: a.email }))}
-                  />
-                )
-              }
-            />
-          </Section>
+            >
+              <Row
+                leading={
+                  <IconChip color='var(--blue)'>
+                    <CircleCheck />
+                  </IconChip>
+                }
+                title='Conta'
+                trailing={
+                  setTasksAccount.isPending ? (
+                    <Spinner />
+                  ) : (
+                    <SelectInput
+                      value={data.tasksAccountId ?? ''}
+                      onChange={(value) => setTasksTarget(value || null)}
+                      placeholder='Nenhuma'
+                      options={data.accounts
+                        .filter((a) => a.provider === 'GOOGLE')
+                        .map((a) => ({ value: a.id, label: a.email }))}
+                    />
+                  )
+                }
+              />
+            </Section>
+          )}
 
           <ActionSheet
             open={Boolean(disconnecting)}

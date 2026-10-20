@@ -49,6 +49,10 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   O calendário padrão fica no `User`. Refresh token cifrado (AES-256-GCM, `ENCRYPTION_KEY`). Agenda por `syncToken` (410 →
   sincronização completa) e webhook `events.watch` só com `APP_URL` em HTTPS; tarefas por
   `updatedMin`. Mudança local pendente (`syncState: PENDING`) vence a do Google.
+- **Microsoft** (Outlook): `GoogleConnection` com `provider: MICROSOFT`, só Agenda, pelo Graph
+  (`graphFetch`, refresh token trocado a cada renovação). O delta traz ocorrências já expandidas,
+  então evento da Microsoft não tem `rrule` local; série criada no Jottape vai como `recurrence` e
+  volta como ocorrências.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e
   descarta o que atrasou mais de 1 h. Tarefa só com data é lembrada às 09:00 locais.
 - **Briefing** (tela Hoje): cada plugin é uma função em `services/briefing/index.ts` que devolve

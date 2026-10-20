@@ -40,6 +40,8 @@ export function useCalendars() {
       }
       if (event.source === 'GOOGLE')
         return { id: event.calendarId, name: 'Google', color: 'var(--blue)' };
+      if (event.source === 'MICROSOFT')
+        return { id: event.calendarId, name: 'Outlook', color: 'var(--blue)' };
       return { id: null, name: 'Jottape', color: LOCAL_COLOR };
     };
     const colorOf = (event: Pick<EventOccurrence, 'calendarId' | 'source' | 'color'>) =>

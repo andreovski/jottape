@@ -65,6 +65,14 @@ export function getGoogleConfig(): { clientId: string; clientSecret: string } | 
   return { clientId, clientSecret };
 }
 
+/** App registrado no Microsoft Entra (contas pessoais e de empresa: tenant "common"). */
+export function getMicrosoftConfig(): { clientId: string; clientSecret: string } | null {
+  const clientId = process.env.MICROSOFT_CLIENT_ID;
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
+}
+
 export function getVapidConfig(): {
   publicKey: string;
   privateKey: string;

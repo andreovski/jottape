@@ -7,6 +7,7 @@ import { briefingRoutes } from './routes/briefing';
 import { exportRoutes } from './routes/export';
 import { financeRoutes } from './routes/finance';
 import { googleRoutes } from './routes/google';
+import { microsoftRoutes } from './routes/microsoft';
 import { pushRoutes } from './routes/push';
 import { taskRoutes } from './routes/tasks';
 
@@ -17,6 +18,7 @@ export async function appRoutes(app: FastifyInstance) {
 
   app.register(authRoutes);
   app.register(googleRoutes);
+  app.register(microsoftRoutes);
   app.register(pushRoutes);
   app.register(financeRoutes);
   app.register(agendaRoutes);

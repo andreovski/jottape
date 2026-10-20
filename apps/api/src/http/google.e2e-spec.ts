@@ -47,7 +47,7 @@ describe('Google', () => {
     const session = await loginAsOwner(app);
     const callback = await connect(session.cookie);
     expect(callback.statusCode).toBe(302);
-    expect(callback.headers.location).toContain('/ajustes?google=ok');
+    expect(callback.headers.location).toContain('/ajustes/google?google=ok');
 
     const connection = await prisma.googleConnection.findFirstOrThrow({ where: { userId } });
     expect(connection).toMatchObject({ googleSub: 'google-sub-1', syncTasks: true });
@@ -309,7 +309,7 @@ describe('Google', () => {
       await connect(cookie);
       google.nextAccount = 'google-sub-2';
       const second = await connect(cookie);
-      expect(second.headers.location).toContain('/ajustes?google=ok');
+      expect(second.headers.location).toContain('/ajustes/google?google=ok');
       google.events.set('primary@gmail.com', [
         {
           id: 'p1',
@@ -499,7 +499,7 @@ describe('Google', () => {
       });
       google.nextAccount = 'google-sub-2';
       const response = await connect((await loginAsOwner(app)).cookie);
-      expect(response.headers.location).toContain('/ajustes?erro=conta-em-uso');
+      expect(response.headers.location).toContain('/ajustes/google?erro=conta-em-uso');
       expect(await prisma.googleConnection.count({ where: { userId } })).toBe(0);
     });
   });

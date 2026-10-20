@@ -1,5 +1,7 @@
+import type { ConnectionProvider } from '@prisma/client';
+
 import { decrypt } from '@/lib/crypto';
-import { getAppUrl, getGoogleConfig } from '@/lib/env';
+import { getAppUrl, getGoogleConfig, getMicrosoftConfig } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
 
 // Chamadas ao Google com fetch puro (sem googleapis): são poucas rotas e assim os testes trocam o
@@ -174,22 +176,37 @@ export async function googleFetch<T = unknown>(
   return (text ? JSON.parse(text) : null) as T;
 }
 
-/** Contas Google do usuário (vazio se o servidor não tem as credenciais). */
+/** Provedores com as credenciais configuradas no servidor. */
+export function configuredProviders(): ConnectionProvider[] {
+  return [
+    ...(getGoogleConfig() ? (['GOOGLE'] as const) : []),
+    ...(getMicrosoftConfig() ? (['MICROSOFT'] as const) : []),
+  ];
+}
+
+/** Contas de agenda do usuário (Google e Microsoft), só dos provedores configurados. */
 export async function connectionsOf(userId: string) {
-  if (!getGoogleConfig()) return [];
-  return prisma.googleConnection.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } });
+  return prisma.googleConnection.findMany({
+    where: { userId, provider: { in: configuredProviders() } },
+    orderBy: { createdAt: 'asc' },
+  });
 }
 
 /** A conta que sincroniza o Google Tasks, se houver. */
 export async function tasksConnection(userId: string) {
   if (!getGoogleConfig()) return null;
-  return prisma.googleConnection.findFirst({ where: { userId, syncTasks: true } });
+  return prisma.googleConnection.findFirst({
+    where: { userId, provider: 'GOOGLE', syncTasks: true },
+  });
 }
 
-/** A conta existe (e o servidor tem as credenciais)? */
+/** A conta existe (e o servidor tem as credenciais do provedor)? */
 export async function isConnectionActive(connectionId: string): Promise<boolean> {
-  if (!getGoogleConfig()) return false;
-  return (await prisma.googleConnection.count({ where: { id: connectionId } })) > 0;
+  return (
+    (await prisma.googleConnection.count({
+      where: { id: connectionId, provider: { in: configuredProviders() } },
+    })) > 0
+  );
 }
 
 export async function recordError(connectionId: string, error: unknown) {
