@@ -5,6 +5,7 @@ import { FieldRow, TextInput } from '@/components/ios/fields';
 import { useLogin, useRegister } from '@/features/auth';
 import { startGoogle } from '@/features/google';
 import { errorMessage } from '@/lib/api';
+import { useFormErrors } from '@/lib/use-form-errors';
 
 const GOOGLE_ERRORS: Record<string, string> = {
   google: 'Não deu para entrar com o Google. Tente de novo.',
@@ -29,9 +30,21 @@ export function LoginPage() {
     return code ? (GOOGLE_ERRORS[code] ?? GOOGLE_ERRORS.google) : null;
   });
 
+  const { errors, validate, reset } = useFormErrors({
+    name: registering && !name.trim() && 'Informe seu nome.',
+    email: !email.trim()
+      ? 'Informe o e-mail.'
+      : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && 'Esse e-mail não parece certo.',
+    password: !password
+      ? 'Informe a senha.'
+      : registering && password.length < 8 && 'Use pelo menos 8 caracteres.',
+    inviteCode: registering && !inviteCode.trim() && 'Informe o código de convite.',
+  });
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    if (!validate()) return;
     try {
       if (registering) {
         await register.mutateAsync({
@@ -54,6 +67,7 @@ export function LoginPage() {
   function switchMode(next: Mode) {
     setMode(next);
     setError(null);
+    reset();
     window.history.replaceState(null, '', next === 'register' ? '/cadastro' : '/entrar');
   }
 
@@ -62,7 +76,7 @@ export function LoginPage() {
       className='bg-background pt-safe flex min-h-dvh flex-col items-center justify-center px-5'
       style={{ '--tint': 'var(--indigo)' } as React.CSSProperties}
     >
-      <form onSubmit={submit} className='w-full max-w-sm'>
+      <form onSubmit={submit} noValidate className='w-full max-w-sm'>
         <div className='mb-8 flex flex-col items-center text-center'>
           <img
             src='/icons/icon-512.png'
@@ -79,7 +93,7 @@ export function LoginPage() {
 
         <div className='bg-surface overflow-hidden rounded-[var(--radius)]'>
           {registering && (
-            <FieldRow>
+            <FieldRow error={errors.name}>
               <TextInput
                 autoComplete='name'
                 placeholder='Nome'
@@ -90,7 +104,7 @@ export function LoginPage() {
               />
             </FieldRow>
           )}
-          <FieldRow>
+          <FieldRow error={errors.email}>
             <TextInput
               type='email'
               autoComplete='username'
@@ -100,7 +114,7 @@ export function LoginPage() {
               required
             />
           </FieldRow>
-          <FieldRow>
+          <FieldRow error={errors.password}>
             <TextInput
               type='password'
               autoComplete={registering ? 'new-password' : 'current-password'}
@@ -113,7 +127,7 @@ export function LoginPage() {
             />
           </FieldRow>
           {registering && (
-            <FieldRow>
+            <FieldRow error={errors.inviteCode}>
               <TextInput
                 autoComplete='off'
                 autoCapitalize='none'

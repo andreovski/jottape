@@ -1,10 +1,11 @@
 import type { TaskListResponse } from '@jottape/schemas';
 import { useState } from 'react';
 
-import { ColorPicker } from '@/components/ios/fields';
+import { ColorPicker, FieldError } from '@/components/ios/fields';
 import { Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
 import { useCreateTaskList, useUpdateTaskList } from '@/features/tasks';
+import { useFormErrors } from '@/lib/use-form-errors';
 import { cn } from '@/lib/utils';
 
 import { LIST_ICONS, ListIcon } from './icons';
@@ -32,10 +33,13 @@ export function ListSheet({
   const [color, setColor] = useState(list?.color ?? DEFAULT_COLOR);
   const [icon, setIcon] = useState(list?.icon ?? 'list');
   const pending = create.isPending || update.isPending;
+  const { errors, validate } = useFormErrors({
+    name: !name.trim() && 'Dê um nome para a lista.',
+  });
 
   async function save() {
+    if (pending || !validate()) return;
     const trimmed = name.trim();
-    if (!trimmed) return;
     if (list) {
       await update.mutateAsync({
         id: list.id,
@@ -57,7 +61,7 @@ export function ListSheet({
       tall
       title={list ? 'Informações da Lista' : 'Nova Lista'}
       confirmLabel={list ? 'OK' : 'Adicionar'}
-      confirmDisabled={!name.trim() || pending}
+      confirmDisabled={pending}
       onConfirm={save}
     >
       <Section>
@@ -71,20 +75,27 @@ export function ListSheet({
           >
             <ListIcon icon={icon} inbox={list?.isInbox} />
           </span>
-          <input
-            aria-label='Nome da lista'
-            placeholder='Nome da Lista'
-            disabled={list?.isInbox}
-            maxLength={60}
-            value={name}
-            enterKeyHint='done'
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) save();
-            }}
-            className='bg-fill placeholder:text-label-3 h-[58px] w-full rounded-[12px] px-4 text-center text-[22px] font-bold tracking-tight outline-none disabled:opacity-70'
-            style={{ color }}
-          />
+          <div data-field-error={errors.name ? '' : undefined} className='w-full'>
+            <input
+              aria-label='Nome da lista'
+              aria-invalid={Boolean(errors.name)}
+              placeholder='Nome da Lista'
+              disabled={list?.isInbox}
+              maxLength={60}
+              value={name}
+              enterKeyHint='done'
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) save();
+              }}
+              className={cn(
+                'bg-fill placeholder:text-label-3 h-[58px] w-full rounded-[12px] px-4 text-center text-[22px] font-bold tracking-tight outline-none disabled:opacity-70',
+                errors.name && 'placeholder:text-red/70'
+              )}
+              style={{ color }}
+            />
+            <FieldError message={errors.name} className='mt-2 justify-center' />
+          </div>
         </div>
       </Section>
 

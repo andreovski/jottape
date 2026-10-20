@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { CategoryIcon, categoryIconOf } from '@/components/finance/category-icon';
 import { CategoryPicker } from '@/components/finance/category-picker';
 import { Button, EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
-import { ColorPicker, FieldRow, SWATCHES } from '@/components/ios/fields';
+import { ColorPicker, FieldError, FieldRow, SWATCHES } from '@/components/ios/fields';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
@@ -16,6 +16,7 @@ import {
   useDeleteCategory,
   useUpdateCategory,
 } from '@/features/finance';
+import { useFormErrors } from '@/lib/use-form-errors';
 import { cn } from '@/lib/utils';
 
 /** Ícones oferecidos (os nomes que o `CategoryIcon` conhece). */
@@ -72,6 +73,10 @@ function CategorySheet({
   const create = useCreateCategory();
   const update = useUpdateCategory();
   const remove = useDeleteCategory();
+  const pending = create.isPending || update.isPending;
+  const { errors, validate } = useFormErrors({
+    name: !name.trim() && 'Dê um nome para a categoria.',
+  });
 
   const hasChildren = existing ? categories.some((c) => c.parentId === existing.id) : false;
   const parents = categories
@@ -88,6 +93,7 @@ function CategorySheet({
   } satisfies CategoryResponse;
 
   async function save() {
+    if (pending || !validate()) return;
     const body = { name: name.trim(), color, icon, parentId: parentId || null };
     if (existing) await update.mutateAsync({ id: existing.id, ...body });
     else await create.mutateAsync({ ...body, kind });
@@ -101,7 +107,7 @@ function CategorySheet({
         onOpenChange={(open) => !open && onClose()}
         title={existing ? 'Editar Categoria' : 'Nova Categoria'}
         confirmLabel={existing ? 'OK' : 'Adicionar'}
-        confirmDisabled={!name.trim() || create.isPending || update.isPending}
+        confirmDisabled={pending}
         onConfirm={save}
         tall
       >
@@ -109,13 +115,21 @@ function CategorySheet({
           <div className='[&>span]:size-[84px]! [&_svg]:size-10!'>
             <CategoryIcon category={preview} kind={kind} size='lg' />
           </div>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder='Nome da categoria'
-            maxLength={60}
-            className='bg-surface text-title-3 placeholder:text-label-3 mt-5 h-[52px] w-full rounded-[12px] text-center font-bold outline-none'
-          />
+          <div data-field-error={errors.name ? '' : undefined} className='mt-5 w-full'>
+            <input
+              aria-label='Nome da categoria'
+              aria-invalid={Boolean(errors.name)}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder='Nome da categoria'
+              maxLength={60}
+              className={cn(
+                'bg-surface text-title-3 placeholder:text-label-3 h-[52px] w-full rounded-[12px] text-center font-bold outline-none',
+                errors.name && 'placeholder:text-red/70'
+              )}
+            />
+            <FieldError message={errors.name} className='mt-2 justify-center' />
+          </div>
         </div>
 
         <Section header='Pertence a'>

@@ -205,8 +205,29 @@
   animation: sky-rain 0.9s linear infinite;
 }
 
+/* Campo obrigatório vazio ao enviar: um tremidinho curto, como a senha errada do iPhone. */
+@keyframes field-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+.field-shake {
+  animation: field-shake 0.36s ease-in-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sky-rain {
+  .sky-rain,
+  .field-shake {
     animation: none;
   }
 }

@@ -18,6 +18,7 @@ import {
   usePayInvoice,
 } from '@/features/finance';
 import { longDay, money, monthName, todayKey } from '@/lib/format';
+import { useFormErrors } from '@/lib/use-form-errors';
 
 import { invoiceTitle } from './finance-utils';
 import { TransactionRow } from './transaction-list';
@@ -68,9 +69,12 @@ function InvoiceSheetContent({
   const effectiveFrom = fromAccountId || payers[0]?.id || '';
 
   const payable = invoice && invoice.status !== 'PAID' && invoice.totalCents > 0;
+  const { errors, validate } = useFormErrors({
+    from: !effectiveFrom && 'Crie uma conta para pagar a fatura.',
+  });
 
   async function submit() {
-    if (!invoice || !effectiveFrom) return;
+    if (!invoice || pay.isPending || !validate()) return;
     const ok = await pay.mutateAsync({ id: invoice.id, fromAccountId: effectiveFrom, date }).then(
       () => true,
       () => false
@@ -102,7 +106,7 @@ function InvoiceSheetContent({
 
           {payable && (
             <Section header='Pagamento'>
-              <FieldRow label='Pagar com'>
+              <FieldRow label='Pagar com' error={errors.from}>
                 <SelectInput
                   value={effectiveFrom}
                   onChange={setFromAccountId}
@@ -118,12 +122,7 @@ function InvoiceSheetContent({
             </Section>
           )}
           {payable && (
-            <Button
-              className='mb-7 w-full'
-              loading={pay.isPending}
-              disabled={!effectiveFrom}
-              onClick={() => void submit()}
-            >
+            <Button className='mb-7 w-full' loading={pay.isPending} onClick={() => void submit()}>
               Pagar fatura
             </Button>
           )}

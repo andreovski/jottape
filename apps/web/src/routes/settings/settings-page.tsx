@@ -32,6 +32,7 @@ import { useGoogleStatus } from '@/features/google';
 import { useApiHealth } from '@/features/health';
 import { isStandalone, usePush } from '@/features/push';
 import { errorMessage } from '@/lib/api';
+import { useFormErrors } from '@/lib/use-form-errors';
 
 import { REMINDER_OPTIONS, SUMMARY_OPTIONS, TIMEZONES } from './options';
 
@@ -387,6 +388,7 @@ function ProfileSheet({
   const [weekStartsOn, setWeekStartsOn] = useState(String(me.weekStartsOn));
 
   const zones = TIMEZONES.includes(me.timezone) ? TIMEZONES : [me.timezone, ...TIMEZONES];
+  const { errors, validate } = useFormErrors({ name: !name.trim() && 'Informe seu nome.' });
 
   return (
     <Sheet
@@ -394,8 +396,9 @@ function ProfileSheet({
       onOpenChange={onOpenChange}
       title='Perfil'
       confirmLabel='OK'
-      confirmDisabled={!name.trim() || update.isPending}
+      confirmDisabled={update.isPending}
       onConfirm={async () => {
+        if (!validate()) return;
         await update.mutateAsync({
           name: name.trim(),
           timezone,
@@ -405,7 +408,7 @@ function ProfileSheet({
       }}
     >
       <Section>
-        <FieldRow label='Nome'>
+        <FieldRow label='Nome' error={errors.name}>
           <TextInput align='right' value={name} onChange={(e) => setName(e.target.value)} />
         </FieldRow>
         <FieldRow label='E-mail'>
@@ -466,7 +469,11 @@ function PasswordSheet({
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
-  const mismatch = confirm.length > 0 && next !== confirm;
+  const { errors, validate } = useFormErrors({
+    current: me.hasPassword && !current && 'Informe a senha atual.',
+    next: !next ? 'Informe a nova senha.' : next.length < 8 && 'Use pelo menos 8 caracteres.',
+    confirm: !confirm ? 'Repita a nova senha.' : next !== confirm && 'As senhas não são iguais.',
+  });
 
   return (
     <Sheet
@@ -474,8 +481,9 @@ function PasswordSheet({
       onOpenChange={onOpenChange}
       title={me.hasPassword ? 'Alterar Senha' : 'Criar Senha'}
       confirmLabel='OK'
-      confirmDisabled={next.length < 8 || next !== confirm || change.isPending}
+      confirmDisabled={change.isPending}
       onConfirm={async () => {
+        if (!validate()) return;
         await change.mutateAsync({ currentPassword: current || undefined, newPassword: next });
         toast.success('Senha alterada.');
         setCurrent('');
@@ -484,17 +492,9 @@ function PasswordSheet({
         onOpenChange(false);
       }}
     >
-      <Section
-        footer={
-          mismatch ? (
-            <span className='text-red'>As senhas não são iguais.</span>
-          ) : (
-            'Pelo menos 8 caracteres.'
-          )
-        }
-      >
+      <Section footer='Pelo menos 8 caracteres.'>
         {me.hasPassword && (
-          <FieldRow label='Atual'>
+          <FieldRow label='Atual' error={errors.current}>
             <TextInput
               type='password'
               align='right'
@@ -505,7 +505,7 @@ function PasswordSheet({
             />
           </FieldRow>
         )}
-        <FieldRow label='Nova'>
+        <FieldRow label='Nova' error={errors.next}>
           <TextInput
             type='password'
             align='right'
@@ -515,7 +515,7 @@ function PasswordSheet({
             onChange={(e) => setNext(e.target.value)}
           />
         </FieldRow>
-        <FieldRow label='Confirmar'>
+        <FieldRow label='Confirmar' error={errors.confirm}>
           <TextInput
             type='password'
             align='right'
