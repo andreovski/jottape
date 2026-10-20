@@ -322,6 +322,8 @@ export function weatherDescription(code: number) {
 export interface Weather {
   current: number;
   code: number;
+  /** Ausente em respostas guardadas antes deste campo existir. */
+  isDay?: boolean;
   max: number;
   min: number;
   rain: number | null;

@@ -51,13 +51,13 @@ export async function weather(city: BriefingCity, timeZone: string): Promise<Wea
     const params = new URLSearchParams({
       latitude: lat,
       longitude: lon,
-      current: 'temperature_2m,weather_code',
+      current: 'temperature_2m,weather_code,is_day',
       daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
       timezone: timeZone,
       forecast_days: '1',
     });
     const data = await getJson<{
-      current: { temperature_2m: number; weather_code: number };
+      current: { temperature_2m: number; weather_code: number; is_day?: number };
       daily: {
         temperature_2m_max: number[];
         temperature_2m_min: number[];
@@ -67,6 +67,7 @@ export async function weather(city: BriefingCity, timeZone: string): Promise<Wea
     return {
       current: data.current.temperature_2m,
       code: data.current.weather_code,
+      isDay: data.current.is_day !== 0,
       max: data.daily.temperature_2m_max[0],
       min: data.daily.temperature_2m_min[0],
       rain: data.daily.precipitation_probability_max[0] ?? null,

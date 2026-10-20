@@ -175,6 +175,42 @@
   }
 }
 
+/* Fundo do briefing: o brilho do sol/lua passeia devagar e a chuva cai em diagonal. */
+@keyframes sky-drift {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-24px, 18px) scale(1.08);
+  }
+}
+
+@keyframes sky-rain {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: -40px 240px;
+  }
+}
+
+.sky-rain {
+  background-image: repeating-linear-gradient(
+    105deg,
+    transparent 0 14px,
+    rgb(255 255 255 / 0.35) 14px 15px,
+    transparent 15px 32px
+  );
+  background-size: 120px 240px;
+  animation: sky-rain 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-rain {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-separator outline-tint/50;

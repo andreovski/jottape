@@ -122,7 +122,7 @@ describe('briefing', () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            current: { temperature_2m: 27.2, weather_code: 0 },
+            current: { temperature_2m: 27.2, weather_code: 0, is_day: 0 },
             daily: {
               temperature_2m_max: [32.6],
               temperature_2m_min: [19.1],
@@ -132,7 +132,9 @@ describe('briefing', () => {
         )
       )
     );
-    const weather = (await briefing()).items[0];
+    const withWeather = await briefing();
+    expect(withWeather.sky).toEqual({ code: 0, temperature: 27.2, isDay: false });
+    const weather = withWeather.items[0];
     expect(weather.text).toBe(
       'Goiânia: 27° agora, céu limpo. Máxima de 33° e mínima de 19°. Chance de chuva de 70%, leve guarda-chuva.'
     );

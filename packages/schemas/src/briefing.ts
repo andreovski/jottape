@@ -135,9 +135,20 @@ export const briefingItemSchema = z.object({
 });
 export type BriefingItem = z.infer<typeof briefingItemSchema>;
 
+/** Céu de agora na cidade do clima, para o fundo do briefing. */
+export const briefingSkySchema = z.object({
+  /** Código WMO do Open-Meteo. */
+  code: z.number().int(),
+  temperature: z.number(),
+  isDay: z.boolean(),
+});
+export type BriefingSky = z.infer<typeof briefingSkySchema>;
+
 export const briefingResponseSchema = z.object({
   date: z.string(),
   items: z.array(briefingItemSchema),
+  /** Só com o plugin de clima ligado e respondendo. */
+  sky: briefingSkySchema.nullable(),
 });
 export type BriefingResponse = z.infer<typeof briefingResponseSchema>;
 

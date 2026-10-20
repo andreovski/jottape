@@ -4,6 +4,7 @@ import {
   type BriefingPluginId,
   type BriefingResponse,
   type BriefingSettings,
+  type BriefingSky,
   normalizeBriefingSettings,
 } from '@jottape/schemas';
 import type { Prisma } from '@prisma/client';
@@ -62,6 +63,8 @@ interface Context {
   dayStart: Date;
   dayEnd: Date;
   settings: BriefingSettings;
+  /** Preenchido pelo plugin de clima. */
+  sky: BriefingSky | null;
   /** Leituras divididas entre plugins (a agenda do dia serve a dois). */
   once<T>(key: string, load: () => Promise<T>): Promise<T>;
 }
@@ -276,7 +279,20 @@ const plugins: Record<BriefingPluginId, Plugin> = {
   async weather(ctx) {
     const city = ctx.settings.city;
     if (!city) return line('Escolha a sua cidade para ver o clima aqui.', { href: SETTINGS_HREF });
-    return weatherLine(city.name, await external.weather(city, ctx.timeZone));
+    const weather = await external.weather(city, ctx.timeZone);
+    const hour = Number(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: ctx.timeZone,
+        hour: 'numeric',
+        hourCycle: 'h23',
+      }).format(ctx.now)
+    );
+    ctx.sky = {
+      code: weather.code,
+      temperature: weather.current,
+      isDay: weather.isDay ?? (hour >= 6 && hour < 18),
+    };
+    return weatherLine(city.name, weather);
   },
 
   async horoscope(ctx) {
@@ -333,6 +349,7 @@ export async function buildBriefing(
     dayStart: startOfDayInZone(today, timeZone),
     dayEnd: startOfDayInZone(addDays(today, 1), timeZone),
     settings,
+    sky: null,
     once: <T>(key: string, load: () => Promise<T>) => {
       if (!memo.has(key)) memo.set(key, load());
       return memo.get(key) as Promise<T>;
@@ -352,7 +369,7 @@ export async function buildBriefing(
       }
     })
   );
-  return { date: today, items: results.flat() };
+  return { date: today, items: results.flat(), sky: ctx.sky };
 }
 
 /** Próximo compromisso a partir de `from`, olhando até 90 dias à frente, de 30 em 30. */
