@@ -276,7 +276,7 @@
 
   /* Fundo da faixa do topo: some para o fundo da página, sem linha de corte. */
   .top-scrim {
-    background: linear-gradient(var(--background) 55%, transparent);
+    background: linear-gradient(var(--background) 62%, transparent);
   }
 
   .bar-shadow {

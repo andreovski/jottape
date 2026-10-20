@@ -45,21 +45,8 @@ export function Page({
   return (
     <div className={cn('min-h-full', className)}>
       <div className='pt-safe sticky top-0 z-30 pb-4'>
-        {/* Faixa do topo: no início da página só os botões; ao rolar, a barra sólida aparece. */}
-        <div
-          aria-hidden
-          className={cn(
-            'top-scrim absolute inset-0 transition-opacity duration-200',
-            compact && 'opacity-0'
-          )}
-        />
-        <div
-          aria-hidden
-          className={cn(
-            'bg-bar hairline-b absolute inset-x-0 top-0 bottom-4 transition-opacity duration-200',
-            !compact && 'opacity-0'
-          )}
-        />
+        {/* Degradê do fundo da página: sem faixa sólida, o conteúdo some suave sob o título. */}
+        <div aria-hidden className='top-scrim absolute inset-0' />
         <div className='relative mx-auto flex h-12 max-w-3xl items-center gap-2 px-4 lg:px-8'>
           {leading}
           <div
