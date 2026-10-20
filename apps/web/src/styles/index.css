@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '@fontsource-variable/figtree';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -295,6 +296,14 @@
 
   .hairline-t {
     box-shadow: inset 0 0.5px 0 var(--separator);
+  }
+
+  /* Fonte do briefing (cartão e linha do tempo): Figtree, em vez da do sistema. Os números e
+     títulos em `font-rounded` dentro dele seguem a mesma fonte. */
+  .font-briefing,
+  .font-briefing .font-rounded {
+    font-family: 'Figtree Variable', ui-rounded, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      Roboto, sans-serif;
   }
 
   .numeric {

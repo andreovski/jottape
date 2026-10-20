@@ -384,7 +384,7 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
       <Dialog.Trigger asChild>
         <button
           type='button'
-          className='relative mb-7 block w-full overflow-hidden rounded-[22px] text-left text-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.35)] active:scale-[0.985] motion-safe:transition-transform'
+          className='font-briefing relative mb-7 block w-full overflow-hidden rounded-[22px] text-left text-white shadow-[0_10px_30px_-12px_rgb(0_0_0/0.35)] active:scale-[0.985] motion-safe:transition-transform'
         >
           <SkyBackdrop theme={theme} className='absolute inset-0' />
           <div className='relative flex min-h-[132px] gap-4 p-4'>
@@ -410,7 +410,7 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
         </button>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Content className='fixed inset-0 z-50 bg-black outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95'>
+        <Dialog.Content className='font-briefing fixed inset-0 z-50 bg-black outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95'>
           <BriefingStory data={data} theme={theme} format={format} onClose={close} />
         </Dialog.Content>
       </Dialog.Portal>
