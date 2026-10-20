@@ -29,6 +29,17 @@ function speechRecognition(): (new () => SpeechRecognitionLike) | null {
     | null;
 }
 
+/** O que cada erro do reconhecimento de voz quer dizer, para o usuário saber o que fazer. */
+const RECOGNITION_ERRORS: Record<string, string> = {
+  'not-allowed': 'Permita o microfone para ditar o pedido.',
+  'service-not-allowed':
+    'O navegador não liberou o reconhecimento de voz (no Safari do Mac, ele depende da Siri ligada). Use o ditado do teclado ou escreva o pedido.',
+  network:
+    'O reconhecimento de voz deste navegador não respondeu (no Brave e em alguns navegadores ele não existe). Tente no Chrome ou no Safari, ou escreva o pedido.',
+  'audio-capture': 'Nenhum microfone encontrado.',
+  'language-not-supported': 'Este navegador não reconhece voz em português.',
+};
+
 const canRecord = () =>
   typeof window !== 'undefined' &&
   typeof window.MediaRecorder !== 'undefined' &&
@@ -112,7 +123,8 @@ export function useVoice({ mode, onAudio, onText }: Options) {
     const recognition = new Recognition();
     recognition.lang = 'pt-BR';
     recognition.interimResults = true;
-    recognition.continuous = false;
+    // Contínuo: uma pausa no meio da frase não encerra; o usuário toca em enviar quando acabar.
+    recognition.continuous = true;
     let text = '';
     let cancelled = false;
     recognition.onresult = (event) => {
@@ -122,7 +134,14 @@ export function useVoice({ mode, onAudio, onText }: Options) {
       callbacks.current.onText(text, false);
     };
     recognition.onerror = (event) => {
-      if (event.error === 'not-allowed') toast.error('Permita o microfone para ditar o pedido.');
+      if (event.error === 'aborted') return;
+      if (event.error === 'no-speech') {
+        toast('Não ouvi nada. Toque no microfone e fale o pedido.');
+        return;
+      }
+      toast.error(
+        RECOGNITION_ERRORS[event.error] ?? 'O ditado parou. Tente de novo ou escreva o pedido.'
+      );
     };
     recognition.onend = () => {
       setListening(false);
@@ -135,7 +154,12 @@ export function useVoice({ mode, onAudio, onText }: Options) {
       recognition.stop();
     };
     finishRef.current = () => recognition.stop();
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      toast.error('O ditado não começou. Tente de novo.');
+      return;
+    }
     setListening(true);
   }
 
