@@ -24,7 +24,7 @@ function sectionOf(pathname: string) {
 }
 
 /**
- * Celular: abas translúcidas embaixo (UITabBar). Computador: barra lateral (como o app no iPad e no
+ * Celular: abas embaixo (UITabBar). Computador: barra lateral (como o app no iPad e no
  * Mac). A cor da seção aberta vira `--tint`, usada por botões, links e destaques.
  */
 export function AppShell() {
@@ -70,34 +70,9 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      <TabBar key={current.to} currentTo={current.to} />
+      <TabBar currentTo={current.to} />
     </div>
   );
-}
-
-/**
- * Compacta a barra ao rolar para baixo (mais de 24 px) e expande ao subir, ao chegar no topo ou
- * quando o chamador pede. Ignora o "quique" do iOS e rolagens de poucos pixels.
- */
-function useCompactOnScroll() {
-  const [compact, setCompact] = useState(false);
-
-  useEffect(() => {
-    let last = window.scrollY;
-    const onScroll = () => {
-      const y = window.scrollY;
-      const delta = y - last;
-      if (Math.abs(delta) < 4) return;
-      last = y;
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      if (y <= 8 || y >= max - 2 || delta < 0) setCompact(false);
-      else if (y > 24 && delta > 0) setCompact(true);
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  return [compact, setCompact] as const;
 }
 
 /** Fecha a barra quando o teclado abre, para ela não subir junto. */
@@ -114,69 +89,38 @@ function useKeyboardOpen() {
 }
 
 /**
- * Barra de abas do celular: cápsula flutuante de cor sólida (`--bar`, vem do tema) com a aba ativa
- * em pílula na cor da seção. Ao rolar para baixo ela encolhe (só ícones, 64% da largura).
+ * Barra de abas do celular (UITabBar): faixa de cor sólida (`--bar`, vem do tema) colada embaixo,
+ * quatro abas. Tocar na aba ativa rola a tela até o topo.
  */
 function TabBar({ currentTo }: { currentTo: string }) {
-  const [compact, setCompact] = useCompactOnScroll();
   const keyboardOpen = useKeyboardOpen();
 
   return (
     <nav
       aria-label='Seções'
       className={cn(
-        'pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] transition-transform duration-300 lg:hidden',
+        'bg-bar hairline-t pb-safe fixed inset-x-0 bottom-0 z-40 transition-transform duration-300 lg:hidden',
         keyboardOpen && 'translate-y-full'
       )}
     >
-      <div
-        aria-hidden
-        className='pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[var(--background)] from-55% to-transparent'
-      />
-      <ul
-        className={cn(
-          'relative bg-bar bar-shadow pointer-events-auto flex max-w-xl items-stretch gap-0.5 rounded-full p-1 transition-[width,height] duration-[380ms] ease-[cubic-bezier(0.32,1.25,0.5,1)] motion-reduce:transition-none',
-          compact ? 'h-10 w-[64%]' : 'h-14 w-full'
-        )}
-      >
+      <ul className='mx-auto grid h-[50px] max-w-xl grid-cols-4'>
         {TABS.map(({ to, label, icon: Icon }) => {
           const active = currentTo === to;
           return (
-            <li key={to} className='min-w-0 flex-1'>
+            <li key={to}>
               <Link
                 to={to}
-                aria-label={label}
                 aria-current={active ? 'page' : undefined}
-                onClick={(event) => {
-                  if (compact) {
-                    event.preventDefault();
-                    setCompact(false);
-                  } else if (active) {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }
+                onClick={() => {
+                  if (active) window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className={cn(
-                  'flex h-full flex-col items-center justify-center rounded-full text-[10px] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.94] motion-reduce:transition-none',
-                  active ? 'text-tint bg-tint/15' : 'text-gray'
+                  'flex h-full flex-col items-center justify-center gap-[3px] text-[10px] font-medium transition-colors',
+                  active ? 'text-tint' : 'text-gray'
                 )}
               >
-                <Icon
-                  className={cn(
-                    'transition-[width,height]',
-                    compact ? 'size-[18px]' : 'size-[22px]'
-                  )}
-                  strokeWidth={active ? 2.3 : 1.9}
-                  aria-hidden
-                />
-                <span
-                  className={cn(
-                    'overflow-hidden transition-[max-height,opacity] duration-200 motion-reduce:transition-none',
-                    compact ? 'max-h-0 opacity-0' : 'mt-0.5 max-h-3 opacity-100'
-                  )}
-                  aria-hidden
-                >
-                  {label}
-                </span>
+                <Icon className='size-[25px]' strokeWidth={active ? 2.4 : 1.9} aria-hidden />
+                {label}
               </Link>
             </li>
           );

@@ -71,7 +71,7 @@ export function Page({
         )}
       </div>
 
-      <div className='mx-auto max-w-3xl px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
+      <div className='mx-auto max-w-3xl px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
         <header className='-mt-3 pt-1 pb-3'>
           {eyebrow && (
             <div className='text-footnote text-tint font-semibold uppercase'>{eyebrow}</div>
