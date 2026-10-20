@@ -4,7 +4,7 @@ import { eventOccurrenceSchema } from './events';
 
 /**
  * Plugins do briefing da tela Hoje, na ordem padrão. Os do começo usam só os dados do app; os
- * do fim buscam dados de fora (clima, horóscopo, cotação, feriados).
+ * do fim buscam dados de fora (clima, maré, horóscopo, cotação, ações, feriados).
  */
 export const briefingPluginIds = [
   'day',
@@ -17,8 +17,10 @@ export const briefingPluginIds = [
   'month',
   'streak',
   'weather',
+  'tide',
   'horoscope',
   'currency',
+  'stocks',
   'holidays',
   'moon',
   'quote',
@@ -57,6 +59,18 @@ export const briefingCurrencies = ['USD', 'EUR', 'GBP', 'BTC'] as const;
 export const briefingCurrencySchema = z.enum(briefingCurrencies);
 export type BriefingCurrency = z.infer<typeof briefingCurrencySchema>;
 
+/**
+ * Código de uma ação como na bolsa ("PETR4", "BOVA11", "AAPL"). Os no formato da B3 (quatro
+ * letras e um número) são buscados na B3; os outros, como foram digitados.
+ */
+export const stockTickerSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^\^?[A-Z0-9][A-Z0-9.-]{0,11}$/, 'Código inválido.');
+
+export const briefingStocksMax = 10;
+
 export const briefingCitySchema = z.object({
   /** Nome para mostrar ("Goiânia, Goiás"). */
   name: z.string().trim().min(1).max(160),
@@ -74,6 +88,8 @@ export const briefingSettingsSchema = z.object({
   sign: zodiacSignSchema.nullable(),
   city: briefingCitySchema.nullable(),
   currencies: z.array(briefingCurrencySchema).max(briefingCurrencies.length),
+  /** Ações do plugin de ações, na ordem em que aparecem. */
+  stocks: z.array(stockTickerSchema).max(briefingStocksMax).default([]),
 });
 export type BriefingSettings = z.infer<typeof briefingSettingsSchema>;
 
@@ -83,6 +99,7 @@ export function defaultBriefingSettings(): BriefingSettings {
     sign: null,
     city: null,
     currencies: ['USD', 'EUR'],
+    stocks: [],
   };
 }
 
@@ -110,11 +127,13 @@ export function normalizeBriefingSettings(saved: unknown): BriefingSettings {
   const sign = zodiacSignSchema.safeParse(raw.sign);
   const city = briefingCitySchema.safeParse(raw.city);
   const currencies = z.array(briefingCurrencySchema).safeParse(raw.currencies);
+  const stocks = z.array(stockTickerSchema).safeParse(raw.stocks);
   return {
     plugins: seen.size > 0 ? plugins : fallback.plugins,
     sign: sign.success ? sign.data : null,
     city: city.success ? city.data : null,
     currencies: currencies.success ? [...new Set(currencies.data)] : fallback.currencies,
+    stocks: stocks.success ? [...new Set(stocks.data)].slice(0, briefingStocksMax) : [],
   };
 }
 
@@ -151,6 +170,20 @@ export const briefingResponseSchema = z.object({
   sky: briefingSkySchema.nullable(),
 });
 export type BriefingResponse = z.infer<typeof briefingResponseSchema>;
+
+/** Uma ação conferida antes de entrar na lista. */
+export const stockQuoteSchema = z.object({
+  ticker: z.string(),
+  name: z.string().nullable(),
+  /** Moeda da cotação ("BRL", "USD"). */
+  currency: z.string(),
+  price: z.number(),
+  /** Variação desde o fechamento anterior (0,012 = +1,2%). */
+  change: z.number().nullable(),
+});
+export type StockQuote = z.infer<typeof stockQuoteSchema>;
+
+export const stockLookupQuerySchema = z.object({ ticker: stockTickerSchema });
 
 export const citySearchQuerySchema = z.object({ q: z.string().trim().min(2).max(80) });
 export type CitySearchQuery = z.infer<typeof citySearchQuerySchema>;

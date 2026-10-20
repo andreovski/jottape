@@ -1,10 +1,10 @@
 import { addDays } from '@jottape/finance-engine';
-import type { BriefingCity, BriefingCurrency, ZodiacSign } from '@jottape/schemas';
+import type { BriefingCity, BriefingCurrency, StockQuote, ZodiacSign } from '@jottape/schemas';
 import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
-import { firstSentences, type Rate, signNames, type Weather } from './text';
+import { firstSentences, type Rate, signNames, type TideSeries, type Weather } from './text';
 
 // Serviços públicos e gratuitos, sem chave. A resposta fica guardada (igual para todos os
 // usuários), então cada fonte é consultada no máximo uma vez por chave e período.
@@ -94,6 +94,143 @@ export async function searchCities(query: string): Promise<BriefingCity[]> {
       longitude: r.longitude,
     }));
   });
+}
+
+// ---------------------------------------------------------------- maré (Open-Meteo Marine)
+
+/**
+ * Nível do mar previsto de 15 em 15 minutos, de hoje e amanhã, no horário local. Longe da costa
+ * o serviço só devolve vazios: aí vem `null`.
+ */
+export async function tide(
+  city: BriefingCity,
+  timeZone: string,
+  today: string
+): Promise<TideSeries | null> {
+  const lat = city.latitude.toFixed(2);
+  const lon = city.longitude.toFixed(2);
+  const result = await cached(`tide:${lat},${lon}:${today}`, 6 * HOUR, async () => {
+    const params = new URLSearchParams({
+      latitude: lat,
+      longitude: lon,
+      minutely_15: 'sea_level_height_msl',
+      timezone: timeZone,
+      start_date: today,
+      end_date: addDays(today, 1),
+    });
+    const data = await getJson<{
+      minutely_15?: { time: string[]; sea_level_height_msl: (number | null)[] };
+    }>(`https://marine-api.open-meteo.com/v1/marine?${params}`);
+    const times = data.minutely_15?.time ?? [];
+    const levels = data.minutely_15?.sea_level_height_msl ?? [];
+    const points = times
+      .map((time, i) => ({ time, level: levels[i] }))
+      .filter((p): p is { time: string; level: number } => typeof p.level === 'number');
+    return { points: points.length >= 8 ? points : null };
+  });
+  return result.points;
+}
+
+// ---------------------------------------------------------------- ações (Yahoo Finance)
+
+/** Quatro letras e um número (PETR4, BOVA11, TAEE11F): é da B3. */
+const B3_TICKER = /^[A-Z]{4}\d{1,2}F?$/;
+
+/**
+ * Cotação de uma ação. Vem do gráfico público do Yahoo Finance; se ele recusar, da brapi.dev,
+ * que sem chave atende parte das ações da B3. `null` quando o código não existe.
+ */
+export async function stockQuote(ticker: string): Promise<StockQuote | null> {
+  const result = await cached(`stock:${ticker}`, 15 * 60_000, async () => {
+    try {
+      return { quote: await yahooQuote(ticker) };
+    } catch (error) {
+      if (!B3_TICKER.test(ticker)) throw error;
+      return { quote: await brapiQuote(ticker) };
+    }
+  });
+  return result.quote;
+}
+
+async function yahooQuote(ticker: string): Promise<StockQuote | null> {
+  const symbol = B3_TICKER.test(ticker) ? `${ticker}.SA` : ticker;
+  const response = await fetch(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d`,
+    {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      // Sem um navegador como agente, o Yahoo às vezes recusa.
+      headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (Jottape)' },
+    }
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Yahoo Finance respondeu ${response.status}`);
+  const data = (await response.json()) as {
+    chart: {
+      result:
+        | {
+            meta: {
+              currency?: string;
+              regularMarketPrice?: number;
+              regularMarketChangePercent?: number;
+              shortName?: string;
+              longName?: string;
+            };
+            indicators?: { quote?: { close?: (number | null)[] }[] };
+          }[]
+        | null;
+    };
+  };
+  const result = data.chart.result?.[0];
+  const price = result?.meta.regularMarketPrice;
+  if (!result || typeof price !== 'number') return null;
+  let change: number | null = null;
+  if (typeof result.meta.regularMarketChangePercent === 'number') {
+    change = result.meta.regularMarketChangePercent / 100;
+  } else {
+    const closes = (result.indicators?.quote?.[0]?.close ?? []).filter(
+      (c): c is number => typeof c === 'number'
+    );
+    if (closes.length >= 2) change = price / closes.at(-2)! - 1;
+  }
+  return {
+    ticker,
+    name: (result.meta.longName ?? result.meta.shortName ?? '').trim() || null,
+    currency: result.meta.currency ?? 'BRL',
+    price,
+    change,
+  };
+}
+
+async function brapiQuote(ticker: string): Promise<StockQuote | null> {
+  const data = await getJson<{
+    results?: {
+      longName?: string;
+      shortName?: string;
+      currency?: string;
+      regularMarketPrice?: number;
+      regularMarketChangePercent?: number;
+    }[];
+  }>(`https://brapi.dev/api/quote/${encodeURIComponent(ticker)}`);
+  const result = data.results?.[0];
+  if (!result || typeof result.regularMarketPrice !== 'number') return null;
+  return {
+    ticker,
+    name: result.longName ?? result.shortName ?? null,
+    currency: result.currency ?? 'BRL',
+    price: result.regularMarketPrice,
+    change:
+      typeof result.regularMarketChangePercent === 'number'
+        ? result.regularMarketChangePercent / 100
+        : null,
+  };
+}
+
+/** As ações da lista, na ordem dela. A que falhar ou não existir fica de fora. */
+export async function stocks(tickers: string[]): Promise<StockQuote[]> {
+  const quotes = await Promise.all(tickers.map((t) => stockQuote(t).catch(() => null)));
+  const found = quotes.filter((q): q is StockQuote => !!q);
+  if (tickers.length > 0 && found.length === 0) throw new Error('Nenhuma cotação de ação');
+  return found;
 }
 
 // ---------------------------------------------------------------- horóscopo

@@ -32,8 +32,10 @@ import {
   quoteLine,
   signNames,
   staleLine,
+  stocksLine,
   streakDays,
   streakLine,
+  tideLine,
   weatherLine,
   withPlugin,
   yesterdayLine,
@@ -295,6 +297,31 @@ const plugins: Record<BriefingPluginId, Plugin> = {
     return weatherLine(city.name, weather);
   },
 
+  async tide(ctx) {
+    const city = ctx.settings.city;
+    if (!city) return line('Escolha a sua cidade para ver a maré aqui.', { href: SETTINGS_HREF });
+    const points = await external.tide(city, ctx.timeZone, ctx.today);
+    if (!points) {
+      return line(
+        `${city.name.split(',')[0]} não fica no litoral, então não há maré para mostrar. Escolha uma cidade da costa ou desligue este plugin.`,
+        { href: SETTINGS_HREF }
+      );
+    }
+    // Horário local no mesmo formato dos pontos ("2026-10-20T10:00").
+    const now = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: ctx.timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .format(ctx.now)
+      .replace(' ', 'T');
+    return tideLine(city.name, points, now, ctx.today);
+  },
+
   async horoscope(ctx) {
     const sign = ctx.settings.sign;
     if (!sign)
@@ -306,6 +333,13 @@ const plugins: Record<BriefingPluginId, Plugin> = {
   async currency(ctx) {
     if (ctx.settings.currencies.length === 0) return null;
     return currencyLine(await external.rates(ctx.settings.currencies, ctx.today));
+  },
+
+  async stocks(ctx) {
+    if (ctx.settings.stocks.length === 0) {
+      return line('Escolha as ações que quer acompanhar.', { href: SETTINGS_HREF });
+    }
+    return stocksLine(await external.stocks(ctx.settings.stocks));
   },
 
   async holidays(ctx) {
