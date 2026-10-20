@@ -45,7 +45,18 @@ export interface TransactionSheetProps {
   onOpenChange: (open: boolean) => void;
   /** Com ele, a folha edita; sem ele, cria. */
   transaction?: TransactionResponse;
-  defaults?: Partial<{ kind: TransactionKind; accountId: string; date: string }>;
+  defaults?: Partial<{
+    kind: TransactionKind;
+    accountId: string;
+    date: string;
+    amountCents: number;
+    description: string;
+    categoryId: string;
+    toAccountId: string;
+    installments: number;
+  }>;
+  /** Cria por outro caminho (o Assistente salva o rascunho). Devolve se deu certo. */
+  onCreate?: (body: CreateTransactionBody) => Promise<boolean>;
 }
 
 const KIND_OPTIONS: { value: TransactionKind; label: string }[] = [
@@ -76,7 +87,13 @@ export function TransactionSheet(props: TransactionSheetProps) {
 
 type PendingAction = { type: 'save' } | { type: 'delete' } | null;
 
-function TransactionForm({ open, onOpenChange, transaction, defaults }: TransactionSheetProps) {
+function TransactionForm({
+  open,
+  onOpenChange,
+  transaction,
+  defaults,
+  onCreate,
+}: TransactionSheetProps) {
   const today = todayKey();
   const editing = Boolean(transaction);
   const { data: accounts = [] } = useAccounts({ archived: true });
@@ -93,11 +110,17 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
   const [kind, setKind] = useState<TransactionKind>(
     transaction?.kind ?? defaults?.kind ?? 'EXPENSE'
   );
-  const [amount, setAmount] = useState(transaction?.amountCents ?? 0);
-  const [description, setDescription] = useState(transaction?.description ?? '');
-  const [categoryId, setCategoryId] = useState(transaction?.categoryId ?? '');
+  const [amount, setAmount] = useState(transaction?.amountCents ?? defaults?.amountCents ?? 0);
+  const [description, setDescription] = useState(
+    transaction?.description ?? defaults?.description ?? ''
+  );
+  const [categoryId, setCategoryId] = useState(
+    transaction?.categoryId ?? defaults?.categoryId ?? ''
+  );
   const [accountId, setAccountId] = useState(transaction?.accountId ?? defaults?.accountId ?? '');
-  const [toAccountId, setToAccountId] = useState(transaction?.toAccountId ?? '');
+  const [toAccountId, setToAccountId] = useState(
+    transaction?.toAccountId ?? defaults?.toAccountId ?? ''
+  );
   const [date, setDate] = useState(transaction?.date ?? defaults?.date ?? today);
   const [done, setDone] = useState(
     transaction
@@ -105,8 +128,10 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
       : defaultStatus(defaults?.date ?? today, today) === 'DONE'
   );
   const [statusTouched, setStatusTouched] = useState(editing);
-  const [repetition, setRepetition] = useState<Repetition>('none');
-  const [installments, setInstallments] = useState(2);
+  const [repetition, setRepetition] = useState<Repetition>(
+    defaults?.installments ? 'installments' : 'none'
+  );
+  const [installments, setInstallments] = useState(defaults?.installments ?? 2);
   const [notes, setNotes] = useState(transaction?.notes ?? '');
   const [pending, setPending] = useState<PendingAction>(null);
 
@@ -163,10 +188,12 @@ function TransactionForm({ open, onOpenChange, transaction, defaults }: Transact
         ...fields,
         ...repetitionFields(repetition, installments),
       };
-      const ok = await create.mutateAsync(body).then(
-        () => true,
-        () => false
-      );
+      const ok = onCreate
+        ? await onCreate(body)
+        : await create.mutateAsync(body).then(
+            () => true,
+            () => false
+          );
       if (!ok) return;
     }
     close();

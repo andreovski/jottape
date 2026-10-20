@@ -10,6 +10,7 @@ import {
 import { AppShell } from '@/components/app-shell';
 import { AuthGate } from '@/components/auth-gate';
 import { AgendaPage } from '@/routes/agenda/agenda-page';
+import { AssistantPage } from '@/routes/assistant/assistant-page';
 import { AccountPage } from '@/routes/finance/account-page';
 import { FinancePage } from '@/routes/finance/finance-page';
 import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
@@ -108,6 +109,7 @@ const appRoutes = appRoute.addChildren([
     }),
   }),
   route('/financas/contas/$accountId', AccountPage),
+  route('/assistente', AssistantPage),
   route('/ajustes', SettingsPage),
   route('/ajustes/categorias', CategoriesPage),
   route('/ajustes/google', GooglePage),

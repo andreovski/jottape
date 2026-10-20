@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 import { idSchema, isoDateSchema, isoDateTimeSchema } from './common';
-import { transactionKindSchema, transactionResponseSchema } from './transactions';
+import {
+  createTransactionBodySchema,
+  transactionKindSchema,
+  transactionResponseSchema,
+} from './transactions';
 
 // Assistente: chat que transforma um pedido em texto (digitado ou ditado) em lançamentos.
 
@@ -79,9 +83,13 @@ export const assistantReplyResponseSchema = z.object({
 });
 export type AssistantReplyResponse = z.infer<typeof assistantReplyResponseSchema>;
 
-/** Salvar um rascunho, com o que o usuário mudou (escolheu a conta num botão, editou na folha). */
+/**
+ * Salvar um rascunho, com o que o usuário mudou: `draft` quando escolheu algo num botão do cartão,
+ * `transaction` quando abriu a folha de lançamento (vale o que estiver nela).
+ */
 export const saveAssistantCardBodySchema = z.object({
   draft: assistantDraftSchema.partial().optional(),
+  transaction: createTransactionBodySchema.optional(),
 });
 export type SaveAssistantCardBody = z.infer<typeof saveAssistantCardBodySchema>;
 

@@ -363,11 +363,21 @@ export async function saveCard(
   if (card.status === 'SAVED') return cardResponse(userId, id);
   if (card.status === 'DISCARDED') throw new AppError(409, 'Este lançamento foi descartado.');
 
-  const draft = assistantDraftSchema.parse({
-    ...(card.draft as object),
-    ...body.draft,
-  });
-  const create = toCreateBody(draft);
+  const draft = assistantDraftSchema.parse(
+    body.transaction
+      ? {
+          kind: body.transaction.kind,
+          amountCents: body.transaction.amountCents,
+          date: body.transaction.date,
+          accountId: body.transaction.accountId,
+          toAccountId: body.transaction.toAccountId ?? null,
+          categoryId: body.transaction.categoryId ?? null,
+          description: body.transaction.description,
+          installments: body.transaction.installments ?? null,
+        }
+      : { ...(card.draft as object), ...body.draft }
+  );
+  const create = body.transaction ?? toCreateBody(draft);
   if (!create) {
     const missing: AssistantMissing[] = [];
     if (!draft.amountCents) missing.push('amount');

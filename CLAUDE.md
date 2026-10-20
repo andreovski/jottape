@@ -61,6 +61,12 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   (schemas) e no `briefingCatalog` (web); quem já salvou ajustes recebe ele desligado. Serviços de
   fora passam por `cached()` (tabela `ExternalCache`, igual para todos) e, se falharem, o plugin
   só some.
+- **Assistente** (aba do chat): `services/assistant`. O Haiku lê o pedido em JSON estruturado
+  (`haiku.ts`), o Jev confere tipo, conta e categoria com probabilidade (`jev.ts`, opções por
+  `opcao_N` na ordem das contas/categorias), e `resolve.ts` (puro, com teste) monta o rascunho e o
+  score. Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
+  salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
+  usuário, o dono sem limite). A conversa some em 30 dias.
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.
 
