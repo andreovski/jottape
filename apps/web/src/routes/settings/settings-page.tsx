@@ -27,7 +27,7 @@ import { FieldRow, SelectInput, TextInput } from '@/components/ios/fields';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { Page } from '@/components/ios/page';
 import { Sheet } from '@/components/ios/sheet';
-import { useChangePassword, useLogout, useMe, useUpdateProfile } from '@/features/auth';
+import { useChangePassword, useCurrentUser, useLogout, useUpdateProfile } from '@/features/auth';
 import { useGoogleStatus } from '@/features/google';
 import { useApiHealth } from '@/features/health';
 import { isStandalone, usePush } from '@/features/push';
@@ -45,7 +45,7 @@ function initials(name: string) {
 }
 
 export function SettingsPage() {
-  const me = useMe().data!;
+  const me = useCurrentUser();
   const update = useUpdateProfile();
   const logout = useLogout();
   const google = useGoogleStatus();
@@ -380,7 +380,7 @@ function ProfileSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const me = useMe().data!;
+  const me = useCurrentUser();
   const update = useUpdateProfile();
   const [name, setName] = useState(me.name);
   const [timezone, setTimezone] = useState(me.timezone);
@@ -461,7 +461,7 @@ function PasswordSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const me = useMe().data!;
+  const me = useCurrentUser();
   const change = useChangePassword();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
