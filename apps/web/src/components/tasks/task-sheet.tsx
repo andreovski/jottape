@@ -1,4 +1,4 @@
-import type { TaskPriority, TaskResponse } from '@jottape/schemas';
+import type { CreateTaskBody, TaskPriority, TaskResponse } from '@jottape/schemas';
 import { Bell, Calendar, Clock, Flag, Hash, List, Plus, Repeat, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -44,6 +44,9 @@ export interface TaskSheetDefaults {
   listId?: string;
   /** "AAAA-MM-DD": já começa com a data ligada. */
   date?: string;
+  /** "HH:MM": com data, já começa com o horário ligado. */
+  time?: string;
+  title?: string;
   tags?: string[];
 }
 
@@ -63,11 +66,14 @@ export function TaskSheet({
   onOpenChange,
   task: snapshot,
   defaults = {},
+  onCreate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   task: TaskResponse | null;
   defaults?: TaskSheetDefaults;
+  /** Cria por outro caminho (o Assistente salva o rascunho). Devolve se deu certo. */
+  onCreate?: (body: CreateTaskBody) => Promise<boolean>;
 }) {
   const lists = useTaskLists();
   const me = useMe();
@@ -119,6 +125,8 @@ export function TaskSheet({
           ...rest,
           ...(isSubtask || nextListId === task.listId ? {} : { listId: nextListId }),
         });
+      } else if (onCreate) {
+        if (!(await onCreate(body))) return;
       } else {
         const created = await create.mutateAsync(body);
         const subs = [...pendingSubs, subDraft].map((title) => title.trim()).filter(Boolean);

@@ -1,5 +1,6 @@
 export * from './accounts';
 export * from './agenda';
+export * from './assistant';
 export * from './auth';
 export * from './briefing';
 export * from './budgets';

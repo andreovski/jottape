@@ -1,5 +1,5 @@
 import { addDays, describeRRule } from '@jottape/finance-engine';
-import type { EventOccurrence, UpdateEventBody } from '@jottape/schemas';
+import type { CreateEventBody, EventOccurrence, UpdateEventBody } from '@jottape/schemas';
 import { Check } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -54,11 +54,14 @@ export function EventFormSheet({
   open,
   onOpenChange,
   onSaved,
+  onCreate,
 }: {
   mode: EventFormMode;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  /** Cria por outro caminho (o Assistente salva o rascunho). Devolve se deu certo. */
+  onCreate?: (body: CreateEventBody) => Promise<boolean>;
 }) {
   const zone = appTimeZone();
   const me = useMe().data;
@@ -73,7 +76,8 @@ export function EventFormSheet({
   const master = useEvent(editing?.isRecurring ? editing.eventId : undefined).data;
   const create = useCreateEvent();
   const update = useUpdateEvent();
-  const pending = create.isPending || update.isPending;
+  const [creating, setCreating] = useState(false);
+  const pending = create.isPending || update.isPending || creating;
 
   const set = <K extends keyof EventForm>(key: K, value: EventForm[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -131,6 +135,13 @@ export function EventFormSheet({
     if (pending || !validate()) return;
     const body = bodyOf(form, zone);
     if (!editing) {
+      if (onCreate) {
+        setCreating(true);
+        void onCreate(body)
+          .then((ok) => ok && finish('Evento adicionado'))
+          .finally(() => setCreating(false));
+        return;
+      }
       create.mutate(body, { onSuccess: () => finish('Evento adicionado') });
       return;
     }

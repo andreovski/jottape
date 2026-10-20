@@ -156,6 +156,15 @@ export function PrivacyPage() {
         qualquer dado que identifique você, e as respostas ficam guardadas para todos os usuários.
       </p>
 
+      <p>
+        Quando você usa o Assistente, o texto do pedido, os nomes das suas contas e categorias e a
+        data de hoje vão para a Anthropic (Claude), que lê o pedido, e para a TypeSafe (Jev), que
+        confere a conta e a categoria. Se você ditar, o áudio vai para a Groq, que o transforma em
+        texto. Esses serviços processam o pedido para responder e não recebem seu nome nem seu
+        e-mail. A conversa fica guardada por 30 dias (ou até você começar uma nova) e o áudio não é
+        guardado.
+      </p>
+
       <H2>Cookies e armazenamento local</H2>
       <p>
         Usamos um único cookie de sessão, necessário para manter você conectado, e o armazenamento

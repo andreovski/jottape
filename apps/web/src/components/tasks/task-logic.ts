@@ -314,17 +314,24 @@ export interface TaskForm {
 
 export function formFromTask(
   task: TaskResponse | null,
-  defaults: { listId: string; today: string; date?: string; tags?: string[] },
+  defaults: {
+    listId: string;
+    today: string;
+    date?: string;
+    time?: string;
+    title?: string;
+    tags?: string[];
+  },
   timeZone?: string
 ): TaskForm {
   if (!task) {
     return {
-      title: '',
+      title: defaults.title ?? '',
       notes: '',
       hasDate: Boolean(defaults.date),
       date: defaults.date ?? defaults.today,
-      hasTime: false,
-      time: '09:00',
+      hasTime: Boolean(defaults.date && defaults.time),
+      time: defaults.time ?? '09:00',
       repeat: '',
       reminder: '',
       tags: defaults.tags ?? [],

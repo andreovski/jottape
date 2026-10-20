@@ -37,23 +37,29 @@ openssl rand -hex 32 | railway variable set JWT_SECRET --stdin --service jottape
 openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jottape-api
 ```
 
-| Variável                                                 | Serviço  | Para quê                                                                                                                   |
-| -------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                                           | api      | Referência `${{Postgres.DATABASE_URL}}` (já no arquivo).                                                                   |
-| `APP_URL`, `FRONTEND_URL`                                | api      | Domínio do web (já no arquivo, por referência). O Google volta para `${APP_URL}/api/google/callback`.                      |
-| `TRUST_PROXY`                                            | api      | `true`: a API está atrás do proxy do Railway e do `server.mjs`.                                                            |
-| `OWNER_EMAIL`                                            | api      | O seu e-mail: o dono, criado a cada deploy se ainda não existe. Os outros usuários entram pelo cadastro.                   |
-| `OWNER_NAME`                                             | api      | Nome mostrado no app.                                                                                                      |
-| `OWNER_PASSWORD`                                         | api      | Senha inicial, usada só quando o dono é criado. Depois troque em Ajustes e pode apagar a variável.                         |
-| `SIGNUP_CODE`                                            | api      | Código de convite da tela "Criar conta". Sem ele o cadastro fica fechado; trocar invalida o código antigo.                 |
-| `JWT_SECRET`                                             | api      | **Obrigatória**: assina a sessão. Sem ela a API não sobe em produção. Trocar derruba as sessões.                           |
-| `ENCRYPTION_KEY`                                         | api      | **Obrigatória**: 32 bytes (hex ou base64) que cifram o refresh token do Google no banco. Trocar exige reconectar o Google. |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`               | api      | Login com o Google, Agenda e Tarefas (seção 3). Sem elas o app funciona sem Google.                                        |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`         | api      | Agenda do Outlook / Microsoft 365 (seção 3b). Sem elas a opção da Microsoft não aparece.                                   |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | api      | Notificações (seção 4). Sem elas não há lembretes por push.                                                                |
-| `HOST`                                                   | api      | `::` (já no arquivo): a rede privada do Railway pode ser só IPv6.                                                          |
-| `PORT`                                                   | api, web | `8080` e `4173` (já no arquivo).                                                                                           |
-| `API_URL`                                                | web      | Endereço privado da API (já no arquivo, por referência).                                                                   |
+| Variável                                                 | Serviço  | Para quê                                                                                                                                            |
+| -------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                           | api      | Referência `${{Postgres.DATABASE_URL}}` (já no arquivo).                                                                                            |
+| `APP_URL`, `FRONTEND_URL`                                | api      | Domínio do web (já no arquivo, por referência). O Google volta para `${APP_URL}/api/google/callback`.                                               |
+| `TRUST_PROXY`                                            | api      | `true`: a API está atrás do proxy do Railway e do `server.mjs`.                                                                                     |
+| `OWNER_EMAIL`                                            | api      | O seu e-mail: o dono, criado a cada deploy se ainda não existe. Os outros usuários entram pelo cadastro.                                            |
+| `OWNER_NAME`                                             | api      | Nome mostrado no app.                                                                                                                               |
+| `OWNER_PASSWORD`                                         | api      | Senha inicial, usada só quando o dono é criado. Depois troque em Ajustes e pode apagar a variável.                                                  |
+| `SIGNUP_CODE`                                            | api      | Código de convite da tela "Criar conta". Sem ele o cadastro fica fechado; trocar invalida o código antigo.                                          |
+| `JWT_SECRET`                                             | api      | **Obrigatória**: assina a sessão. Sem ela a API não sobe em produção. Trocar derruba as sessões.                                                    |
+| `ENCRYPTION_KEY`                                         | api      | **Obrigatória**: 32 bytes (hex ou base64) que cifram o refresh token do Google no banco. Trocar exige reconectar o Google.                          |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`               | api      | Login com o Google, Agenda e Tarefas (seção 3). Sem elas o app funciona sem Google.                                                                 |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`         | api      | Agenda do Outlook / Microsoft 365 (seção 3b). Sem elas a opção da Microsoft não aparece.                                                            |
+| `ANTHROPIC_API_KEY`                                      | api      | Liga o Assistente (Claude Haiku lê o pedido), só para o dono e `ASSISTANT_EMAILS`. Sem ela a aba não aparece.                                       |
+| `ASSISTANT_EMAILS`                                       | api      | Quem usa o Assistente além do dono (beta), e-mails separados por vírgula. Sem ela, só o dono.                                                       |
+| `JEV_API_KEY`                                            | api      | Jev (TypeSafe): confere tipo, conta e categoria e dá o score. Sem ela nada é salvo sozinho, tudo vira rascunho.                                     |
+| `GROQ_API_KEY`                                           | api      | Transcrição do áudio no servidor (Whisper na Groq, chave em console.groq.com). Sem ela o microfone usa a voz do navegador, que não existe em todos. |
+| `ASSISTANT_MONTHLY_LIMIT`                                | api      | Pedidos por usuário por mês (padrão 300). O dono não tem limite.                                                                                    |
+| `ASSISTANT_MODEL`, `JEV_MODEL`, `TRANSCRIPTION_MODEL`    | api      | Opcionais: trocam os modelos (padrão `claude-haiku-5-5`, `jev-latest`, `whisper-large-v3-turbo`).                                                   |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | api      | Notificações (seção 4). Sem elas não há lembretes por push.                                                                                         |
+| `HOST`                                                   | api      | `::` (já no arquivo): a rede privada do Railway pode ser só IPv6.                                                                                   |
+| `PORT`                                                   | api, web | `8080` e `4173` (já no arquivo).                                                                                                                    |
+| `API_URL`                                                | web      | Endereço privado da API (já no arquivo, por referência).                                                                                            |
 
 ## 3. Google (Agenda, Tarefas e login)
 

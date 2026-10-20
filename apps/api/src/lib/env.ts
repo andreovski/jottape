@@ -88,6 +88,41 @@ export function getVapidConfig(): {
   };
 }
 
+/** Chave da Anthropic: liga o Assistente (Claude Haiku lê o pedido). Sem ela, o Assistente some. */
+export function getAnthropicConfig(): { apiKey: string; model: string } | null {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  return { apiKey, model: process.env.ASSISTANT_MODEL || 'claude-haiku-5-5' };
+}
+
+/** Jev (TypeSafe): escolhe tipo, conta e categoria com confiança calibrada. Opcional. */
+export function getJevConfig(): { apiKey: string; model: string } | null {
+  const apiKey = process.env.JEV_API_KEY;
+  if (!apiKey) return null;
+  return { apiKey, model: process.env.JEV_MODEL || 'jev-latest' };
+}
+
+/** Transcrição do áudio no servidor (Whisper na Groq). Sem ela, o app usa a voz do navegador. */
+export function getTranscriptionConfig(): { apiKey: string; model: string } | null {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  return { apiKey, model: process.env.TRANSCRIPTION_MODEL || 'whisper-large-v3-turbo' };
+}
+
+/** Quem usa o Assistente além do dono (beta): e-mails separados por vírgula. */
+export function getAssistantEmails(): string[] {
+  return (process.env.ASSISTANT_EMAILS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Comandos por usuário por mês. O dono do app não tem limite. */
+export function getAssistantMonthlyLimit(): number {
+  const value = Number(process.env.ASSISTANT_MONTHLY_LIMIT);
+  return Number.isInteger(value) && value > 0 ? value : 300;
+}
+
 /** Os jobs (lembretes, sync do Google, recorrências) rodam dentro da API; nos testes, não. */
 export function jobsEnabled(): boolean {
   return process.env.NODE_ENV !== 'test' && process.env.DISABLE_JOBS !== 'true';

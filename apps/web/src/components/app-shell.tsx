@@ -1,12 +1,14 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { CalendarDays, CircleCheck, Settings, Sun, Wallet } from 'lucide-react';
+import { CalendarDays, CircleCheck, Settings, Sparkles, Sun, Wallet } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
+import { useAssistant } from '@/features/assistant';
 import { cn } from '@/lib/utils';
 
 export const SECTIONS = [
   { to: '/', label: 'Hoje', icon: Sun, tint: 'var(--indigo)' },
   { to: '/agenda', label: 'Agenda', icon: CalendarDays, tint: 'var(--red)' },
+  { to: '/assistente', label: 'Assistente', icon: Sparkles, tint: 'var(--purple)' },
   { to: '/tarefas', label: 'Tarefas', icon: CircleCheck, tint: 'var(--orange)' },
   { to: '/financas', label: 'Finanças', icon: Wallet, tint: 'var(--green)' },
   { to: '/ajustes', label: 'Ajustes', icon: Settings, tint: 'var(--blue)' },
@@ -27,6 +29,11 @@ function sectionOf(pathname: string) {
 export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const current = sectionOf(pathname);
+  // Sem o Assistente no servidor, a aba dele some e Ajustes volta para a barra do celular. Com ele,
+  // Ajustes vira um botão na tela Hoje (cinco abas no máximo, como no iOS).
+  const assistant = useAssistant().data?.enabled ?? false;
+  const sections = SECTIONS.filter((s) => assistant || s.to !== '/assistente');
+  const tabs = sections.filter((s) => !assistant || s.to !== '/ajustes');
 
   return (
     <div
@@ -39,7 +46,7 @@ export function AppShell() {
           <span className='text-title-3'>Jottape</span>
         </div>
         <nav aria-label='Seções' className='flex flex-col gap-0.5'>
-          {SECTIONS.map(({ to, label, icon: Icon, tint }) => {
+          {sections.map(({ to, label, icon: Icon, tint }) => {
             const active = current.to === to;
             return (
               <Link
@@ -72,7 +79,7 @@ export function AppShell() {
         className='material hairline-t pb-safe fixed inset-x-0 bottom-0 z-40 lg:hidden'
       >
         <ul className='mx-auto grid h-[50px] max-w-xl grid-cols-5'>
-          {SECTIONS.map(({ to, label, icon: Icon }) => {
+          {tabs.map(({ to, label, icon: Icon }) => {
             const active = current.to === to;
             return (
               <li key={to}>

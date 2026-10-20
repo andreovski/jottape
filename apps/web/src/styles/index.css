@@ -280,6 +280,11 @@
     background: linear-gradient(var(--background) 62%, transparent);
   }
 
+  /* O mesmo, de baixo para cima: o campo do Assistente flutua sobre a conversa. */
+  .bottom-scrim {
+    background: linear-gradient(transparent, var(--background) 45%);
+  }
+
   .bar-shadow {
     box-shadow:
       inset 0 0 0 0.5px var(--separator),
@@ -302,8 +307,14 @@
      títulos em `font-rounded` dentro dele seguem a mesma fonte. */
   .font-briefing,
   .font-briefing .font-rounded {
-    font-family: 'Figtree Variable', ui-rounded, -apple-system, BlinkMacSystemFont, 'Segoe UI',
-      Roboto, sans-serif;
+    font-family:
+      'Figtree Variable',
+      ui-rounded,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
   }
 
   .numeric {

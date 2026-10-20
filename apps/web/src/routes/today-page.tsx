@@ -10,6 +10,7 @@ import {
   MapPin,
   Plus,
   Receipt,
+  Settings,
   TrendingDown,
   Wallet,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
 import { BriefingCard } from '@/components/today/briefing-card';
 import { useAgenda } from '@/features/agenda';
+import { useAssistant } from '@/features/assistant';
 import { useCurrentUser } from '@/features/auth';
 import { useNextEvent } from '@/features/briefing';
 import { useAccounts, useCategories, useForecast, useUpdateTransaction } from '@/features/finance';
@@ -451,6 +453,7 @@ export function TodayPage() {
   const agenda = useAgenda(range.start, range.end);
   const week = useAgenda(range.end, range.weekEnd);
   const navigate = useNavigate();
+  const assistantOn = useAssistant().data?.enabled ?? false;
   const [menu, setMenu] = useState(false);
   const [txSheet, setTxSheet] = useState<{ open: boolean; tx?: TransactionResponse }>({
     open: false,
@@ -490,9 +493,21 @@ export function TodayPage() {
       title='Hoje'
       eyebrow={longDay(today)}
       actions={
-        <BarButton label='Adicionar' onClick={() => setMenu(true)}>
-          <Plus strokeWidth={2.4} />
-        </BarButton>
+        <>
+          {/* No celular, Ajustes sai da barra de abas quando o Assistente entra nela. */}
+          {assistantOn && (
+            <BarButton
+              label='Ajustes'
+              className='lg:hidden'
+              onClick={() => navigate({ to: '/ajustes' })}
+            >
+              <Settings strokeWidth={2.2} />
+            </BarButton>
+          )}
+          <BarButton label='Adicionar' onClick={() => setMenu(true)}>
+            <Plus strokeWidth={2.4} />
+          </BarButton>
+        </>
       }
     >
       <p className='text-subhead text-label-2 -mt-2 mb-5'>
