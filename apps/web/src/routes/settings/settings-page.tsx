@@ -11,8 +11,7 @@ import {
   Newspaper,
   Server,
   Shapes,
-  Share,
-  SquarePlus,
+  Smartphone,
   Sunrise,
   Timer,
   User,
@@ -276,27 +275,19 @@ export function SettingsPage() {
       </Section>
 
       {!isStandalone() && (
-        <Section
-          header='Instalar no iPhone'
-          footer='No app instalado as notificações funcionam e o Jottape abre em tela cheia, como um app da App Store.'
-        >
-          <Row
-            leading={
-              <IconChip color='var(--blue)'>
-                <Share />
-              </IconChip>
-            }
-            title='Toque em Compartilhar'
-            subtitle='No Safari, na barra de baixo'
-          />
-          <Row
-            leading={
-              <IconChip color='var(--gray)'>
-                <SquarePlus />
-              </IconChip>
-            }
-            title='Adicionar à Tela de Início'
-          />
+        <Section footer='Notificações e tela cheia, como um app da loja.'>
+          <Link to='/ajustes/instalar' className='block'>
+            <Row
+              chevron
+              leading={
+                <IconChip color='var(--blue)'>
+                  <Smartphone />
+                </IconChip>
+              }
+              title='Instalar o app'
+              subtitle='Passo a passo para o seu aparelho'
+            />
+          </Link>
         </Section>
       )}
 
