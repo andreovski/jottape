@@ -362,7 +362,8 @@ export function BriefingSettingsPage() {
   return (
     <Page title='Briefing' leading={back}>
       <p className='text-subhead text-label-2 -mt-2 mb-5'>
-        Escolha o que aparece no topo da tela Hoje e arraste para mudar a ordem.
+        Escolha o que aparece no topo da tela Hoje. Com a ordem automática desligada, você arrasta
+        para mudar a ordem.
       </p>
 
       <Section
@@ -392,6 +393,10 @@ export function BriefingSettingsPage() {
       >
         {enabled.length === 0 ? (
           <Row title={<span className='text-label-2'>Nenhum plugin ligado</span>} />
+        ) : data.autoOrder ? (
+          enabled.map((p) => (
+            <PluginRow key={p.id} id={p.id} enabled onToggle={(on) => toggle(p.id, on)} />
+          ))
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext
