@@ -221,7 +221,7 @@ function BriefingStory({
   onClose: (href?: string) => void;
 }) {
   const today = todayKey();
-  const moments = groupMoments(data.items);
+  const moments = groupMoments(data.items, data.autoOrder);
   const scroller = useRef<HTMLDivElement>(null);
   const progress = useRef<HTMLDivElement>(null);
 
@@ -264,8 +264,10 @@ function BriefingStory({
             Seu briefing
           </Dialog.Title>
           <Dialog.Description className='text-callout mt-2 text-white/80'>
-            {data.items.length === 1 ? '1 destaque' : `${data.items.length} destaques`}, na ordem
-            que você escolheu.
+            {data.items.length === 1 ? '1 destaque' : `${data.items.length} destaques`},{' '}
+            {data.autoOrder
+              ? 'do que passou ao que vem pela frente.'
+              : 'na ordem que você escolheu.'}
           </Dialog.Description>
           {data.sky && (
             <div className='mt-5 flex items-center gap-3'>

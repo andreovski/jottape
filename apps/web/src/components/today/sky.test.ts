@@ -31,11 +31,12 @@ describe('céu do briefing', () => {
 });
 
 describe('linha do tempo', () => {
-  it('segue a ordem escolhida, juntando só o que está em sequência no mesmo momento', () => {
+  it('ordem personalizada: segue a ordem escolhida, juntando só o que está em sequência', () => {
     const moments = groupMoments(
       ['quote', 'bills', 'stale', 'day', 'weather', 'yesterday', 'balance'].map((p) =>
         item(p as BriefingItem['plugin'])
-      )
+      ),
+      false
     );
     expect(moments.map((m) => [m.key, m.items.map((i) => i.plugin)])).toEqual([
       ['fim', ['quote']],
@@ -44,6 +45,22 @@ describe('linha do tempo', () => {
       ['agora', ['weather']],
       ['ontem', ['yesterday']],
       ['adiante', ['balance']],
+    ]);
+  });
+
+  it('ordem automática: agrupa do passado ao futuro, mantendo a ordem dentro de cada momento', () => {
+    const moments = groupMoments(
+      ['quote', 'bills', 'stale', 'day', 'weather', 'yesterday', 'balance'].map((p) =>
+        item(p as BriefingItem['plugin'])
+      )
+    );
+    expect(moments.map((m) => [m.key, m.items.map((i) => i.plugin)])).toEqual([
+      ['ontem', ['yesterday']],
+      ['agora', ['weather']],
+      ['hoje', ['stale', 'day']],
+      ['semana', ['bills']],
+      ['adiante', ['balance']],
+      ['fim', ['quote']],
     ]);
   });
 

@@ -267,6 +267,25 @@ export function BriefingSettingsPage() {
       </p>
 
       <Section
+        footer={
+          data.autoOrder
+            ? 'A linha do tempo segue o dia: do que passou ao que vem pela frente. Desligue para usar a ordem que você escolher abaixo.'
+            : 'A linha do tempo segue a ordem que você escolher abaixo.'
+        }
+      >
+        <Row
+          title='Ordem automática'
+          trailing={
+            <Switch
+              label='Ordem automática'
+              checked={data.autoOrder}
+              onChange={(on) => update({ autoOrder: on })}
+            />
+          }
+        />
+      </Section>
+
+      <Section
         header='No briefing'
         footer={
           enabled.length === 0 ? 'Nenhum plugin ligado: o briefing some da tela Hoje.' : undefined

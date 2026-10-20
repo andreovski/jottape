@@ -369,7 +369,7 @@ export async function buildBriefing(
       }
     })
   );
-  return { date: today, items: results.flat(), sky: ctx.sky };
+  return { date: today, items: results.flat(), sky: ctx.sky, autoOrder: settings.autoOrder };
 }
 
 /** Próximo compromisso a partir de `from`, olhando até 90 dias à frente, de 30 em 30. */
