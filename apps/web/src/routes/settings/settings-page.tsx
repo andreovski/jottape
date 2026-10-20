@@ -11,8 +11,6 @@ import {
   Newspaper,
   Server,
   Shapes,
-  Share,
-  SquarePlus,
   Sunrise,
   Timer,
   User,
@@ -30,10 +28,11 @@ import { Sheet } from '@/components/ios/sheet';
 import { useChangePassword, useCurrentUser, useLogout, useUpdateProfile } from '@/features/auth';
 import { useGoogleStatus } from '@/features/google';
 import { useApiHealth } from '@/features/health';
-import { isStandalone, usePush } from '@/features/push';
+import { usePush } from '@/features/push';
 import { errorMessage } from '@/lib/api';
 import { useFormErrors } from '@/lib/use-form-errors';
 
+import { InstallGuide } from './install-guide';
 import { REMINDER_OPTIONS, SUMMARY_OPTIONS, TIMEZONES } from './options';
 
 function initials(name: string) {
@@ -275,30 +274,7 @@ export function SettingsPage() {
         </a>
       </Section>
 
-      {!isStandalone() && (
-        <Section
-          header='Instalar no iPhone'
-          footer='No app instalado as notificações funcionam e o Jottape abre em tela cheia, como um app da App Store.'
-        >
-          <Row
-            leading={
-              <IconChip color='var(--blue)'>
-                <Share />
-              </IconChip>
-            }
-            title='Toque em Compartilhar'
-            subtitle='No Safari, na barra de baixo'
-          />
-          <Row
-            leading={
-              <IconChip color='var(--gray)'>
-                <SquarePlus />
-              </IconChip>
-            }
-            title='Adicionar à Tela de Início'
-          />
-        </Section>
-      )}
+      <InstallGuide />
 
       <Section header='Sobre'>
         <Row

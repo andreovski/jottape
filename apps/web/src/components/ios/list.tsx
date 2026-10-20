@@ -56,6 +56,8 @@ interface RowProps {
   /** Linha de ação (texto na cor da seção, sem ícone). */
   action?: boolean;
   disabled?: boolean;
+  /** Deixa o subtítulo quebrar em várias linhas (textos de instrução). */
+  wrapSubtitle?: boolean;
 }
 
 /** Linha de lista. O separador começa depois do ícone, como no iOS. */
@@ -71,6 +73,7 @@ export function Row({
   action,
   className,
   disabled,
+  wrapSubtitle,
 }: RowProps) {
   const content = (
     <>
@@ -87,7 +90,11 @@ export function Row({
           >
             {title}
           </div>
-          {subtitle && <div className='text-subhead text-label-2 truncate'>{subtitle}</div>}
+          {subtitle && (
+            <div className={cn('text-subhead text-label-2', !wrapSubtitle && 'truncate')}>
+              {subtitle}
+            </div>
+          )}
         </div>
         {detail !== undefined && (
           <div className='text-body text-label-2 numeric max-w-[55%] shrink-0 truncate text-right'>
