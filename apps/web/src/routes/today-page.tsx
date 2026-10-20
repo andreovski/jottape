@@ -5,6 +5,8 @@ import {
   CalendarDays,
   CircleCheck,
   CreditCard,
+  Eye,
+  EyeOff,
   MapPin,
   Plus,
   Receipt,
@@ -21,24 +23,26 @@ import { CheckCircle, EmptyState, Skeleton } from '@/components/ios/controls';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { BriefingCard } from '@/components/today/briefing-card';
 import { useAgenda } from '@/features/agenda';
 import { useMe } from '@/features/auth';
+import { useNextEvent } from '@/features/briefing';
 import { useAccounts, useCategories, useForecast, useUpdateTransaction } from '@/features/finance';
 import { useCompleteTask, useTasks } from '@/features/tasks';
 import {
   capitalize,
   dayKey,
   longDay,
-  money,
   relativeDay,
   shortDay,
   startOfDay,
   time,
   todayKey,
 } from '@/lib/format';
+import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
 
-import { greeting, nextUpcoming, taskProgress } from './today';
+import { eventDay, greeting, nextUpcoming, sortUndated, taskProgress } from './today';
 
 /** Cartão no formato dos widgets da Tela de Início. */
 function Widget({
@@ -48,6 +52,7 @@ function Widget({
   children,
   className,
   to,
+  accessory,
 }: {
   title: string;
   icon: ReactNode;
@@ -55,6 +60,8 @@ function Widget({
   children: ReactNode;
   className?: string;
   to?: string;
+  /** Botão no canto de cima, fora do link do widget. */
+  accessory?: ReactNode;
 }) {
   const body = (
     <div
@@ -70,12 +77,19 @@ function Widget({
       {children}
     </div>
   );
-  return to ? (
-    <Link to={to} className={cn('block h-full', className)}>
+  const card = to ? (
+    <Link to={to} className={cn('block h-full', !accessory && className)}>
       {body}
     </Link>
   ) : (
     body
+  );
+  if (!accessory) return card;
+  return (
+    <div className={cn('relative', className)}>
+      {card}
+      <div className='absolute top-1.5 right-1.5'>{accessory}</div>
+    </div>
   );
 }
 
@@ -112,7 +126,15 @@ function Ring({ value, color, size = 84 }: { value: number; color: string; size?
   );
 }
 
-function BalanceWidget() {
+function BalanceWidget({
+  format,
+  hidden,
+  onToggleHidden,
+}: {
+  format: (cents: number) => string;
+  hidden: boolean;
+  onToggleHidden: () => void;
+}) {
   const accounts = useAccounts();
   const forecast = useForecast(30);
   const available = (accounts.data ?? [])
@@ -130,6 +152,17 @@ function BalanceWidget() {
       color='var(--green)'
       to='/financas'
       className='col-span-2'
+      accessory={
+        <button
+          type='button'
+          onClick={onToggleHidden}
+          aria-label={hidden ? 'Mostrar valores' : 'Ocultar valores'}
+          aria-pressed={hidden}
+          className='text-label-2 flex size-9 items-center justify-center rounded-full active:opacity-40 [&_svg]:size-[18px]'
+        >
+          {hidden ? <EyeOff /> : <Eye />}
+        </button>
+      }
     >
       {accounts.isPending ? (
         <Skeleton className='mt-2 h-10 w-40' />
@@ -139,17 +172,17 @@ function BalanceWidget() {
             <div
               className={cn(
                 'font-rounded numeric text-[34px] leading-tight font-semibold',
-                available < 0 && 'text-red'
+                available < 0 && !hidden && 'text-red'
               )}
             >
-              {money(available)}
+              {format(available)}
             </div>
             <div className='text-footnote text-label-2'>disponível agora</div>
             {end !== undefined && (
               <div className='text-footnote mt-2'>
                 <span className='text-label-2'>Em 30 dias </span>
-                <span className={cn('numeric font-semibold', end < 0 && 'text-red')}>
-                  {money(end)}
+                <span className={cn('numeric font-semibold', end < 0 && !hidden && 'text-red')}>
+                  {format(end)}
                 </span>
               </div>
             )}
@@ -188,11 +221,19 @@ function BalanceWidget() {
   );
 }
 
-function NextEventWidget({ events }: { events: EventOccurrence[] | undefined }) {
-  const next = events ? nextUpcoming(events, new Date()) : undefined;
+function NextEventWidget({
+  events,
+  later,
+}: {
+  events: EventOccurrence[] | undefined;
+  /** Próximo compromisso depois de hoje (quando hoje não tem mais nada). */
+  later: EventOccurrence | null | undefined;
+}) {
+  const today = events ? nextUpcoming(events, new Date()) : undefined;
+  const next = today ?? later ?? undefined;
   return (
     <Widget title='A seguir' icon={<CalendarDays />} color='var(--red)' to='/agenda'>
-      {!events ? (
+      {!events || (!today && later === undefined) ? (
         <Skeleton className='mt-2 h-14' />
       ) : next ? (
         <div className='mt-1 flex flex-1 gap-2.5'>
@@ -203,6 +244,12 @@ function NextEventWidget({ events }: { events: EventOccurrence[] | undefined }) 
           <div className='min-w-0'>
             <div className='text-headline line-clamp-2'>{next.title}</div>
             <div className='text-footnote text-label-2 numeric mt-0.5'>
+              {!today && (
+                <span className='text-red font-semibold'>
+                  {capitalize(relativeDay(eventDay(next)))}
+                  {' · '}
+                </span>
+              )}
               {next.allDay ? 'Dia inteiro' : `${time(next.startAt)} – ${time(next.endAt)}`}
             </div>
             {next.location && (
@@ -213,9 +260,38 @@ function NextEventWidget({ events }: { events: EventOccurrence[] | undefined }) 
           </div>
         </div>
       ) : (
-        <div className='text-subhead text-label-2 mt-auto'>Nada mais na agenda hoje.</div>
+        <div className='text-subhead text-label-2 mt-auto'>
+          Nada na agenda pelos próximos meses.
+        </div>
       )}
     </Widget>
+  );
+}
+
+/** Linha "Próximo: qua., 22 de out. · 14:00" para quando o dia está vazio. */
+function NextEventRow({ event, label }: { event: EventOccurrence; label: string }) {
+  const key = eventDay(event);
+  return (
+    <Link to='/agenda' search={{ date: key }} className='block'>
+      <Row
+        chevron
+        leading={
+          <span className='bg-red/12 text-red flex size-[29px] flex-col items-center justify-center rounded-[7px] leading-none'>
+            <span className='text-[13px] font-bold'>{Number(key.slice(8))}</span>
+          </span>
+        }
+        title={
+          <span className='flex items-center gap-2'>
+            <span
+              className='size-2 shrink-0 rounded-full'
+              style={{ backgroundColor: event.color ?? 'var(--red)' }}
+            />
+            <span className='truncate'>{event.title}</span>
+          </span>
+        }
+        subtitle={`${label}: ${relativeDay(key)}${event.allDay ? ', dia inteiro' : ` às ${time(event.startAt)}`}`}
+      />
+    </Link>
   );
 }
 
@@ -245,12 +321,29 @@ function TasksWidget({ open }: { open: TaskResponse[] | undefined }) {
   );
 }
 
+/** Rótulo de grupo dentro da seção de tarefas. */
+function TaskGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className='text-footnote text-label-2 bg-fill/50 px-4 pt-2.5 pb-1 font-semibold uppercase'>
+      {children}
+    </div>
+  );
+}
+
 function TaskRow({ task, today }: { task: TaskResponse; today: string }) {
   const complete = useCompleteTask();
   const updateTx = useUpdateTransaction();
   const [checked, setChecked] = useState(false);
   const due = task.dueAt ? dayKey(task.dueAt) : null;
   const overdue = due !== null && due < today;
+  const when =
+    due === null
+      ? 'Sem data'
+      : overdue || due > today
+        ? `${relativeDay(due)}${task.hasTime ? ` às ${time(task.dueAt!)}` : ''}`
+        : task.hasTime
+          ? time(task.dueAt!)
+          : 'Hoje';
 
   return (
     <Row
@@ -283,7 +376,7 @@ function TaskRow({ task, today }: { task: TaskResponse; today: string }) {
       title={task.title}
       subtitle={
         <span className={cn(overdue && 'text-red')}>
-          {overdue ? relativeDay(due!) : task.hasTime ? time(task.dueAt!) : 'Hoje'}
+          {when}
           {task.tags.length > 0 && <span className='text-label-2'> · #{task.tags.join(' #')}</span>}
         </span>
       }
@@ -291,7 +384,15 @@ function TaskRow({ task, today }: { task: TaskResponse; today: string }) {
   );
 }
 
-function BillRow({ bill, onOpen }: { bill: TransactionResponse; onOpen: () => void }) {
+function BillRow({
+  bill,
+  onOpen,
+  format,
+}: {
+  bill: TransactionResponse;
+  onOpen: () => void;
+  format: (cents: number) => string;
+}) {
   const categories = useCategories();
   const update = useUpdateTransaction();
   const category = categories.data?.find((c) => c.id === bill.categoryId);
@@ -319,7 +420,7 @@ function BillRow({ bill, onOpen }: { bill: TransactionResponse; onOpen: () => vo
         <div className='flex items-center gap-2'>
           <span className={cn('numeric text-body', income && 'text-green')}>
             {income ? '+' : ''}
-            {money(bill.amountCents)}
+            {format(bill.amountCents)}
           </span>
           <button
             type='button'
@@ -355,10 +456,25 @@ export function TodayPage() {
     open: false,
   });
 
+  const { hidden, toggle: toggleHidden, format } = useHiddenMoney();
+  const upcomingTasks = useTasks({ view: 'next7' });
+  const undatedTasks = useTasks({ view: 'nodate' });
+
   const data = agenda.data;
   const allDay = data?.events.filter((e) => e.allDay) ?? [];
   const timed = data?.events.filter((e) => !e.allDay) ?? [];
   const now = new Date();
+  // Hoje não tem mais nada com horário pela frente: busca o próximo depois de hoje.
+  const nothingLeft = !!data && !nextUpcoming(data.events, now);
+  const later = useNextEvent(range.end, nothingLeft);
+  const laterEvent = nothingLeft ? later.data?.event : undefined;
+  const allPast = timed.length > 0 && allDay.length === 0 && nothingLeft;
+
+  // Além das de hoje: até 3 dos próximos dias e até 3 sem data.
+  const soonTasks = (upcomingTasks.data ?? [])
+    .filter((task) => task.dueAt && dayKey(task.dueAt) > today)
+    .slice(0, 3);
+  const undated = sortUndated(undatedTasks.data ?? []).slice(0, 3);
 
   const upcomingDays = useMemo(() => {
     const map = new Map<string, number>();
@@ -383,9 +499,22 @@ export function TodayPage() {
         {greeting(now.getHours())}, {me.name.split(' ')[0]}.
       </p>
 
+      <BriefingCard format={format} />
+
       <div className='mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4'>
-        <BalanceWidget />
-        <NextEventWidget events={data?.events} />
+        <BalanceWidget format={format} hidden={hidden} onToggleHidden={toggleHidden} />
+        <NextEventWidget
+          events={data?.events}
+          later={
+            !data
+              ? undefined
+              : nothingLeft
+                ? later.isPending
+                  ? undefined
+                  : (laterEvent ?? null)
+                : null
+          }
+        />
         <TasksWidget open={data?.tasks} />
       </div>
 
@@ -396,10 +525,13 @@ export function TodayPage() {
             <Skeleton className='h-10' />
           </div>
         ) : data.events.length === 0 ? (
-          <Row
-            leading={<CalendarDays className='text-label-3 size-[22px]' />}
-            title={<span className='text-label-2'>Nenhum compromisso hoje</span>}
-          />
+          <>
+            <Row
+              leading={<CalendarDays className='text-label-3 size-[22px]' />}
+              title={<span className='text-label-2'>Nenhum compromisso hoje</span>}
+            />
+            {laterEvent && <NextEventRow event={laterEvent} label='Próximo' />}
+          </>
         ) : (
           <>
             {allDay.map((event) => (
@@ -456,29 +588,47 @@ export function TodayPage() {
                 </Link>
               );
             })}
+            {allPast && laterEvent && <NextEventRow event={laterEvent} label='Depois de hoje' />}
           </>
         )}
       </Section>
 
-      <Section
-        header='Tarefas'
-        action={
-          <Link to='/tarefas' search={{ filtro: 'hoje' }}>
-            Ver todas
-          </Link>
-        }
-      >
+      <Section header='Tarefas' action={<Link to='/tarefas'>Ver todas</Link>}>
         {!data ? (
           <div className='p-4'>
             <Skeleton className='h-10' />
           </div>
-        ) : data.tasks.length === 0 ? (
-          <Row
-            leading={<CircleCheck className='text-orange size-[22px]' />}
-            title={<span className='text-label-2'>Tudo em dia</span>}
-          />
         ) : (
-          data.tasks.map((task) => <TaskRow key={task.id} task={task} today={today} />)
+          <>
+            {data.tasks.length === 0 ? (
+              <Row
+                leading={<CircleCheck className='text-orange size-[22px]' />}
+                title={
+                  <span className='text-label-2'>
+                    {soonTasks.length || undated.length ? 'Nada para hoje' : 'Tudo em dia'}
+                  </span>
+                }
+              />
+            ) : (
+              data.tasks.map((task) => <TaskRow key={task.id} task={task} today={today} />)
+            )}
+            {soonTasks.length > 0 && (
+              <>
+                <TaskGroupLabel>Em breve</TaskGroupLabel>
+                {soonTasks.map((task) => (
+                  <TaskRow key={task.id} task={task} today={today} />
+                ))}
+              </>
+            )}
+            {undated.length > 0 && (
+              <>
+                <TaskGroupLabel>Sem data</TaskGroupLabel>
+                {undated.map((task) => (
+                  <TaskRow key={task.id} task={task} today={today} />
+                ))}
+              </>
+            )}
+          </>
         )}
       </Section>
 
@@ -504,7 +654,7 @@ export function TodayPage() {
                     {invoice.dueDate < today ? 'Vencida' : 'Vence hoje'}
                   </span>
                 }
-                detail={money(invoice.totalCents)}
+                detail={format(invoice.totalCents)}
               />
             </Link>
           ))}
@@ -512,6 +662,7 @@ export function TodayPage() {
             <BillRow
               key={bill.id}
               bill={bill}
+              format={format}
               onOpen={() => setTxSheet({ open: true, tx: bill })}
             />
           ))}
@@ -544,7 +695,7 @@ export function TodayPage() {
                   </span>
                 }
                 title='Contas na semana'
-                detail={money(
+                detail={format(
                   week.data.bills
                     .filter((b) => b.kind === 'EXPENSE')
                     .reduce((sum, b) => sum + b.amountCents, 0)

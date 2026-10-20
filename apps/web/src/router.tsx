@@ -13,6 +13,7 @@ import { AgendaPage } from '@/routes/agenda/agenda-page';
 import { AccountPage } from '@/routes/finance/account-page';
 import { FinancePage } from '@/routes/finance/finance-page';
 import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
+import { BriefingSettingsPage } from '@/routes/settings/briefing-page';
 import { CategoriesPage } from '@/routes/settings/categories-page';
 import { GooglePage } from '@/routes/settings/google-page';
 import { SettingsPage } from '@/routes/settings/settings-page';
@@ -109,6 +110,7 @@ const appRoutes = appRoute.addChildren([
   route('/ajustes', SettingsPage),
   route('/ajustes/categorias', CategoriesPage),
   route('/ajustes/google', GooglePage),
+  route('/ajustes/briefing', BriefingSettingsPage),
 ]);
 
 const routeTree = rootRoute.addChildren([...publicRoutes, appRoutes]);

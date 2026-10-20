@@ -1,4 +1,6 @@
-import type { EventOccurrence } from '@jottape/schemas';
+import type { EventOccurrence, TaskResponse } from '@jottape/schemas';
+
+import { dayKey } from '@/lib/format';
 
 /** Saudação pela hora local. */
 export function greeting(hour: number) {
@@ -19,4 +21,17 @@ export function nextUpcoming(events: EventOccurrence[], now: Date) {
 export function taskProgress(done: number, open: number) {
   const total = done + open;
   return total === 0 ? 0 : done / total;
+}
+
+/** Dia (AAAA-MM-DD) de uma ocorrência: dia inteiro vem em meia-noite UTC, sem fuso. */
+export function eventDay(event: Pick<EventOccurrence, 'allDay' | 'startAt'>) {
+  return event.allDay ? event.startAt.slice(0, 10) : dayKey(event.startAt);
+}
+
+const PRIORITY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
+
+/** Sem data: as com prioridade primeiro (alta, média, baixa); o resto mantém a ordem da lista. */
+export function sortUndated<T extends Pick<TaskResponse, 'priority'>>(tasks: T[]) {
+  const rank = (task: T) => (task.priority ? PRIORITY_RANK[task.priority] : 3);
+  return [...tasks].sort((a, b) => rank(a) - rank(b));
 }

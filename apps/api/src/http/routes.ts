@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { health } from './controllers/health';
 import { agendaRoutes } from './routes/agenda';
 import { authRoutes } from './routes/auth';
+import { briefingRoutes } from './routes/briefing';
 import { exportRoutes } from './routes/export';
 import { financeRoutes } from './routes/finance';
 import { googleRoutes } from './routes/google';
@@ -20,5 +21,6 @@ export async function appRoutes(app: FastifyInstance) {
   app.register(financeRoutes);
   app.register(agendaRoutes);
   app.register(taskRoutes);
+  app.register(briefingRoutes);
   app.register(exportRoutes);
 }

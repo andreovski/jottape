@@ -1,6 +1,7 @@
 export * from './accounts';
 export * from './agenda';
 export * from './auth';
+export * from './briefing';
 export * from './budgets';
 export * from './categories';
 export * from './common';

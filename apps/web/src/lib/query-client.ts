@@ -14,6 +14,8 @@ export function createQueryClient() {
     },
     // Toda mutação que falha mostra o motivo; sessão vencida volta para o login.
     mutationCache: new MutationCache({
+      // O briefing junta agenda, tarefas e finanças: qualquer mudança pode alterar uma frase.
+      onSuccess: () => client.invalidateQueries({ queryKey: ['briefing'] }),
       onError: async (error, _vars, _ctx, mutation) => {
         if (isUnauthorized(error)) {
           client.setQueryData(['me'], null);

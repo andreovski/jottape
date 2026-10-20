@@ -8,6 +8,7 @@ import {
   KeyRound,
   LogOut,
   Moon,
+  Newspaper,
   Server,
   Shapes,
   Share,
@@ -178,6 +179,18 @@ export function SettingsPage() {
             title='Google'
             subtitle='Calendário, Tarefas e login'
             detail={googleDetail}
+          />
+        </Link>
+        <Link to='/ajustes/briefing' className='block'>
+          <Row
+            chevron
+            leading={
+              <IconChip color='var(--indigo)'>
+                <Newspaper />
+              </IconChip>
+            }
+            title='Briefing'
+            subtitle='O que aparece no topo da tela Hoje'
           />
         </Link>
         <Link to='/ajustes/categorias' className='block'>
