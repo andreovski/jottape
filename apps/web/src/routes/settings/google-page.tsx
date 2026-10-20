@@ -24,6 +24,7 @@ import {
   useGoogleStatus,
   useSetTasksAccount,
   useSyncGoogle,
+  useSyncGoogleAccount,
   useUpdateGoogleCalendars,
 } from '@/features/google';
 
@@ -48,6 +49,7 @@ export function GooglePage() {
   const status = useGoogleStatus();
   const update = useUpdateGoogleCalendars();
   const sync = useSyncGoogle();
+  const syncAccount = useSyncGoogleAccount();
   const disconnect = useDisconnectGoogleAccount();
   const setTasksAccount = useSetTasksAccount();
   const [disconnecting, setDisconnecting] = useState<GoogleAccountResponse | null>(null);
@@ -138,8 +140,20 @@ export function GooglePage() {
                     }
                     title='A sincronização falhou'
                     subtitle={account.lastError}
-                    detail='Reconectar'
-                    onClick={() => startGoogle('connect')}
+                    detail={
+                      account.needsReconnect ? (
+                        'Reconectar'
+                      ) : syncAccount.isPending && syncAccount.variables === account.id ? (
+                        <Spinner />
+                      ) : (
+                        'Tentar de novo'
+                      )
+                    }
+                    onClick={() =>
+                      account.needsReconnect
+                        ? startGoogle('connect')
+                        : syncAccount.mutate(account.id)
+                    }
                   />
                 )}
                 {calendars.map((calendar) => (

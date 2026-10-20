@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { channelToken, syncAllCalendars } from '@/services/google/calendar';
-import { RECONNECT_MESSAGE } from '@/services/google/client';
+import { NOT_CALENDAR_USER_MESSAGE, RECONNECT_MESSAGE } from '@/services/google/client';
 import { syncTasks } from '@/services/google/tasks';
 import { FakeGoogle } from '@/test/fake-google';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
@@ -402,9 +402,31 @@ describe('Google', () => {
 
       await syncAllCalendars(userId);
       const status: GoogleStatusResponse = (await api.get('/google/status')).json();
-      expect(status.accounts.map((a) => a.lastError)).toEqual([RECONNECT_MESSAGE, null]);
+      expect(status.accounts.map((a) => [a.lastError, a.needsReconnect])).toEqual([
+        [RECONNECT_MESSAGE, true],
+        [null, false],
+      ]);
       const list: EventOccurrence[] = (await api.get(range)).json();
       expect(list.map((o) => o.title)).toEqual(['Pessoal', 'Reunião', 'Almoço']);
+    });
+
+    it('conta sem Google Agenda mostra o motivo e não pede para reconectar', async () => {
+      google.account('google-sub-2').noCalendar = true;
+      const status = await connectBoth();
+      expect(status.accounts.map((a) => [a.lastError, a.needsReconnect])).toEqual([
+        [null, false],
+        [NOT_CALENDAR_USER_MESSAGE, false],
+      ]);
+      const list: EventOccurrence[] = (await api.get(range)).json();
+      expect(list.map((o) => o.title)).toEqual(['Pessoal']);
+
+      // Ativou o Google Agenda: "Tentar de novo" sincroniza só esta conta.
+      google.account('google-sub-2').noCalendar = false;
+      const retried: GoogleStatusResponse = (
+        await api.post(`/google/accounts/${status.accounts[1].id}/sync`)
+      ).json();
+      expect(retried.accounts[1].lastError).toBeNull();
+      expect(retried.calendars.some((c) => c.name === 'Trabalho')).toBe(true);
     });
 
     it('desconectar uma conta mantém a outra', async () => {
