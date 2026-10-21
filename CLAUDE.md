@@ -77,8 +77,14 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   o dono recebe (`devMode`), e a web mostra com o "Modo dev" dos Ajustes (localStorage).
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
-  usuário, o dono sem limite). Só o dono e os e-mails de `ASSISTANT_EMAILS` veem o Assistente.
+  usuário, o dono sem limite). Só o dono, os e-mails de `ASSISTANT_EMAILS` e os convidados do painel veem o Assistente.
   A conversa some em 30 dias.
+  Beta: o dono convida pelo painel (Ajustes › Beta do Assistente, `assistant/admin.ts`), que liga
+  `User.assistantAccess` e muda `assistantLimit`; vê pedidos e custo do mês (`AssistantUsage`) e os
+  números de 30 dias dos cartões (`autoSaved`, `edited`) e dos `trace`. "Isso está errado" copia o
+  pedido, a resposta e os passos em `AssistantFeedback`, que não some com a conversa. O teste de
+  acerto (`benchmark.ts`, 50 pedidos num dia fixo) roda o Haiku e o Jev de verdade e grava o custo
+  como `BENCHMARK`, fora do limite.
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.
 

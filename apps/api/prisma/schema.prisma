@@ -28,6 +28,10 @@ model User {
   lastDailySummaryDate String?  @map("last_daily_summary_date")
   /// Calendário do Google onde nascem os eventos novos (vale entre as contas conectadas).
   defaultCalendarId    String?  @unique @map("default_calendar_id")
+  /// Convidado do beta do Assistente (o dono liga no painel; ASSISTANT_EMAILS também vale).
+  assistantAccess      Boolean  @default(false) @map("assistant_access")
+  /// Pedidos por mês deste usuário; null usa ASSISTANT_MONTHLY_LIMIT.
+  assistantLimit       Int?     @map("assistant_limit")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
@@ -50,6 +54,7 @@ model User {
   assistantMessages AssistantMessage[]
   assistantCards    AssistantCard[]
   assistantUsage    AssistantUsage[]
+  assistantFeedback AssistantFeedback[]
 
   @@map("users")
 }
@@ -544,6 +549,10 @@ model AssistantCard {
   /// Evento ou tarefa criados (sem chave estrangeira: somem por fora e o cartão fica).
   eventId        String?             @map("event_id")
   taskId         String?             @map("task_id")
+  /// Salvo sozinho (score alto), sem o usuário tocar.
+  autoSaved      Boolean             @default(false) @map("auto_saved")
+  /// Salvo pela folha de edição ou com o que o usuário trocou no cartão.
+  edited         Boolean             @default(false)
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 
@@ -557,6 +566,8 @@ model AssistantCard {
 enum AssistantUsageKind {
   MESSAGE
   TRANSCRIPTION
+  /// Teste de acerto rodado pelo dono no painel (não conta no limite).
+  BENCHMARK
 }
 
 /// Uma linha por comando ou transcrição: conta o limite do mês e o custo. Sem o texto.
@@ -576,4 +587,27 @@ model AssistantUsage {
 
   @@index([userId, kind, createdAt])
   @@map("assistant_usage")
+}
+
+/// "Isso está errado": cópia do pedido, da resposta e dos passos, que fica depois que a conversa
+/// some (30 dias). Só o dono lê, no painel do beta.
+model AssistantFeedback {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  /// A mensagem da resposta (sem chave estrangeira: a conversa some e o relato fica).
+  messageId  String?   @map("message_id")
+  request    String
+  reply      String
+  values     Int[]     @default([])
+  trace      Json?
+  /// Os rascunhos dos cartões da resposta, como estavam no relato.
+  cards      Json      @default("[]")
+  note       String?
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("assistant_feedback")
 }

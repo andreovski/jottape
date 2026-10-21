@@ -1,5 +1,7 @@
 import type {
   AccountResponse,
+  AssistantAdminResponse,
+  AssistantBenchmarkResponse,
   AssistantCardResponse,
   AssistantReplyResponse,
   AssistantStateResponse,
@@ -15,6 +17,7 @@ import { extractItems } from '@/services/assistant/haiku';
 import { askJev } from '@/services/assistant/jev';
 import { QUERY_HANDLERS } from '@/services/assistant/queries';
 import type { ExtractedItem } from '@/services/assistant/resolve';
+import { hashPassword } from '@/services/owner';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
 
 // O Haiku e o Jev são de fora: o teste decide o que eles "responderam".
@@ -798,6 +801,172 @@ describe('assistente', () => {
       expect(
         (await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).completedAt
       ).toBeNull();
+    });
+  });
+  describe('beta', () => {
+    const owner = () => vi.stubEnv('OWNER_EMAIL', 'andre@example.com');
+
+    /** Um convidado com senha, logado. */
+    async function guest() {
+      const user = await prisma.user.create({
+        data: {
+          email: 'bia@example.com',
+          name: 'Bia',
+          timezone: 'America/Sao_Paulo',
+          passwordHash: await hashPassword('senha-da-bia'),
+        },
+      });
+      const login = await app.inject({
+        method: 'POST',
+        url: '/sessions',
+        payload: { email: 'bia@example.com', password: 'senha-da-bia' },
+      });
+      const cookie = login.cookies.find((c) => c.name === 'jottape_session')!;
+      return { user, api: client(app, `jottape_session=${cookie.value}`) };
+    }
+
+    it('o dono convida pelo painel e muda o limite', async () => {
+      owner();
+      vi.stubEnv('ASSISTANT_EMAILS', '');
+      const bia = await guest();
+      expect(((await bia.api.get('/assistant')).json() as AssistantStateResponse).enabled).toBe(
+        false
+      );
+      // Só o dono vê o painel.
+      expect((await bia.api.get('/assistant/admin')).statusCode).toBe(403);
+
+      const panel = (
+        await api.patch(`/assistant/admin/users/${bia.user.id}`, { access: true, limit: 1 })
+      ).json() as AssistantAdminResponse;
+      expect(panel.users.map((u) => [u.name, u.access, u.limit])).toEqual([
+        ['André', 'owner', null],
+        ['Bia', 'app', 1],
+      ]);
+
+      const state = (await bia.api.get('/assistant')).json() as AssistantStateResponse;
+      expect(state).toMatchObject({ enabled: true, admin: false, usage: { used: 0, limit: 1 } });
+      vi.mocked(extractItems).mockResolvedValue({ items: [], inputTokens: 1, outputTokens: 1 });
+      expect((await bia.api.post('/assistant/messages', { text: 'oi' })).statusCode).toBe(200);
+      expect((await bia.api.post('/assistant/messages', { text: 'oi' })).statusCode).toBe(429);
+
+      await api.patch(`/assistant/admin/users/${bia.user.id}`, { access: false });
+      expect((await bia.api.post('/assistant/messages', { text: 'oi' })).statusCode).toBe(503);
+    });
+
+    it('"Isso está errado" guarda o pedido e aparece no painel com os números', async () => {
+      owner();
+      vi.stubEnv('JEV_API_KEY', 'jev-test');
+      vi.mocked(extractItems).mockResolvedValue({
+        items: [item()],
+        inputTokens: 900,
+        outputTokens: 80,
+      });
+      vi.mocked(askJev).mockRejectedValue(new Error('timeout'));
+      const reply = await send('gastei 32 no mercado no nubank');
+      const answer = reply.messages[1];
+      expect(answer.reported).toBe(false);
+      await api.post(`/assistant/cards/${answer.cards[0].id}/save`, {
+        draft: { amountCents: 3500 },
+      });
+
+      const report = await api.post(`/assistant/messages/${answer.id}/feedback`, {
+        note: 'era 35',
+      });
+      expect(report.statusCode).toBe(204);
+      // Uma vez por resposta.
+      await api.post(`/assistant/messages/${answer.id}/feedback`, {});
+      expect(await prisma.assistantFeedback.count()).toBe(1);
+      const state = (await api.get('/assistant')).json() as AssistantStateResponse;
+      expect(state.messages[1].reported).toBe(true);
+
+      // A conversa some, o relato fica.
+      await api.delete('/assistant/messages');
+      const panel = (await api.get('/assistant/admin')).json() as AssistantAdminResponse;
+      expect(panel.feedback).toHaveLength(1);
+      expect(panel.feedback[0]).toMatchObject({
+        userName: 'André',
+        request: 'gastei 32 no mercado no nubank',
+        note: 'era 35',
+        resolvedAt: null,
+        // O cartão como ficou: com o valor que o usuário trocou.
+        cards: [{ type: 'transaction', amountCents: 3500 }],
+      });
+      expect(panel.feedback[0].trace?.steps.map((s) => [s.engine, s.status])).toEqual([
+        ['haiku', 'ok'],
+        ['jev', 'failed'],
+      ]);
+      expect(panel.users[0].month).toMatchObject({ requests: 1 });
+
+      const resolved = (
+        await api.post(`/assistant/admin/feedback/${panel.feedback[0].id}/resolve`, {
+          resolved: true,
+        })
+      ).json() as AssistantAdminResponse;
+      expect(resolved.feedback[0].resolvedAt).not.toBeNull();
+    });
+
+    it('conta salvos sozinhos, editados, desfeitos e falhas', async () => {
+      owner();
+      const mercado = await prisma.category.findFirstOrThrow({ where: { name: 'Mercado' } });
+      const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
+      const accounts = await prisma.account.findMany({
+        orderBy: [{ type: 'asc' }, { createdAt: 'asc' }],
+      });
+      vi.mocked(extractItems).mockResolvedValue({
+        items: [item()],
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+      vi.mocked(askJev).mockResolvedValue({
+        answers: {
+          kind: sure('expense'),
+          account: sure(`opcao_${accounts.findIndex((a) => a.id === nubank.id) + 1}`),
+          category: sure(`opcao_${categories.findIndex((c) => c.id === mercado.id) + 1}`),
+        },
+        inputTokens: 1,
+      });
+      const [auto] = (await send('gastei 32 no mercado')).messages[1].cards;
+      await api.post(`/assistant/cards/${auto.id}/undo`);
+
+      vi.mocked(askJev).mockResolvedValue(null);
+      const [draft] = (await send('gastei 32 no mercado')).messages[1].cards;
+      await api.post(`/assistant/cards/${draft.id}/save`, {});
+
+      vi.mocked(extractItems).mockRejectedValue(new Error('overloaded'));
+      await send('gastei 32');
+
+      const [me] = ((await api.get('/assistant/admin')).json() as AssistantAdminResponse).users;
+      expect(me.recent).toMatchObject({
+        cards: 2,
+        autoSaved: 1,
+        saved: 1,
+        edited: 0,
+        undone: 1,
+        haikuFailed: 1,
+        jevFailed: 0,
+      });
+    });
+
+    it('roda o teste de acerto e registra o custo fora do limite', async () => {
+      owner();
+      vi.mocked(extractItems).mockImplementation(async (text) => ({
+        items: text === 'gastei 32 reais no mercado' ? [item({ category: 'Mercado' })] : [],
+        inputTokens: 100,
+        outputTokens: 10,
+      }));
+      vi.mocked(askJev).mockResolvedValue(null);
+      const result = (
+        await api.post('/assistant/admin/benchmark')
+      ).json() as AssistantBenchmarkResponse;
+      expect(result.total).toBe(50);
+      expect(result.cases[0]).toMatchObject({
+        text: 'gastei 32 reais no mercado',
+        passed: true,
+      });
+      expect(result.cases[1].problems).toContain('intents');
+      expect(result.costMicros).toBe(Math.round(50 * (100 * 0.1 + 10 * 0.5)));
+      expect(await prisma.assistantUsage.count({ where: { kind: 'BENCHMARK' } })).toBe(1);
+      expect(((await api.get('/assistant')).json() as AssistantStateResponse).usage.used).toBe(0);
     });
   });
 });

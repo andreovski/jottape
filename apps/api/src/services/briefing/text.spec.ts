@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { QUOTE_STRIDE, quotes } from './quotes';
 import {
   billsLine,
   budgetLine,
@@ -19,7 +20,6 @@ import {
   when,
   yesterdayLine,
 } from './text';
-import { QUOTE_STRIDE, quotes } from './quotes';
 
 const TZ = 'America/Sao_Paulo';
 // Segunda, 19/10/2026, 10:00 em São Paulo.

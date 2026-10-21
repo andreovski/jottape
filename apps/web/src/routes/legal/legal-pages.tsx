@@ -160,11 +160,20 @@ export function PrivacyPage() {
         Quando você usa o Assistente, o texto do pedido, os nomes das suas contas e categorias e a
         data de hoje vão para a Anthropic (Claude), que lê o pedido, e para a TypeSafe (Jev), que
         confere a conta e a categoria. Quando você faz uma pergunta (&quot;quanto gastei
-        ontem?&quot;), a Anthropic recebe também as últimas mensagens da conversa e o resultado das
-        consultas que ela pede para responder, como lançamentos, saldos, eventos e tarefas do
-        período. Se você ditar, o áudio vai para a Groq, que o transforma em texto. Esses serviços
-        processam o pedido para responder e não recebem seu nome nem seu e-mail. A conversa fica
-        guardada por 30 dias (ou até você começar uma nova) e o áudio não é guardado.
+        ontem?&quot;) ou pede para mudar algo (&quot;apaga o último lançamento&quot;), a Anthropic
+        recebe também as últimas mensagens da conversa e o resultado das consultas que ela pede para
+        responder, como lançamentos, saldos, eventos e tarefas do período. Se você ditar, o áudio
+        vai para a Groq, que o transforma em texto. Esses serviços processam o pedido para responder
+        e não recebem seu nome nem seu e-mail. A conversa fica guardada por 30 dias (ou até você
+        começar uma nova) e o áudio não é guardado.
+      </p>
+
+      <p>
+        O dono do app vê, para cada pessoa, quantos pedidos ela fez ao Assistente, o custo estimado
+        e quantos itens foram salvos, desfeitos ou descartados, sem o texto dos pedidos. Se você
+        tocar em &quot;Isso está errado&quot; numa resposta, o pedido, a resposta, o que o
+        Assistente montou e o seu comentário vão para o dono do app, para melhorar o Assistente, e
+        ficam guardados mesmo depois que a conversa some.
       </p>
 
       <H2>Cookies e armazenamento local</H2>

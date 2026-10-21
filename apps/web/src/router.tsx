@@ -14,6 +14,7 @@ import { AssistantPage } from '@/routes/assistant/assistant-page';
 import { AccountPage } from '@/routes/finance/account-page';
 import { FinancePage } from '@/routes/finance/finance-page';
 import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
+import { AssistantAdminPage } from '@/routes/settings/assistant-admin-page';
 import { BriefingSettingsPage } from '@/routes/settings/briefing-page';
 import { CategoriesPage } from '@/routes/settings/categories-page';
 import { GooglePage } from '@/routes/settings/google-page';
@@ -114,6 +115,7 @@ const appRoutes = appRoute.addChildren([
   route('/ajustes/categorias', CategoriesPage),
   route('/ajustes/google', GooglePage),
   route('/ajustes/briefing', BriefingSettingsPage),
+  route('/ajustes/assistente', AssistantAdminPage),
   route('/ajustes/instalar', InstallPage),
 ]);
 

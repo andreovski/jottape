@@ -1,4 +1,9 @@
-import { assistantMessageBodySchema, saveAssistantCardBodySchema } from '@jottape/schemas';
+import {
+  assistantFeedbackBodySchema,
+  assistantMessageBodySchema,
+  saveAssistantCardBodySchema,
+  updateAssistantUserBodySchema,
+} from '@jottape/schemas';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -7,11 +12,18 @@ import {
   assistantState,
   clearConversation,
   discardCard,
+  reportMessage,
   saveCard,
   sendMessage,
   transcribeAudio,
   undoCard,
 } from '@/services/assistant';
+import {
+  adminOverview,
+  benchmark,
+  resolveFeedback,
+  updateAssistantUser,
+} from '@/services/assistant/admin';
 import { AUDIO_TYPES } from '@/services/assistant/transcribe';
 
 import { authenticate } from '../session';
@@ -75,4 +87,30 @@ export async function assistantRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     return discardCard(request.userId, id);
   });
+
+  app.post('/assistant/messages/:id/feedback', async (request, reply) => {
+    const { id } = idParams.parse(request.params);
+    await reportMessage(request.userId, id, assistantFeedbackBodySchema.parse(request.body ?? {}));
+    return reply.status(204).send();
+  });
+
+  // Painel do beta: só o dono.
+  app.get('/assistant/admin', async (request) => adminOverview(request.userId));
+
+  app.patch('/assistant/admin/users/:id', async (request) => {
+    const { id } = idParams.parse(request.params);
+    return updateAssistantUser(
+      request.userId,
+      id,
+      updateAssistantUserBodySchema.parse(request.body)
+    );
+  });
+
+  app.post('/assistant/admin/feedback/:id/resolve', async (request) => {
+    const { id } = idParams.parse(request.params);
+    const { resolved } = z.object({ resolved: z.boolean() }).parse(request.body ?? {});
+    return resolveFeedback(request.userId, id, resolved);
+  });
+
+  app.post('/assistant/admin/benchmark', async (request) => benchmark(request.userId));
 }

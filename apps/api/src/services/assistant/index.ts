@@ -1,5 +1,7 @@
 import {
+  type AssistantAccess,
   type AssistantCardResponse,
+  type AssistantFeedbackBody,
   assistantDraftSchema,
   type AssistantMessageResponse,
   type AssistantMissing,
@@ -42,14 +44,11 @@ import {
   type AccountOption,
   type CategoryOption,
   type ExtractedItem,
-  type FinanceIntent,
   type Intent,
   isActionIntent,
   isFinanceIntent,
   type Resolution,
-  resolveEvent,
-  resolveItem,
-  resolveTask,
+  resolveAction,
   type TaskListOption,
 } from './resolve';
 import { type CardOutcome, extractMoney, READ_FAILED, replyText, restoreMoney } from './text';
@@ -65,9 +64,9 @@ const QUESTION_HISTORY = 6;
 export const RETENTION_DAYS = 30;
 
 // Custo estimado, em milionésimos de dólar por token (= US$ por milhão de tokens).
-const HAIKU_INPUT = 0.1;
-const HAIKU_OUTPUT = 0.5;
-const JEV_INPUT = 0.042;
+export const HAIKU_INPUT = 0.1;
+export const HAIKU_OUTPUT = 0.5;
+export const JEV_INPUT = 0.042;
 /** whisper-large-v3-turbo na Groq: US$ 0,04 por hora, cobrando no mínimo 10 s por áudio. */
 const TRANSCRIPTION_PER_SECOND = (0.04 / 3600) * 1_000_000;
 const TRANSCRIPTION_MIN_SECONDS = 10;
@@ -114,12 +113,22 @@ async function userEmail(userId: string) {
   return user?.email.toLowerCase() ?? null;
 }
 
-/** Ligado com a chave da Anthropic, só para o dono e os e-mails de ASSISTANT_EMAILS (beta). */
+/** De onde vem o acesso: o dono, ASSISTANT_EMAILS, ou o convite do painel do beta. */
+export function accessOf(user: { email: string; assistantAccess: boolean }): AssistantAccess {
+  const email = user.email.toLowerCase();
+  if (email === getOwner()?.email) return 'owner';
+  if (getAssistantEmails().includes(email)) return 'env';
+  return user.assistantAccess ? 'app' : 'none';
+}
+
+/** Ligado com a chave da Anthropic, só para o dono e os convidados do beta. */
 export async function assistantEnabled(userId: string) {
   if (!getAnthropicConfig()) return false;
-  const email = await userEmail(userId);
-  if (!email) return false;
-  return email === getOwner()?.email || getAssistantEmails().includes(email);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true, assistantAccess: true },
+  });
+  return Boolean(user) && accessOf(user!) !== 'none';
 }
 
 async function assertEnabled(userId: string) {
@@ -130,7 +139,7 @@ async function assertEnabled(userId: string) {
 
 // ---------------------------------------------------------------- uso
 
-async function isOwner(userId: string) {
+export async function isOwner(userId: string) {
   const owner = getOwner();
   if (!owner) return false;
   return (await userEmail(userId)) === owner.email;
@@ -148,7 +157,12 @@ export async function usageOf(userId: string, timezone: string): Promise<Assista
     select: { createdAt: true },
   });
   const used = rows.filter((row) => todayIn(timezone, row.createdAt).slice(0, 7) === month).length;
-  return { used, limit: (await isOwner(userId)) ? null : getAssistantMonthlyLimit() };
+  if (await isOwner(userId)) return { used, limit: null };
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { assistantLimit: true },
+  });
+  return { used, limit: user?.assistantLimit ?? getAssistantMonthlyLimit() };
 }
 
 async function assertWithinLimit(userId: string, timezone: string) {
@@ -177,6 +191,11 @@ async function toMessages(userId: string, messages: MessageWithCards[], withTrac
           orderBy: { date: 'asc' },
         });
   const byId = new Map(transactions.map((t) => [t.id, toTransaction(t)]));
+  const reports = await prisma.assistantFeedback.findMany({
+    where: { userId, messageId: { in: messages.map((m) => m.id) } },
+    select: { messageId: true },
+  });
+  const reported = new Set(reports.map((r) => r.messageId));
 
   return Promise.all(
     messages.map(
@@ -186,6 +205,7 @@ async function toMessages(userId: string, messages: MessageWithCards[], withTrac
         text: message.text,
         values: message.values,
         trace: withTrace && message.trace ? assistantTraceSchema.parse(message.trace) : null,
+        reported: reported.has(message.id),
         createdAt: message.createdAt.toISOString(),
         cards: await Promise.all(
           [...message.cards]
@@ -221,6 +241,7 @@ export async function assistantState(userId: string): Promise<AssistantStateResp
     transcription: getTranscriptionConfig() !== null,
     usage: await usageOf(userId, timezone),
     devMode: await isOwner(userId),
+    admin: await isOwner(userId),
     messages: await toMessages(userId, recent.reverse(), await isOwner(userId)),
   };
 }
@@ -330,19 +351,15 @@ export async function sendMessage(
         });
         cost.jevInput += jev?.inputTokens ?? 0;
         const answers = jev?.answers ?? null;
-        const resolution =
-          item.intent === 'event'
-            ? resolveEvent({ item, jev: answers, today })
-            : item.intent === 'task'
-              ? resolveTask({ item, lists, jev: answers, today })
-              : resolveItem({
-                  item: item as ExtractedItem & { intent: FinanceIntent },
-                  accounts,
-                  categories,
-                  jev: answers,
-                  today,
-                  usualAccountId,
-                });
+        const resolution = resolveAction({
+          item,
+          accounts,
+          categories,
+          lists,
+          jev: answers,
+          today,
+          usualAccountId,
+        });
         const kind = answers?.kind;
         const step: AssistantTraceStep = {
           engine: 'jev',
@@ -486,6 +503,7 @@ export async function sendMessage(
         create: planned.map((p, i) => ({
           userId,
           status: isSaved(p.created) ? 'SAVED' : 'DRAFT',
+          autoSaved: isSaved(p.created),
           score: p.resolution.score,
           draft: p.resolution.draft as unknown as Prisma.InputJsonValue,
           missing: p.resolution.missing,
@@ -570,6 +588,7 @@ export async function saveCard(
     where: { id },
     data: {
       status: 'SAVED',
+      edited: Boolean(body.draft || body.transaction || body.event || body.task),
       draft: draft as unknown as Prisma.InputJsonValue,
       missing: [],
       uncertain: [],
@@ -600,6 +619,42 @@ export async function discardCard(userId: string, id: string): Promise<Assistant
   if (card.status === 'SAVED') throw new AppError(409, 'Desfaça antes de descartar.');
   await prisma.assistantCard.update({ where: { id }, data: { status: 'DISCARDED' } });
   return cardResponse(userId, id);
+}
+
+/**
+ * "Isso está errado": guarda uma cópia do pedido, da resposta, dos passos e dos rascunhos para o
+ * dono olhar no painel (a conversa some em 30 dias, o relato fica). Uma vez por resposta.
+ */
+export async function reportMessage(
+  userId: string,
+  messageId: string,
+  body: AssistantFeedbackBody
+): Promise<void> {
+  const reply = await prisma.assistantMessage.findFirst({
+    where: { id: messageId, userId, role: 'ASSISTANT' },
+    include: { cards: true },
+  });
+  if (!reply) throw notFound('Resposta do Assistente');
+  if (await prisma.assistantFeedback.findFirst({ where: { userId, messageId } })) return;
+  const request = await prisma.assistantMessage.findFirst({
+    where: { userId, role: 'USER', createdAt: { lte: reply.createdAt } },
+    orderBy: { createdAt: 'desc' },
+    select: { text: true },
+  });
+  await prisma.assistantFeedback.create({
+    data: {
+      userId,
+      messageId,
+      request: request?.text ?? '',
+      reply: reply.text,
+      values: reply.values,
+      trace: reply.trace ?? undefined,
+      cards: reply.cards
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .map((c) => c.draft) as Prisma.InputJsonValue,
+      note: body.note || null,
+    },
+  });
 }
 
 /** "Nova conversa": apaga as mensagens. O que foi salvo fica. */
