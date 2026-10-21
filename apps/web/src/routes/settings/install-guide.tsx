@@ -29,14 +29,14 @@ const STEPS: Record<Platform, Step[]> = {
     {
       icon: <Smartphone />,
       color: 'var(--blue)',
-      title: 'Abra o Jottape no Safari',
-      subtitle: 'Outros navegadores no iPhone não instalam o app',
+      title: 'Abra o Jottape no Safari ou no Chrome',
+      subtitle: 'No iOS 16.4 ou mais novo, os dois instalam o app',
     },
     {
       icon: <Share />,
       color: 'var(--blue)',
       title: 'Toque em Compartilhar',
-      subtitle: 'O ícone de quadrado com seta, na barra de baixo',
+      subtitle: 'O ícone de quadrado com seta: na barra de baixo (Safari) ou ao lado do endereço (Chrome)',
     },
     {
       icon: <SquarePlus />,
@@ -75,7 +75,7 @@ const STEPS: Record<Platform, Step[]> = {
 };
 
 const PLATFORM_LABEL: Record<Platform, string> = {
-  ios: 'iPhone (Safari)',
+  ios: 'iPhone (Safari ou Chrome)',
   android: 'Android (Chrome)',
 };
 
