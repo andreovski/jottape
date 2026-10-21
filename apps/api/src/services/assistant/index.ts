@@ -133,7 +133,7 @@ export async function assistantEnabled(userId: string) {
 
 async function assertEnabled(userId: string) {
   if (!(await assistantEnabled(userId))) {
-    throw new AppError(503, 'O Assistente não está disponível.');
+    throw new AppError(503, 'O Jotta não está disponível.');
   }
 }
 
@@ -206,6 +206,7 @@ async function toMessages(userId: string, messages: MessageWithCards[], withTrac
         values: message.values,
         trace: withTrace && message.trace ? assistantTraceSchema.parse(message.trace) : null,
         reported: reported.has(message.id),
+        voiceSeconds: message.voiceSeconds,
         createdAt: message.createdAt.toISOString(),
         cards: await Promise.all(
           [...message.cards]
@@ -275,7 +276,8 @@ interface PlannedCard {
 export async function sendMessage(
   userId: string,
   text: string,
-  log: Logger
+  log: Logger,
+  options: { voiceSeconds?: number } = {}
 ): Promise<{ messages: AssistantMessageResponse[]; usage: AssistantUsageResponse }> {
   await assertEnabled(userId);
   const timezone = await userTimezone(userId);
@@ -304,7 +306,12 @@ export async function sendMessage(
   const lists: TaskListOption[] = listRows;
 
   const userMessage = await prisma.assistantMessage.create({
-    data: { userId, role: 'USER', text },
+    data: {
+      userId,
+      role: 'USER',
+      text,
+      voiceSeconds: options.voiceSeconds === undefined ? null : Math.round(options.voiceSeconds),
+    },
   });
 
   let items: ExtractedItem[] | null = null;
@@ -548,7 +555,7 @@ export async function sendMessage(
 
 async function ownedCard(userId: string, id: string) {
   const card = await prisma.assistantCard.findFirst({ where: { id, userId } });
-  if (!card) throw notFound('Pedido do Assistente');
+  if (!card) throw notFound('Pedido do Jotta');
   return card;
 }
 
@@ -634,7 +641,7 @@ export async function reportMessage(
     where: { id: messageId, userId, role: 'ASSISTANT' },
     include: { cards: true },
   });
-  if (!reply) throw notFound('Resposta do Assistente');
+  if (!reply) throw notFound('Resposta do Jotta');
   if (await prisma.assistantFeedback.findFirst({ where: { userId, messageId } })) return;
   const request = await prisma.assistantMessage.findFirst({
     where: { userId, role: 'USER', createdAt: { lte: reply.createdAt } },

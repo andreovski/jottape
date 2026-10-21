@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 export const SECTIONS = [
   { to: '/', label: 'Hoje', icon: Sun, tint: 'var(--indigo)' },
   { to: '/agenda', label: 'Agenda', icon: CalendarDays, tint: 'var(--red)' },
-  { to: '/assistente', label: 'Assistente', icon: Sparkles, tint: 'var(--purple)' },
+  { to: '/assistente', label: 'Jotta', icon: Sparkles, tint: 'var(--purple)' },
   { to: '/tarefas', label: 'Tarefas', icon: CircleCheck, tint: 'var(--orange)' },
   { to: '/financas', label: 'Finanças', icon: Wallet, tint: 'var(--green)' },
   { to: '/ajustes', label: 'Ajustes', icon: Settings, tint: 'var(--blue)' },
@@ -29,7 +29,7 @@ function sectionOf(pathname: string) {
 export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const current = sectionOf(pathname);
-  // Sem o Assistente no servidor, a aba dele some e Ajustes volta para a barra do celular. Com ele,
+  // Sem o Jotta (o Assistente) no servidor, a aba dele some e Ajustes volta para a barra do celular. Com ele,
   // Ajustes vira um botão na tela Hoje (cinco abas no máximo, como no iOS).
   const assistant = useAssistant().data?.enabled ?? false;
   const sections = SECTIONS.filter((s) => assistant || s.to !== '/assistente');

@@ -129,7 +129,7 @@ export function answerPrompt(ctx: AnswerContext): string {
   const weekday = WEEKDAYS[new Date(`${ctx.today}T12:00:00Z`).getUTCDay()];
   const expense = ctx.categories.filter((c) => c.kind === 'EXPENSE').map((c) => c.name);
   const income = ctx.categories.filter((c) => c.kind === 'INCOME').map((c) => c.name);
-  return `Você é o Assistente do Jottape, um app brasileiro de finanças, agenda e tarefas. Responda às perguntas do usuário sobre os dados dele, consultando as ferramentas. Nunca invente números: todo valor da resposta vem de uma ferramenta.
+  return `Você é o Jotta, o assistente do Jottape, um app brasileiro de finanças, agenda e tarefas. Responda às perguntas do usuário sobre os dados dele, consultando as ferramentas. Nunca invente números: todo valor da resposta vem de uma ferramenta.
 
 Hoje é ${weekday}, ${ctx.today} (fuso ${ctx.timezone}).
 

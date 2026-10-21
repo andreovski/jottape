@@ -107,6 +107,9 @@
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Segoe UI Variable Text',
     'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Metadados do Jotta (horas, etiquetas, custos): a mono do sistema (SF Mono no iPhone). */
+  --font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Roboto Mono', 'Cascadia Mono', monospace;
   --font-rounded:
     ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display',
     'Segoe UI', Inter, Roboto, sans-serif;
@@ -177,6 +180,22 @@
   }
   to {
     transform: translateY(0);
+  }
+}
+
+/* Jotta: cursor que pisca no convite da tela vazia e brilho do nó em andamento. */
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes node-glow {
+  50% {
+    box-shadow:
+      inset 0 0 0 1px var(--node),
+      0 0 0 4px var(--background),
+      0 0 4px var(--node);
   }
 }
 
@@ -315,6 +334,15 @@
       'Segoe UI',
       Roboto,
       sans-serif;
+  }
+
+  /* Jotta: grade de pontos do topo, que some para baixo. */
+  .dot-grid {
+    background-image: radial-gradient(var(--label-3) 1px, transparent 1px);
+    background-size: 18px 18px;
+    opacity: 0.35;
+    -webkit-mask-image: linear-gradient(#000, transparent);
+    mask-image: linear-gradient(#000, transparent);
   }
 
   .numeric {

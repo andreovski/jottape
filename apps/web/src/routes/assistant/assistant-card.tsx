@@ -9,14 +9,14 @@ import type {
   CategoryResponse,
   SaveAssistantCardBody,
 } from '@jottape/schemas';
-import { CalendarDays, Check, CircleCheck, Pencil, RotateCcw, Trash2 } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { Check, CircleCheck, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { Fragment, type ReactNode, useState } from 'react';
 
 import { newEventForm } from '@/components/agenda/event-form-model';
 import { EventFormSheet } from '@/components/agenda/event-form-sheet';
 import { CategoryIcon } from '@/components/finance/category-icon';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
-import { Button, Pill } from '@/components/ios/controls';
+import { Button } from '@/components/ios/controls';
 import { IconChip } from '@/components/ios/list';
 import { TaskSheet } from '@/components/tasks/task-sheet';
 import {
@@ -32,6 +32,7 @@ import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
 
 const KIND_COLOR = { EXPENSE: 'var(--red)', INCOME: 'var(--green)', TRANSFER: 'var(--foreground)' };
+const KIND_LABEL = { EXPENSE: 'Despesa', INCOME: 'Receita', TRANSFER: 'Transferência' };
 
 const UNCERTAIN_LABEL: Record<AssistantUncertain, string> = {
   kind: 'o tipo',
@@ -52,7 +53,7 @@ interface Props {
   categories: CategoryResponse[];
 }
 
-/** O que o Assistente montou: salvo (com Desfazer) ou rascunho para conferir. */
+/** O que o Jotta montou: salvo (com Desfazer) ou rascunho para conferir. */
 export function AssistantCard(props: Props) {
   const { draft } = props.card;
   if (draft.type === 'event') return <EventCard card={props.card} draft={draft} />;
@@ -87,23 +88,141 @@ function useCardActions(card: AssistantCardResponse) {
 
 type Actions = ReturnType<typeof useCardActions>;
 
+/** Linha "campo · valor" do recibo. Valor com pouca certeza fica laranja. */
+export interface ReceiptField {
+  label: string;
+  value: ReactNode;
+  uncertain?: boolean;
+}
+
+const STATUS_LABEL = {
+  DRAFT: { text: 'Rascunho', color: 'var(--orange)' },
+  SAVED: { text: 'Salvo', color: 'var(--green)' },
+  UNDONE: { text: 'Desfeito', color: 'var(--label-2)' },
+  DISCARDED: { text: 'Descartado', color: 'var(--label-3)' },
+} as const;
+
+/**
+ * Recibo do que o Jotta montou: cabeçalho em mono (tipo e status), o principal em destaque e os
+ * campos em pares. Rascunho abre a folha de edição pelo toque.
+ */
+export function Receipt({
+  kind,
+  status,
+  hero,
+  fields,
+  onOpen,
+  footer,
+  dimmed,
+}: {
+  kind: string;
+  status: { text: string; color: string; done?: boolean };
+  hero: ReactNode;
+  fields: ReceiptField[];
+  /** Toque no corpo (só no rascunho). */
+  onOpen?: () => void;
+  footer?: ReactNode;
+  dimmed?: boolean;
+}) {
+  const body = (
+    <>
+      <div className='min-w-0'>{hero}</div>
+      {fields.length > 0 && (
+        <dl className='mt-2 grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5'>
+          {fields.map((field) => (
+            <Fragment key={field.label}>
+              <dt className='text-label-3 pt-[3px] font-mono text-[11px] tracking-[0.06em] uppercase'>
+                {field.label}
+              </dt>
+              <dd className={cn('text-subhead min-w-0 truncate', field.uncertain && 'text-orange')}>
+                {field.value}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+    </>
+  );
+  return (
+    <div
+      className={cn(
+        'bg-surface overflow-hidden rounded-[14px] shadow-[inset_0_0_0_0.5px_var(--separator)]',
+        dimmed && 'opacity-50'
+      )}
+    >
+      <div className='border-separator text-label-2 flex items-center gap-2 border-b border-dashed px-3.5 py-2 font-mono text-[10.5px] tracking-[0.08em] uppercase'>
+        <span className='min-w-0 truncate'>{kind}</span>
+        <span
+          className='ml-auto inline-flex shrink-0 items-center gap-1 font-semibold'
+          style={{ color: status.color }}
+        >
+          {status.done && <Check className='size-3' strokeWidth={3} />}
+          {status.text}
+        </span>
+      </div>
+      {onOpen ? (
+        <button
+          type='button'
+          className='block w-full px-3.5 py-3 text-left active:opacity-60'
+          onClick={onOpen}
+        >
+          {body}
+        </button>
+      ) : (
+        <div className='px-3.5 py-3'>{body}</div>
+      )}
+      {footer}
+    </div>
+  );
+}
+
+/** Rodapé do recibo salvo: Desfazer e onde ficou ("No extrato"). */
+function SavedFooter({
+  label,
+  onUndo,
+  loading,
+}: {
+  label?: string;
+  onUndo?: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className='hairline-t flex items-stretch'>
+      {onUndo && (
+        <Button
+          variant='plain'
+          size='md'
+          className='flex-1 rounded-none'
+          loading={loading}
+          onClick={onUndo}
+        >
+          <RotateCcw className='size-3.5' strokeWidth={2.5} /> Desfazer
+        </Button>
+      )}
+      {label && (
+        <span className='text-label-3 flex shadow-[inset_0.5px_0_0_var(--separator)] flex-1 items-center justify-center font-mono text-[11px] tracking-[0.06em] uppercase'>
+          {label}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function CardShell({
   card,
   actions,
-  icon,
-  title,
-  details,
-  trailing,
+  kind,
+  hero,
+  fields,
   savedLabel,
   prompt,
   sheet,
 }: {
   card: AssistantCardResponse;
   actions: Actions;
-  icon: ReactNode;
-  title: string;
-  details: (string | null | undefined | false)[];
-  trailing?: ReactNode;
+  kind: string;
+  hero: ReactNode;
+  fields: ReceiptField[];
   savedLabel: string;
   /** Pergunta ou aviso do rascunho (contas num toque, "falta o horário"). */
   prompt?: ReactNode;
@@ -112,93 +231,72 @@ function CardShell({
   const { save, undo, discard, busy, openSheet } = actions;
   const open = card.status === 'DRAFT' || card.status === 'UNDONE';
   const uncertain = card.uncertain;
+  const status = STATUS_LABEL[card.status];
 
   return (
-    <div
-      className={cn(
-        'bg-surface rounded-[var(--radius)]',
-        card.status === 'DISCARDED' && 'opacity-50'
-      )}
-    >
-      <button
-        type='button'
-        className='flex w-full items-center gap-3 px-4 py-3 text-left active:opacity-60 disabled:active:opacity-100'
-        onClick={openSheet}
-        disabled={!open}
-      >
-        {icon}
-        <div className='min-w-0 flex-1'>
-          <div className={cn('text-body truncate', card.status === 'UNDONE' && 'text-label-2')}>
-            {title}
-          </div>
-          <div className='text-footnote text-label-2 truncate'>
-            {details.filter(Boolean).join(' · ')}
-          </div>
-        </div>
-        <div className='flex flex-col items-end gap-1'>
-          {trailing}
-          {card.status === 'SAVED' && (
-            <Pill color='var(--green)'>
-              <Check className='size-3' strokeWidth={3} /> Salvo
-            </Pill>
-          )}
-          {card.status === 'UNDONE' && <Pill>Desfeito</Pill>}
-          {card.status === 'DISCARDED' && <Pill>Descartado</Pill>}
-        </div>
-      </button>
-
-      {card.status === 'SAVED' && (
-        <div className='hairline-t flex items-center justify-between px-4 py-1.5'>
-          <span className='text-footnote text-label-2'>{savedLabel}</span>
-          <Button
-            variant='plain'
-            size='sm'
-            loading={undo.isPending}
-            onClick={() => undo.mutate({ id: card.id })}
-          >
-            <RotateCcw className='size-3.5' strokeWidth={2.5} /> Desfazer
-          </Button>
-        </div>
-      )}
-
-      {open && (
-        <div className='hairline-t space-y-3 px-4 pt-2.5 pb-3'>
-          {prompt ??
-            (uncertain.length > 0 && (
-              <div className='text-footnote text-orange'>
-                Confira {joinNatural(uncertain.map((field) => UNCERTAIN_LABEL[field]))}.
+    <>
+      <Receipt
+        kind={kind}
+        status={{ ...status, done: card.status === 'SAVED' }}
+        hero={hero}
+        fields={fields}
+        dimmed={card.status === 'DISCARDED'}
+        onOpen={open ? openSheet : undefined}
+        footer={
+          card.status === 'SAVED' ? (
+            <SavedFooter
+              label={savedLabel}
+              loading={undo.isPending}
+              onUndo={() => undo.mutate({ id: card.id })}
+            />
+          ) : open ? (
+            <div className='hairline-t space-y-3 px-3.5 pt-2.5 pb-3'>
+              {prompt ??
+                (uncertain.length > 0 && (
+                  <div className='text-footnote text-orange'>
+                    Confira {joinNatural(uncertain.map((field) => UNCERTAIN_LABEL[field]))}.
+                  </div>
+                ))}
+              <div className='flex gap-2'>
+                <Button
+                  variant='filled'
+                  size='md'
+                  className='flex-1'
+                  disabled={card.missing.length > 0 || busy}
+                  loading={save.isPending}
+                  onClick={() => save.mutate({ id: card.id })}
+                >
+                  {card.status === 'UNDONE' ? 'Salvar de novo' : 'Salvar'}
+                </Button>
+                <Button variant='gray' size='md' disabled={busy} onClick={openSheet}>
+                  Editar
+                </Button>
+                {card.status === 'DRAFT' && (
+                  <Button
+                    variant='gray'
+                    size='md'
+                    className='text-label-2'
+                    disabled={busy}
+                    onClick={() => discard.mutate({ id: card.id })}
+                  >
+                    Descartar
+                  </Button>
+                )}
               </div>
-            ))}
-          <div className='flex gap-2'>
-            <Button
-              variant='filled'
-              size='md'
-              className='flex-1'
-              disabled={card.missing.length > 0 || busy}
-              loading={save.isPending}
-              onClick={() => save.mutate({ id: card.id })}
-            >
-              {card.status === 'UNDONE' ? 'Salvar de novo' : 'Salvar'}
-            </Button>
-            <Button variant='gray' size='md' disabled={busy} onClick={openSheet}>
-              Editar
-            </Button>
-            {card.status === 'DRAFT' && (
-              <Button
-                variant='gray'
-                size='md'
-                className='text-label-2'
-                disabled={busy}
-                onClick={() => discard.mutate({ id: card.id })}
-              >
-                Descartar
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
+            </div>
+          ) : undefined
+        }
+      />
       {sheet}
+    </>
+  );
+}
+
+/** Título do recibo de evento, tarefa ou mudança. */
+function HeroTitle({ children, struck }: { children: ReactNode; struck?: boolean }) {
+  return (
+    <div className={cn('text-headline truncate', struck && 'text-label-2 line-through')}>
+      {children}
     </div>
   );
 }
@@ -270,29 +368,53 @@ function TransactionCard({
   }
 
   const sign = draft.kind === 'EXPENSE' ? '−' : draft.kind === 'INCOME' ? '+' : '';
+  const undone = card.status === 'UNDONE';
   return (
     <CardShell
       card={card}
       actions={actions}
-      icon={<CategoryIcon category={category} kind={draft.kind} />}
-      title={draft.description}
-      details={[
-        category?.name,
-        where,
-        relativeDay(draft.date),
-        draft.installments ? `em ${draft.installments}x` : null,
-      ]}
-      trailing={
+      kind={`Lançamento · ${KIND_LABEL[draft.kind]}`}
+      hero={
         <span
           className={cn(
-            'font-rounded numeric text-headline',
-            card.status === 'UNDONE' && 'text-label-3 line-through'
+            'font-rounded numeric text-title-2 font-bold',
+            undone && 'text-label-3 line-through'
           )}
-          style={card.status === 'UNDONE' ? undefined : { color: KIND_COLOR[draft.kind] }}
+          style={undone ? undefined : { color: KIND_COLOR[draft.kind] }}
         >
           {draft.amountCents ? `${sign}${format(draft.amountCents)}` : '—'}
         </span>
       }
+      fields={[
+        { label: 'Descrição', value: draft.description || '—' },
+        ...(draft.kind === 'TRANSFER'
+          ? []
+          : [
+              {
+                label: 'Categoria',
+                value: category ? (
+                  <span className='inline-flex items-center gap-1.5 align-middle'>
+                    <CategoryIcon category={category} kind={draft.kind} size='sm' />
+                    <span className='truncate'>{category.name}</span>
+                  </span>
+                ) : (
+                  'Sem categoria'
+                ),
+                uncertain: card.uncertain.includes('category'),
+              },
+            ]),
+        {
+          label: draft.kind === 'TRANSFER' ? 'Contas' : 'Conta',
+          value: where ?? 'Falta a conta',
+          uncertain:
+            card.uncertain.includes('account') ||
+            card.uncertain.includes('toAccount') ||
+            missingAccount ||
+            missingDestination,
+        },
+        { label: 'Data', value: relativeDay(draft.date) },
+        ...(draft.installments ? [{ label: 'Parcelas', value: `${draft.installments}x` }] : []),
+      ]}
       savedLabel={
         card.transactions.length > 1 ? `${card.transactions.length} parcelas` : 'No extrato'
       }
@@ -352,13 +474,17 @@ function EventCard({ card, draft }: { card: AssistantCardResponse; draft: Assist
     <CardShell
       card={card}
       actions={actions}
-      icon={
-        <IconChip color='var(--red)'>
-          <CalendarDays strokeWidth={2.25} />
-        </IconChip>
-      }
-      title={draft.title}
-      details={[relativeDay(draft.date), when, draft.location]}
+      kind='Evento'
+      hero={<HeroTitle struck={card.status === 'UNDONE'}>{draft.title}</HeroTitle>}
+      fields={[
+        { label: 'Dia', value: relativeDay(draft.date) },
+        {
+          label: 'Horário',
+          value: when || 'Falta o horário',
+          uncertain: card.missing.includes('time'),
+        },
+        ...(draft.location ? [{ label: 'Local', value: draft.location }] : []),
+      ]}
       savedLabel='Na agenda'
       prompt={
         card.missing.includes('time') ? (
@@ -397,13 +523,16 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
     <CardShell
       card={card}
       actions={actions}
-      icon={
-        <IconChip color='var(--orange)'>
-          <CircleCheck strokeWidth={2.25} />
-        </IconChip>
-      }
-      title={draft.title}
-      details={[list?.name, due]}
+      kind='Tarefa'
+      hero={<HeroTitle struck={card.status === 'UNDONE'}>{draft.title}</HeroTitle>}
+      fields={[
+        {
+          label: 'Lista',
+          value: list?.name ?? 'Entrada',
+          uncertain: card.uncertain.includes('list'),
+        },
+        { label: 'Prazo', value: due },
+      ]}
       savedLabel='Nas tarefas'
       sheet={
         actions.sheet.key > 0 && (
@@ -473,100 +602,71 @@ function ChangeCard({ card, draft }: { card: AssistantCardResponse; draft: Assis
     return String(value);
   };
 
+  const status =
+    card.status === 'SAVED'
+      ? { text: action.done, color: 'var(--green)', done: true }
+      : STATUS_LABEL[card.status];
+
   return (
-    <div
-      className={cn(
-        'bg-surface rounded-[var(--radius)]',
-        card.status === 'DISCARDED' && 'opacity-50'
-      )}
-    >
-      <div className='flex items-center gap-3 px-4 py-3'>
-        <IconChip color={action.color}>
-          <Icon strokeWidth={2.25} />
-        </IconChip>
-        <div className='min-w-0 flex-1'>
-          <div
-            className={cn(
-              'text-body truncate',
-              card.status === 'SAVED' && draft.action === 'delete' && 'text-label-2 line-through'
-            )}
-          >
+    <Receipt
+      kind={`Mudança · ${TARGET_LABEL[draft.target]}`}
+      status={status}
+      dimmed={card.status === 'DISCARDED'}
+      hero={
+        <div className='flex items-center gap-2.5'>
+          <IconChip color={action.color} size='sm'>
+            <Icon strokeWidth={2.5} />
+          </IconChip>
+          <HeroTitle struck={card.status === 'SAVED' && draft.action === 'delete'}>
             {draft.title}
-          </div>
-          <div className='text-footnote text-label-2 truncate'>
-            {[
-              TARGET_LABEL[draft.target],
-              draft.date && relativeDay(draft.date),
-              draft.amountCents !== null && format(draft.amountCents),
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </div>
+          </HeroTitle>
         </div>
-        <div className='flex flex-col items-end gap-1'>
-          {card.status === 'SAVED' && (
-            <Pill color='var(--green)'>
-              <Check className='size-3' strokeWidth={3} /> {action.done}
-            </Pill>
-          )}
-          {card.status === 'UNDONE' && <Pill>Desfeito</Pill>}
-          {card.status === 'DISCARDED' && <Pill>Descartado</Pill>}
-        </div>
-      </div>
-
-      {draft.diffs.length > 0 && (
-        <div className='hairline-t space-y-1 px-4 py-2.5'>
-          {draft.diffs.map((diff) => (
-            <div key={diff.field} className='text-footnote flex items-baseline gap-2'>
-              <span className='text-label-2 w-20 shrink-0'>{CHANGE_FIELD[diff.field]}</span>
-              <span className='min-w-0 flex-1 truncate'>
-                <span className='text-label-2 line-through'>{show(diff.field, diff.before)}</span>
-                <span className='text-label-3'> → </span>
-                <span className='font-medium'>{show(diff.field, diff.after)}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {card.status === 'SAVED' && draft.revert && (
-        <div className='hairline-t flex items-center justify-end px-4 py-1.5'>
-          <Button
-            variant='plain'
-            size='sm'
-            loading={undo.isPending}
-            onClick={() => undo.mutate({ id: card.id })}
-          >
-            <RotateCcw className='size-3.5' strokeWidth={2.5} /> Desfazer
-          </Button>
-        </div>
-      )}
-
-      {open && (
-        <div className='hairline-t flex gap-2 px-4 pt-2.5 pb-3'>
-          <Button
-            variant={draft.action === 'delete' ? 'destructive' : 'filled'}
-            size='md'
-            className='flex-1'
-            disabled={busy}
-            loading={save.isPending}
-            onClick={() => save.mutate({ id: card.id })}
-          >
-            {card.status === 'UNDONE' ? `${action.button} de novo` : action.button}
-          </Button>
-          {card.status === 'DRAFT' && (
+      }
+      fields={[
+        ...(draft.date ? [{ label: 'Data', value: relativeDay(draft.date) }] : []),
+        ...(draft.amountCents !== null
+          ? [{ label: 'Valor', value: format(draft.amountCents) }]
+          : []),
+        ...draft.diffs.map((diff) => ({
+          label: CHANGE_FIELD[diff.field],
+          value: (
+            <>
+              <span className='text-label-2 line-through'>{show(diff.field, diff.before)}</span>
+              <span className='text-label-3'> → </span>
+              <span className='font-medium'>{show(diff.field, diff.after)}</span>
+            </>
+          ),
+        })),
+      ]}
+      footer={
+        card.status === 'SAVED' && draft.revert ? (
+          <SavedFooter loading={undo.isPending} onUndo={() => undo.mutate({ id: card.id })} />
+        ) : open ? (
+          <div className='hairline-t flex gap-2 px-3.5 pt-2.5 pb-3'>
             <Button
-              variant='gray'
+              variant={draft.action === 'delete' ? 'destructive' : 'filled'}
               size='md'
-              className='text-label-2'
+              className='flex-1'
               disabled={busy}
-              onClick={() => discard.mutate({ id: card.id })}
+              loading={save.isPending}
+              onClick={() => save.mutate({ id: card.id })}
             >
-              Descartar
+              {card.status === 'UNDONE' ? `${action.button} de novo` : action.button}
             </Button>
-          )}
-        </div>
-      )}
-    </div>
+            {card.status === 'DRAFT' && (
+              <Button
+                variant='gray'
+                size='md'
+                className='text-label-2'
+                disabled={busy}
+                onClick={() => discard.mutate({ id: card.id })}
+              >
+                Descartar
+              </Button>
+            )}
+          </div>
+        ) : undefined
+      }
+    />
   );
 }

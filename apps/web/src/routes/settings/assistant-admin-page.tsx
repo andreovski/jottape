@@ -62,7 +62,7 @@ export function AssistantAdminPage() {
   const data = admin.data;
   if (!data) {
     return (
-      <Page title='Assistente' eyebrow='Beta' leading={back}>
+      <Page title='Jotta' eyebrow='Beta' leading={back}>
         {admin.isError ? (
           <p className='text-body text-label-2 px-4'>Só o dono do app vê este painel.</p>
         ) : (
@@ -80,7 +80,7 @@ export function AssistantAdminPage() {
   const feedback = data.feedback.find((f) => f.id === feedbackId) ?? null;
 
   return (
-    <Page title='Assistente' eyebrow='Beta' leading={back}>
+    <Page title='Jotta' eyebrow='Beta' leading={back}>
       <Section
         header={monthTitle(data.month)}
         footer='O custo é estimado pelos tokens de cada pedido e inclui as transcrições, os insights do briefing e os testes.'
@@ -169,17 +169,17 @@ function UserSheet({ user, onClose }: { user: AssistantAdminUser | null; onClose
           <Section
             footer={
               shown.access === 'owner'
-                ? 'O dono sempre tem o Assistente, sem limite.'
+                ? 'O dono sempre tem o Jotta, sem limite.'
                 : shown.access === 'env'
                   ? 'Liberado por ASSISTANT_EMAILS no Railway: para tirar, mude lá.'
-                  : `${shown.email}. Com o acesso, a aba do Assistente aparece na próxima vez que a pessoa abrir o app.`
+                  : `${shown.email}. Com o acesso, a aba do Jotta aparece na próxima vez que a pessoa abrir o app.`
             }
           >
             <Row
-              title='Acesso ao Assistente'
+              title='Acesso ao Jotta'
               trailing={
                 <Switch
-                  label='Acesso ao Assistente'
+                  label='Acesso ao Jotta'
                   checked={shown.access !== 'none'}
                   disabled={shown.access === 'owner' || shown.access === 'env' || update.isPending}
                   onChange={(access) => update.mutate({ id: shown.id, body: { access } })}
@@ -315,7 +315,7 @@ function FeedbackSheet({
             </Section>
           )}
           {shown.cards.length > 0 && (
-            <Section header='O que o Assistente montou'>
+            <Section header='O que o Jotta montou'>
               {shown.cards.map((draft, i) => (
                 <p
                   key={i}

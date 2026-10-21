@@ -86,8 +86,8 @@ describe('assistente', () => {
     wallet = (await api.post('/accounts', { name: 'Carteira', type: 'WALLET' })).json();
   });
 
-  const send = async (text: string) => {
-    const response = await api.post('/assistant/messages', { text });
+  const send = async (text: string, voiceSeconds?: number) => {
+    const response = await api.post('/assistant/messages', { text, voiceSeconds });
     expect(response.statusCode).toBe(200);
     return response.json() as AssistantReplyResponse;
   };
@@ -131,8 +131,10 @@ describe('assistente', () => {
       inputTokens: 400,
     });
 
-    const reply = await send('gastei 32 no mercado no nubank');
+    const reply = await send('gastei 32 no mercado no nubank', 3.4);
     expect(reply.messages.map((m) => m.role)).toEqual(['USER', 'ASSISTANT']);
+    // Ditado: a linha do tempo mostra "voz · 3 s"; a resposta não tem.
+    expect(reply.messages.map((m) => m.voiceSeconds)).toEqual([3, null]);
     const [card] = reply.messages[1].cards;
     expect(reply.messages[1].text).toBe('Pronto, salvei.');
     expect(card.status).toBe('SAVED');

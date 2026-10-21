@@ -2,6 +2,7 @@ import type {
   AssistantAdminResponse,
   AssistantBenchmarkResponse,
   AssistantCardResponse,
+  AssistantMessageBody,
   AssistantReplyResponse,
   AssistantStateResponse,
   SaveAssistantCardBody,
@@ -63,9 +64,9 @@ export function useSendAssistantMessage() {
   const invalidateFinance = useInvalidateFinance();
   return useMutation({
     // Pergunta faz o Haiku consultar os dados em algumas rodadas: pode passar dos 30 s padrão.
-    mutationFn: (text: string) =>
+    mutationFn: (body: AssistantMessageBody) =>
       api
-        .post('assistant/messages', { json: { text }, timeout: 60_000 })
+        .post('assistant/messages', { json: body, timeout: 60_000 })
         .json<AssistantReplyResponse>(),
     onSuccess: (reply) => {
       client.setQueryData<AssistantStateResponse>(KEY, (state) =>
