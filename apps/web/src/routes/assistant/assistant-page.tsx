@@ -1,18 +1,19 @@
-import type { AssistantMessageResponse } from '@jottape/schemas';
+import type { AssistantMessageResponse, AssistantTrace } from '@jottape/schemas';
 import { ArrowUp, Mic, Sparkles, SquarePen, X } from 'lucide-react';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
 import { EmptyState, Skeleton, Spinner } from '@/components/ios/controls';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { fillValues } from '@/components/today/briefing-card';
 import {
   useAssistant,
   useClearAssistant,
   useSendAssistantMessage,
   useTranscribe,
 } from '@/features/assistant';
-import { fillValues } from '@/components/today/briefing-card';
 import { useAccounts, useCategories } from '@/features/finance';
+import { useDevMode } from '@/lib/dev-mode';
 import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
 
@@ -311,6 +312,7 @@ function Message({
       <Bubble>
         <AnswerText text={message.text} values={message.values} />
       </Bubble>
+      {message.trace && <TraceDetails trace={message.trace} />}
       {message.cards.map((card) => (
         <AssistantCard key={card.id} card={card} accounts={accounts} categories={categories} />
       ))}
@@ -328,5 +330,54 @@ function AnswerText({ text, values }: { text: string; values: number[] }) {
         <Fragment key={index}>{part}</Fragment>
       ))}
     </>
+  );
+}
+
+const ENGINE_LABELS: Record<AssistantTrace['steps'][number]['engine'], string> = {
+  haiku: 'Haiku · leitura',
+  jev: 'Jev',
+  answer: 'Haiku · resposta',
+};
+
+/** Custo em dólar com casas suficientes para centavos de centavo (US$ 0,00042). */
+function usd(micros: number) {
+  return `US$\u00a0${(micros / 1_000_000).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: micros < 10_000 ? 5 : 4,
+  })}`;
+}
+
+const seconds = (ms: number) =>
+  `${(ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`;
+
+/** Modo dev: o que rodou nesta resposta, com tempo, tokens e custo. */
+function TraceDetails({ trace }: { trace: AssistantTrace }) {
+  const devMode = useDevMode();
+  if (!devMode) return null;
+  return (
+    <div className='text-caption text-label-2 numeric space-y-0.5 px-3'>
+      {trace.steps.map((step, index) => (
+        <p key={index}>
+          <span className={cn('font-semibold', step.status === 'failed' && 'text-red')}>
+            {ENGINE_LABELS[step.engine]}
+          </span>
+          {step.status === 'off'
+            ? ' · desligado (sem chave)'
+            : [
+                step.status === 'failed' ? 'falhou' : null,
+                step.detail,
+                seconds(step.ms),
+                step.outputTokens
+                  ? `${step.inputTokens.toLocaleString('pt-BR')} → ${step.outputTokens.toLocaleString('pt-BR')} tokens`
+                  : `${step.inputTokens.toLocaleString('pt-BR')} tokens`,
+                usd(step.costMicros),
+              ]
+                .filter(Boolean)
+                .map((part) => ` · ${part}`)
+                .join('')}
+        </p>
+      ))}
+      <p className='font-semibold'>Total {usd(trace.costMicros)}</p>
+    </div>
   );
 }

@@ -147,6 +147,8 @@ export interface AnswerResult {
   text: string;
   inputTokens: number;
   outputTokens: number;
+  /** Ferramentas chamadas, na ordem (para o modo dev). */
+  tools: string[];
 }
 
 /** Responde às perguntas do pedido. Lança erro se o modelo falhar. */
@@ -168,6 +170,7 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
 
   let inputTokens = 0;
   let outputTokens = 0;
+  const tools: string[] = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const response = await anthropic(config.apiKey).messages.create({
       model: config.model,
@@ -190,11 +193,12 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
         .map((block) => block.text)
         .join('\n')
         .trim();
-      return { text, inputTokens, outputTokens };
+      return { text, inputTokens, outputTokens, tools };
     }
 
     // O conteúdo inteiro volta (com os blocos de raciocínio), e os resultados numa mensagem só.
     messages.push({ role: 'assistant', content: response.content });
+    tools.push(...calls.map((call) => call.name));
     const results = await Promise.all(
       calls.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
         const handler = QUERY_HANDLERS[call.name];
@@ -221,5 +225,5 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
     );
     messages.push({ role: 'user', content: results });
   }
-  return { text: '', inputTokens, outputTokens };
+  return { text: '', inputTokens, outputTokens, tools };
 }

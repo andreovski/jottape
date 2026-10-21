@@ -69,6 +69,8 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   Perguntas ("quanto gastei ontem?") vão para `answer.ts`: o Haiku chama ferramentas só de leitura
   (`queries.ts`, sempre com `userId`) e escreve dinheiro como `[[centavos]]`, que vira `{0}` +
   `values` na mensagem (o app oculta como no briefing).
+  Cada resposta grava em `trace` os passos (Haiku, Jev, resposta) com tempo, tokens e custo; só
+  o dono recebe (`devMode`), e a web mostra com o "Modo dev" dos Ajustes (localStorage).
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
   usuário, o dono sem limite). Só o dono e os e-mails de `ASSISTANT_EMAILS` veem o Assistente.

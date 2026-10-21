@@ -201,6 +201,7 @@ describe('assistente', () => {
       text: 'Neste mês, [[3200]].',
       inputTokens: 1,
       outputTokens: 1,
+      tools: [],
     });
 
     const reply = await send('gastei 32 no mercado no nubank e quanto gastei no mês?');
@@ -446,6 +447,7 @@ describe('assistente', () => {
         text: `Ontem você gastou R$ [[${result.despesas_realizadas_centavos}]] com comida.`,
         inputTokens: 3000,
         outputTokens: 120,
+        tools: ['lancamentos'],
       };
     });
 
@@ -463,6 +465,7 @@ describe('assistente', () => {
       text: 'Anteontem, [[9900]].',
       inputTokens: 1,
       outputTokens: 1,
+      tools: [],
     });
     await send('e anteontem?');
     const history = vi.mocked(answerQuestion).mock.calls[1][1].history;
@@ -527,5 +530,46 @@ describe('assistente', () => {
     const reply = await send('quanto tenho no nubank?');
     expect(reply.messages[1].text).toMatch(/^Não consegui responder/);
     expect(reply.messages[1].values).toEqual([]);
+  });
+
+  it('mostra os passos e o custo só para o dono', async () => {
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [item(), item({ intent: 'question', amountCents: null })],
+      inputTokens: 1000,
+      outputTokens: 100,
+    });
+    vi.mocked(askJev).mockResolvedValue({ answers: { kind: sure('expense') }, inputTokens: 500 });
+    vi.mocked(answerQuestion).mockResolvedValue({
+      text: 'Hoje, [[3200]].',
+      inputTokens: 2000,
+      outputTokens: 200,
+      tools: ['lancamentos'],
+    });
+
+    // Beta (e-mail liberado): sem passos.
+    let reply = await send('gastei 32 no mercado e quanto gastei hoje?');
+    expect(reply.messages[1].trace).toBeNull();
+    expect(((await api.get('/assistant')).json() as AssistantStateResponse).devMode).toBe(false);
+
+    vi.stubEnv('OWNER_EMAIL', 'andre@example.com');
+    vi.stubEnv('JEV_API_KEY', 'jev-test');
+    reply = await send('gastei 32 no mercado e quanto gastei hoje?');
+    const trace = reply.messages[1].trace!;
+    expect(trace.steps.map((step) => [step.engine, step.status])).toEqual([
+      ['haiku', 'ok'],
+      ['jev', 'ok'],
+      ['answer', 'ok'],
+    ]);
+    expect(trace.steps[0]).toMatchObject({ inputTokens: 1000, outputTokens: 100, costMicros: 150 });
+    expect(trace.steps[1]).toMatchObject({ costMicros: 21 });
+    expect(trace.steps[1].detail).toMatch(/^despesa 98% · score/);
+    expect(trace.steps[2]).toMatchObject({ costMicros: 300, detail: 'lancamentos' });
+    expect(trace.costMicros).toBe(150 + 21 + 300);
+
+    const state = (await api.get('/assistant')).json() as AssistantStateResponse;
+    expect(state.devMode).toBe(true);
+    expect(state.messages.at(-1)!.trace).toEqual(trace);
+    // Os passos ficam gravados em toda resposta; só a entrega depende de quem pede.
+    expect(state.messages[1].trace).not.toBeNull();
   });
 });
