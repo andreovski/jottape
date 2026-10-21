@@ -4,13 +4,14 @@ import type {
   AssistantTrace,
 } from '@jottape/schemas';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ArrowUp, ChevronRight, Flag, Keyboard, Mic, Sparkles, SquarePen, X } from 'lucide-react';
+import { ArrowUp, ChevronRight, Flag, Keyboard, Mic, SquarePen, X } from 'lucide-react';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
 import { Button, EmptyState, Skeleton } from '@/components/ios/controls';
 import { TextArea } from '@/components/ios/fields';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
+import { JottaIcon } from '@/components/jotta-icon';
 import { fillValues } from '@/components/today/briefing-card';
 import {
   useAssistant,
@@ -131,7 +132,7 @@ export function AssistantPage() {
     return (
       <Page title='Jotta'>
         <EmptyState
-          icon={<Sparkles />}
+          icon={<JottaIcon />}
           title='Jotta indisponível'
           message='O Jotta ainda não foi ligado neste servidor.'
         />
