@@ -61,7 +61,7 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   (schemas) e no `briefingCatalog` (web); quem já salvou ajustes recebe ele desligado. Serviços de
   fora passam por `cached()` (tabela `ExternalCache`, igual para todos) e, se falharem, o plugin
   só some.
-- **Assistente** (aba do chat): `services/assistant`. O Haiku lê o pedido em JSON estruturado
+- **Assistente** (aba do chat, que na interface se chama **Jotta**; no código segue `assistant`): `services/assistant`. O Haiku lê o pedido em JSON estruturado
   (`haiku.ts`), o Jev confere tipo, conta e categoria com probabilidade (`jev.ts`, opções por
   `opcao_N` na ordem das contas/categorias), e `resolve.ts` (puro, com teste) monta o rascunho e o
   score. Também cria eventos (sem horário falta `time`; fim padrão +1 h, no calendário padrão) e
@@ -78,7 +78,7 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
   usuário, o dono sem limite). Só o dono, os e-mails de `ASSISTANT_EMAILS` e os convidados do painel veem o Assistente.
-  A conversa some em 30 dias.
+  A conversa some em 30 dias. Pedido ditado grava `voiceSeconds` (a linha do tempo mostra "voz · 3 s").
   Beta: o dono convida pelo painel (Ajustes › Beta do Assistente, `assistant/admin.ts`), que liga
   `User.assistantAccess` e muda `assistantLimit`; vê pedidos e custo do mês (`AssistantUsage`) e os
   números de 30 dias dos cartões (`autoSaved`, `edited`) e dos `trace`. "Isso está errado" copia o

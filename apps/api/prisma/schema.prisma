@@ -510,15 +510,17 @@ enum AssistantRole {
 
 /// Conversa com o Assistente. Some depois de 30 dias (job diário) ou com "Nova conversa".
 model AssistantMessage {
-  id        String        @id @default(uuid())
-  userId    String        @map("user_id")
-  role      AssistantRole
+  id           String        @id @default(uuid())
+  userId       String        @map("user_id")
+  role         AssistantRole
   // `{0}`, `{1}`... no texto marcam valores em dinheiro (em `values`, centavos).
-  text      String
-  values    Int[]         @default([])
+  text         String
+  values       Int[]         @default([])
   // Passos da resposta (Haiku, Jev, consultas) com tempo e custo, para o modo dev.
-  trace     Json?
-  createdAt DateTime      @default(now()) @map("created_at")
+  trace        Json?
+  // Pedido ditado: quantos segundos de fala (a linha do tempo mostra "voz · 3 s"). Digitado: null.
+  voiceSeconds Int?          @map("voice_seconds")
+  createdAt    DateTime      @default(now()) @map("created_at")
 
   user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   cards AssistantCard[]

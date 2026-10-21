@@ -83,7 +83,7 @@ export const briefingCatalog: Record<BriefingPluginId, BriefingPluginInfo> = {
   insights: {
     name: 'Insights de IA',
     description:
-      'Uma análise curta dos seus gastos e ganhos do mês, feita pela IA uma vez por dia. Toque para perguntar mais ao Assistente.',
+      'Uma análise curta dos seus gastos e ganhos do mês, feita pela IA uma vez por dia. Toque para perguntar mais ao Jotta.',
     icon: <WandSparkles />,
     color: 'var(--purple)',
   },

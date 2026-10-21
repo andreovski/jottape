@@ -73,7 +73,7 @@ Regras:
 - texto: uma frase em português do Brasil, direta, com até 150 caracteres, sem markdown e sem emoji. Não diga "hoje", "ontem" nem quantos dias faltam: o texto pode ser lido nos dias seguintes.
 - Datas como "12 de outubro", nunca AAAA-MM-DD. Use os nomes das categorias e das descrições como vieram.
 - tom: "bom" (notícia boa), "neutro", "atencao" (vale ficar de olho) ou "ruim" (problema claro, como faltar dinheiro).
-- pergunta: o que o usuário perguntaria ao Assistente para entender melhor esse ponto, em primeira pessoa e com até 80 caracteres ("Com o que gastei mais em Mercado este mês?").
+- pergunta: o que o usuário perguntaria ao Jotta (o assistente do app) para entender melhor esse ponto, em primeira pessoa e com até 80 caracteres ("Com o que gastei mais em Mercado este mês?").
 - Com poucos dados para comparar, escreva menos insights (ou nenhum, com a lista vazia) em vez de forçar.`;
 }
 

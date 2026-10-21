@@ -32,7 +32,7 @@ const idParams = z.object({ id: z.string().uuid() });
 /** Uns 60 s de áudio comprimido cabem com folga. */
 const AUDIO_LIMIT = 8 * 1024 * 1024;
 
-/** Assistente: o chat que vira lançamentos. */
+/** Jotta (o Assistente): o chat que vira lançamentos. */
 export async function assistantRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
@@ -46,10 +46,13 @@ export async function assistantRoutes(app: FastifyInstance) {
   app.get('/assistant', async (request) => assistantState(request.userId));
 
   app.post('/assistant/messages', async (request) => {
-    const { text } = assistantMessageBodySchema.parse(request.body);
-    return sendMessage(request.userId, text, {
-      warn: (error, message) => request.log.warn({ err: error }, message),
-    });
+    const { text, voiceSeconds } = assistantMessageBodySchema.parse(request.body);
+    return sendMessage(
+      request.userId,
+      text,
+      { warn: (error, message) => request.log.warn({ err: error }, message) },
+      { voiceSeconds }
+    );
   });
 
   app.delete('/assistant/messages', async (request, reply) => {

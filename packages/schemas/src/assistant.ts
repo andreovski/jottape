@@ -14,6 +14,8 @@ import {
 
 export const assistantMessageBodySchema = z.object({
   text: z.string().trim().min(1, 'Escreva o pedido.').max(1000),
+  /** Pedido ditado: segundos de fala. */
+  voiceSeconds: z.number().min(0).max(600).optional(),
 });
 export type AssistantMessageBody = z.infer<typeof assistantMessageBodySchema>;
 
@@ -175,6 +177,8 @@ export const assistantMessageResponseSchema = z.object({
   trace: assistantTraceSchema.nullable(),
   /** O usuário já tocou em "Isso está errado" nesta resposta. */
   reported: z.boolean(),
+  /** Pedido ditado: segundos de fala; digitado (ou resposta): null. */
+  voiceSeconds: z.number().int().nullable(),
   createdAt: isoDateTimeSchema,
 });
 export type AssistantMessageResponse = z.infer<typeof assistantMessageResponseSchema>;

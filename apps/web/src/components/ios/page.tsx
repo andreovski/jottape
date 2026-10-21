@@ -6,6 +6,8 @@ interface PageProps {
   title: string;
   /** Linha pequena acima do título, na cor da seção (ex.: "SÁBADO, 18 DE OUTUBRO"). */
   eyebrow?: ReactNode;
+  /** Linha logo abaixo do título grande (o status do Jotta). */
+  subtitle?: ReactNode;
   /** Botões do canto direito da barra (ícones na cor da seção). */
   actions?: ReactNode;
   /** Botão do canto esquerdo (voltar). */
@@ -23,6 +25,7 @@ interface PageProps {
 export function Page({
   title,
   eyebrow,
+  subtitle,
   actions,
   leading,
   accessory,
@@ -71,6 +74,7 @@ export function Page({
             <div className='text-footnote text-tint font-semibold uppercase'>{eyebrow}</div>
           )}
           <h1 className='text-large-title'>{title}</h1>
+          {subtitle}
           <div ref={sentinel} />
         </header>
         {accessory && !compact && <div className='mb-4'>{accessory}</div>}

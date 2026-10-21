@@ -14,7 +14,9 @@ de template: nada de cartões com borda cinza, sombras genéricas ou gradientes 
 - **Tipografia do iOS**: fonte do sistema (SF no Apple), tamanhos `text-large-title`, `text-title-1/2/3`,
   `text-headline`, `text-body` (17 px), `text-callout`, `text-subhead`, `text-footnote`,
   `text-caption`. Rótulos secundários em `text-label-2`, terciários em `text-label-3`. Exceção: o
-  briefing (cartão e linha do tempo) usa Figtree, pela classe `font-briefing`.
+  briefing (cartão e linha do tempo) usa Figtree, pela classe `font-briefing`, e o Jotta (aba do
+  Assistente) usa `font-mono` (SF Mono) nos metadados: etiquetas FIN/AGD/TAR/ASK, horas, campos do
+  recibo e custos do modo dev.
 - **Números**: valores em `font-rounded numeric` (SF Rounded com algarismos tabulares), como Wallet e
   Saúde. Dinheiro sempre por `money()` de `@/lib/format`.
 - **Separadores finos** de 0,5 px (`hairline-b`, `hairline-t`) que começam depois do ícone da linha.

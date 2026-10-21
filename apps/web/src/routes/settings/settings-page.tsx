@@ -298,7 +298,7 @@ export function SettingsPage() {
       )}
 
       {devModeAvailable && (
-        <Section footer='Quem usa o Assistente, quanto custa, quanto acerta e os relatos de “Isso está errado”.'>
+        <Section footer='Quem usa o Jotta, quanto custa, quanto acerta e os relatos de “Isso está errado”.'>
           <Link to='/ajustes/assistente' className='block'>
             <Row
               chevron
@@ -307,14 +307,14 @@ export function SettingsPage() {
                   <FlaskConical />
                 </IconChip>
               }
-              title='Beta do Assistente'
+              title='Beta do Jotta'
             />
           </Link>
         </Section>
       )}
 
       {devModeAvailable && (
-        <Section footer='Mostra, embaixo de cada resposta do Assistente, o que passou pelo Haiku e pelo Jev, o tempo e o custo estimado. Só para o dono do app.'>
+        <Section footer='Mostra, embaixo de cada resposta do Jotta, o que passou pelo Haiku e pelo Jev, o tempo e o custo estimado. Só para o dono do app.'>
           <Row
             leading={
               <IconChip color='var(--indigo)'>

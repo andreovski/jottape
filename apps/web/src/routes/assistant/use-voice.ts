@@ -57,13 +57,15 @@ interface Options {
   mode: VoiceMode;
   /** Áudio gravado (modo servidor). */
   onAudio: (audio: Blob, seconds: number) => void;
-  /** Texto parcial e final (modo navegador). */
-  onText: (text: string, final: boolean) => void;
+  /** Texto parcial e final (modo navegador), com os segundos de fala até ali. */
+  onText: (text: string, final: boolean, seconds: number) => void;
 }
 
 export function useVoice({ mode, onAudio, onText }: Options) {
   const [listening, setListening] = useState(false);
   const [seconds, setSeconds] = useState(0);
+  // O microfone aberto (só no modo servidor), para a onda da gravação.
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const finishRef = useRef<(() => void) | null>(null);
   const callbacks = useRef({ onAudio, onText });
@@ -92,6 +94,7 @@ export function useVoice({ mode, onAudio, onText }: Options) {
     };
     recorder.onstop = () => {
       stream.getTracks().forEach((track) => track.stop());
+      setStream(null);
       clearInterval(timer);
       clearTimeout(limit);
       setListening(false);
@@ -114,6 +117,7 @@ export function useVoice({ mode, onAudio, onText }: Options) {
     };
     recorder.start();
     setSeconds(0);
+    setStream(stream);
     setListening(true);
   }
 
@@ -127,11 +131,13 @@ export function useVoice({ mode, onAudio, onText }: Options) {
     recognition.continuous = true;
     let text = '';
     let cancelled = false;
+    const startedAt = Date.now();
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - startedAt) / 1000)), 250);
     recognition.onresult = (event) => {
       text = Array.from(event.results)
         .map((result) => result[0]?.transcript ?? '')
         .join('');
-      callbacks.current.onText(text, false);
+      callbacks.current.onText(text, false, (Date.now() - startedAt) / 1000);
     };
     recognition.onerror = (event) => {
       if (event.error === 'aborted') return;
@@ -144,10 +150,13 @@ export function useVoice({ mode, onAudio, onText }: Options) {
       );
     };
     recognition.onend = () => {
+      clearInterval(timer);
       setListening(false);
       stopRef.current = null;
       finishRef.current = null;
-      if (!cancelled && text.trim()) callbacks.current.onText(text.trim(), true);
+      if (!cancelled && text.trim()) {
+        callbacks.current.onText(text.trim(), true, (Date.now() - startedAt) / 1000);
+      }
     };
     stopRef.current = () => {
       cancelled = true;
@@ -157,15 +166,18 @@ export function useVoice({ mode, onAudio, onText }: Options) {
     try {
       recognition.start();
     } catch {
+      clearInterval(timer);
       toast.error('O ditado não começou. Tente de novo.');
       return;
     }
+    setSeconds(0);
     setListening(true);
   }
 
   return {
     listening,
     seconds,
+    stream,
     /** Começa a ouvir. */
     start: async () => {
       if (listening || !mode) return;

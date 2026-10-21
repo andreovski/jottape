@@ -76,7 +76,7 @@ const PROPOSE_TOOL: Anthropic.Tool = {
 
 function changePrompt(ctx: AnswerContext): string {
   const weekday = WEEKDAYS[new Date(`${ctx.today}T12:00:00Z`).getUTCDay()];
-  return `Você é o Assistente do Jottape, um app brasileiro de finanças, agenda e tarefas. O usuário quer mudar, apagar ou concluir algo que já existe. Ache o item com as consultas e chame propor_mudanca com o id dele.
+  return `Você é o Jotta, o assistente do Jottape, um app brasileiro de finanças, agenda e tarefas. O usuário quer mudar, apagar ou concluir algo que já existe. Ache o item com as consultas e chame propor_mudanca com o id dele.
 
 Hoje é ${weekday}, ${ctx.today} (fuso ${ctx.timezone}).
 
