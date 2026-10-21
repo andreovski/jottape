@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 import { answerQuestion } from '@/services/assistant/answer';
 import { buildChange, planChanges } from '@/services/assistant/change';
 import { extractItems } from '@/services/assistant/haiku';
+import { BENCHMARK_CASES } from '@/services/assistant/benchmark';
 import { askJev } from '@/services/assistant/jev';
 import { QUERY_HANDLERS } from '@/services/assistant/queries';
 import type { ExtractedItem } from '@/services/assistant/resolve';
@@ -960,13 +961,13 @@ describe('assistente', () => {
       const result = (
         await api.post('/assistant/admin/benchmark')
       ).json() as AssistantBenchmarkResponse;
-      expect(result.total).toBe(50);
+      expect(result.total).toBe(BENCHMARK_CASES.length);
       expect(result.cases[0]).toMatchObject({
         text: 'gastei 32 reais no mercado',
         passed: true,
       });
       expect(result.cases[1].problems).toContain('intents');
-      expect(result.costMicros).toBe(Math.round(50 * (100 * 0.1 + 10 * 0.5)));
+      expect(result.costMicros).toBe(Math.round(BENCHMARK_CASES.length * (100 * 0.1 + 10 * 0.5)));
       expect(await prisma.assistantUsage.count({ where: { kind: 'BENCHMARK' } })).toBe(1);
       expect(((await api.get('/assistant')).json() as AssistantStateResponse).usage.used).toBe(0);
     });
