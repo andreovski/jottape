@@ -25,7 +25,10 @@ export function matchNames<T extends { name: string }>(options: T[], names: stri
 }
 
 export interface LedgerRow {
+  id: string;
   date: string;
+  /** Quando foi lançado (ISO): ordena "o último que lancei". */
+  createdAt: string;
   description: string;
   amountCents: number;
   kind: 'INCOME' | 'EXPENSE' | 'TRANSFER';
@@ -34,8 +37,8 @@ export interface LedgerRow {
   account: string;
 }
 
-/** Totais, por categoria e os itens (os maiores primeiro), do que a consulta achou. */
-export function summarizeLedger(rows: LedgerRow[]) {
+/** Totais, por categoria e os itens (os maiores, ou os lançados por último), do que a consulta achou. */
+export function summarizeLedger(rows: LedgerRow[], order: 'valor' | 'recentes' = 'valor') {
   const total = (kind: LedgerRow['kind'], status: LedgerRow['status']) =>
     rows
       .filter((r) => r.kind === kind && r.status === status)
@@ -56,9 +59,14 @@ export function summarizeLedger(rows: LedgerRow[]) {
       .sort((a, b) => b[1] - a[1])
       .map(([categoria, total_centavos]) => ({ categoria, total_centavos })),
     itens: [...rows]
-      .sort((a, b) => b.amountCents - a.amountCents)
+      .sort((a, b) =>
+        order === 'recentes'
+          ? b.createdAt.localeCompare(a.createdAt)
+          : b.amountCents - a.amountCents
+      )
       .slice(0, MAX_ITEMS)
       .map((r) => ({
+        id: r.id,
         data: r.date,
         descricao: r.description,
         valor_centavos: r.amountCents,

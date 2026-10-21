@@ -11,6 +11,8 @@ export const EXAMPLE_HINT =
 
 export const ANSWER_FAILED = 'Não consegui responder à pergunta agora. Tente de novo em instantes.';
 
+export const CHANGE_FAILED = 'Não consegui achar o que mudar agora. Tente de novo em instantes.';
+
 export const READ_FAILED = 'Não consegui ler o pedido agora. Tente de novo em instantes.';
 
 export interface CardOutcome {
@@ -23,6 +25,7 @@ const SAVED_ONE: Record<AssistantDraft['type'], string> = {
   transaction: 'Pronto, salvei.',
   event: 'Pronto, está na agenda.',
   task: 'Pronto, anotei nas tarefas.',
+  change: 'Pronto, mudei.',
 };
 
 /**
@@ -52,12 +55,16 @@ export function restoreMoney(text: string, values: number[]): string {
 export function replyText(
   cards: CardOutcome[],
   otherIntents: Intent[],
-  /** Resposta das perguntas (já com `{n}`), ou null se falhou. */
+  /**
+   * Resposta das perguntas, e o que o Haiku disse quando não achou o que mudar (já com `{n}`), ou
+   * null se falhou.
+   */
   answer: string | null = null
 ): string {
   const parts: string[] = [];
   const saved = cards.filter((c) => c.saved);
-  const drafts = cards.filter((c) => !c.saved);
+  const changes = cards.filter((c) => !c.saved && c.type === 'change');
+  const drafts = cards.filter((c) => !c.saved && c.type !== 'change');
 
   if (saved.length === 1) parts.push(SAVED_ONE[saved[0].type]);
   else if (saved.length > 1) parts.push(`Pronto, salvei os ${saved.length}.`);
@@ -79,7 +86,13 @@ export function replyText(
     );
   }
 
-  if (otherIntents.includes('question')) parts.push(answer || ANSWER_FAILED);
+  // Mudança nunca salva sozinha: o cartão mostra antes e depois.
+  if (changes.length === 1) parts.push('Confira a mudança e confirme.');
+  else if (changes.length > 1) parts.push('Confira as mudanças e confirme.');
+
+  const question = otherIntents.includes('question');
+  const changeMissed = otherIntents.includes('change') && changes.length === 0;
+  if (question || changeMissed) parts.push(answer || (question ? ANSWER_FAILED : CHANGE_FAILED));
   if (parts.length === 0) return EXAMPLE_HINT;
   return parts.join(' ');
 }

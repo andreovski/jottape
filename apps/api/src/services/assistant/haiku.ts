@@ -33,7 +33,7 @@ const ITEM_SCHEMA = {
   properties: {
     intent: {
       type: 'string',
-      enum: ['expense', 'income', 'transfer', 'event', 'task', 'question', 'other'],
+      enum: ['expense', 'income', 'transfer', 'event', 'task', 'question', 'change', 'other'],
     },
     excerpt: { type: 'string' },
     amount_cents: { type: ['integer', 'null'] },
@@ -64,7 +64,16 @@ const outputSchema = z.object({
   items: z
     .array(
       z.object({
-        intent: z.enum(['expense', 'income', 'transfer', 'event', 'task', 'question', 'other']),
+        intent: z.enum([
+          'expense',
+          'income',
+          'transfer',
+          'event',
+          'task',
+          'question',
+          'change',
+          'other',
+        ]),
         excerpt: z.string(),
         amount_cents: z.number().int().nullable(),
         description: z.string(),
@@ -118,7 +127,7 @@ Listas de tarefas: ${lists.map((l) => l.name).join(', ') || '(nenhuma)'}
 
 Regras:
 - Um item por coisa pedida ("30 no uber e 50 no mercado" são dois; "marca dentista amanhã e me lembra de comprar pão" também). Texto sem pedido vira um item só com o intent certo.
-- intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso com dia e hora para a agenda: consulta, reunião, aula, viagem, aniversário), task (algo a fazer ou lembrar, sem ser um compromisso marcado: "me lembra de", "preciso", "anota para"), question (pergunta sobre os dados: saldo, gastos, fatura, orçamento, agenda, tarefas: "quanto gastei ontem?", "o que tenho amanhã?"; vira um item só, mesmo com várias perguntas), other (o resto).
+- intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso com dia e hora para a agenda: consulta, reunião, aula, viagem, aniversário), task (algo a fazer ou lembrar, sem ser um compromisso marcado: "me lembra de", "preciso", "anota para"), question (pergunta sobre os dados: saldo, gastos, fatura, orçamento, agenda, tarefas: "quanto gastei ontem?", "o que tenho amanhã?"; vira um item só, mesmo com várias perguntas), change (mudar, apagar ou concluir algo que JÁ existe: "apaga o último lançamento", "o uber de ontem foi 35", "muda o dentista para as 16h", "marca a tarefa do IPVA como feita"; um item por coisa a mudar, com o excerpt do pedido), other (o resto).
 - excerpt: o trecho do pedido que fala deste item, como o usuário escreveu.
 - amount_cents: valor em centavos inteiros ("R$ 32,50" = 3250, "mil e duzentos" = 120000, "50 conto" = 5000). Sem valor ou fora de finanças: null. Em compra parcelada, o valor TOTAL (12x de 100 = 120000).
 - installments: número de parcelas quando o pedido disser ("em 3x"), senão null.

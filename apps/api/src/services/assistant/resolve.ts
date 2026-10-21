@@ -20,7 +20,15 @@ const JEV_GUESS_MIN = 0.6;
 /** Conta mais usada, sugerida quando nada aponta para uma conta: sempre pede confirmação. */
 const FALLBACK_ACCOUNT_CONFIDENCE = 0.5;
 
-export type Intent = 'expense' | 'income' | 'transfer' | 'event' | 'task' | 'question' | 'other';
+export type Intent =
+  | 'expense'
+  | 'income'
+  | 'transfer'
+  | 'event'
+  | 'task'
+  | 'question'
+  | 'change'
+  | 'other';
 export type FinanceIntent = 'expense' | 'income' | 'transfer';
 
 /** Um pedido como o Haiku leu (um texto pode ter vários: "30 no uber e 50 no mercado"). */
@@ -87,7 +95,7 @@ export interface Resolution {
 export const isFinanceIntent = (intent: Intent): intent is FinanceIntent =>
   intent === 'expense' || intent === 'income' || intent === 'transfer';
 
-/** O que o Assistente sabe criar. Perguntas ("quanto gastei?") ainda não. */
+/** O que o Assistente sabe criar (perguntas e mudanças seguem por outro caminho). */
 export const isActionIntent = (intent: Intent): intent is FinanceIntent | 'event' | 'task' =>
   isFinanceIntent(intent) || intent === 'event' || intent === 'task';
 

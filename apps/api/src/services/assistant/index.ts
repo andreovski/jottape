@@ -27,6 +27,7 @@ import { userTimezone } from '@/services/finance';
 import { toTransaction } from '@/services/serializers';
 
 import { answerQuestion } from './answer';
+import { planChanges, revertChange } from './change';
 import {
   type Created,
   createFromDraft,
@@ -78,13 +79,14 @@ const INTENT_LABELS: Record<Intent, string> = {
   event: 'evento',
   task: 'tarefa',
   question: 'pergunta',
+  change: 'mudança',
   other: 'outro',
 };
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
 function haikuStep(
-  engine: 'haiku' | 'answer',
+  engine: 'haiku' | 'answer' | 'change',
   status: 'ok' | 'failed',
   started: number,
   usage: { inputTokens: number; outputTokens: number } | null,
@@ -379,31 +381,70 @@ export async function sendMessage(
     }
   }
 
-  // Perguntas: o Haiku consulta os dados e responde (dinheiro como {n} + values).
-  let answer: { text: string; values: number[] } | null = null;
-  if (otherIntents.includes('question')) {
-    started = Date.now();
-    try {
-      const previous = await prisma.assistantMessage.findMany({
+  // Perguntas e mudanças vão com as últimas mensagens ("e anteontem?", "apaga esse").
+  const needsHistory = otherIntents.includes('question') || otherIntents.includes('change');
+  const previous = needsHistory
+    ? await prisma.assistantMessage.findMany({
         where: { userId, createdAt: { lt: userMessage.createdAt } },
         orderBy: { createdAt: 'desc' },
         take: QUESTION_HISTORY,
         select: { role: true, text: true, values: true },
-      });
-      const result = await answerQuestion(text, {
-        userId,
-        timezone,
-        today,
-        accounts,
-        categories,
-        lists,
-        history: previous
-          .reverse()
-          .map((m) => ({ role: m.role, text: restoreMoney(m.text, m.values) })),
-      });
+      })
+    : [];
+  const answerContext = {
+    userId,
+    timezone,
+    today,
+    accounts,
+    categories,
+    lists,
+    history: previous
+      .reverse()
+      .map((m) => ({ role: m.role, text: restoreMoney(m.text, m.values) })),
+  };
+  // Textos do Haiku com dinheiro como [[centavos]]; viram {n} + values juntos no fim.
+  const answerParts: string[] = [];
+
+  // Mudanças: o Haiku acha o item pelas consultas e propõe; o cartão espera a confirmação.
+  if (otherIntents.includes('change')) {
+    started = Date.now();
+    try {
+      const result = await planChanges(text, answerContext);
       cost.modelInput += result.inputTokens;
       cost.modelOutput += result.outputTokens;
-      if (result.text) answer = extractMoney(result.text);
+      for (const draft of result.drafts) {
+        planned.push({
+          resolution: { draft, score: 1, missing: [], uncertain: [], autoSave: false },
+          created: NOTHING,
+        });
+      }
+      if (result.drafts.length === 0 && result.text) answerParts.push(result.text);
+      trace.push(
+        haikuStep(
+          'change',
+          result.drafts.length ? 'ok' : 'failed',
+          started,
+          result,
+          [
+            result.tools.filter((t) => t !== 'propor_mudanca').join(', ') || 'sem consultas',
+            `${result.drafts.length} ${result.drafts.length === 1 ? 'mudança' : 'mudanças'}`,
+          ].join(' · ')
+        )
+      );
+    } catch (error) {
+      log.warn(error, 'assistente: mudança falhou');
+      trace.push(haikuStep('change', 'failed', started, null, null));
+    }
+  }
+
+  // Perguntas: o Haiku consulta os dados e responde (dinheiro como {n} + values).
+  if (otherIntents.includes('question')) {
+    started = Date.now();
+    try {
+      const result = await answerQuestion(text, answerContext);
+      cost.modelInput += result.inputTokens;
+      cost.modelOutput += result.outputTokens;
+      if (result.text) answerParts.push(result.text);
       trace.push(
         haikuStep(
           'answer',
@@ -418,6 +459,7 @@ export async function sendMessage(
       trace.push(haikuStep('answer', 'failed', started, null, null));
     }
   }
+  const answer = answerParts.length ? extractMoney(answerParts.join(' ')) : null;
 
   const isSaved = (created: Created) =>
     created.transactionIds.length > 0 || Boolean(created.eventId || created.taskId);
@@ -541,7 +583,14 @@ export async function saveCard(
 export async function undoCard(userId: string, id: string): Promise<AssistantCardResponse> {
   const card = await ownedCard(userId, id);
   if (card.status !== 'SAVED') return cardResponse(userId, id);
-  await removeCreated(userId, card);
+  const draft = assistantDraftSchema.parse(card.draft);
+  if (draft.type === 'change') {
+    if (!(await revertChange(userId, draft))) {
+      throw new AppError(409, 'Não dá para desfazer uma exclusão.');
+    }
+  } else {
+    await removeCreated(userId, card);
+  }
   await prisma.assistantCard.update({ where: { id }, data: { status: 'UNDONE', ...NOTHING } });
   return cardResponse(userId, id);
 }

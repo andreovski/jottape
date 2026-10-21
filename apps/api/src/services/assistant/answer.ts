@@ -34,7 +34,7 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: {
       type: 'object',
       additionalProperties: false,
-      required: ['de', 'ate', 'tipo', 'categorias', 'contas', 'busca'],
+      required: ['de', 'ate', 'tipo', 'categorias', 'contas', 'busca', 'ordem'],
       properties: {
         ...dateRange,
         tipo: { type: 'string', enum: ['despesa', 'receita', 'transferencia', 'todos'] },
@@ -45,6 +45,12 @@ const TOOLS: Anthropic.Tool[] = [
         busca: {
           type: ['string', 'null'],
           description: 'Trecho da descrição ("uber", "ifood"), ou null.',
+        },
+        ordem: {
+          type: 'string',
+          enum: ['valor', 'recentes'],
+          description:
+            'Itens pelos maiores valores, ou pelos lançados por último ("o último lançamento").',
         },
       },
     },
@@ -151,11 +157,8 @@ export interface AnswerResult {
   tools: string[];
 }
 
-/** Responde às perguntas do pedido. Lança erro se o modelo falhar. */
-export async function answerQuestion(question: string, ctx: AnswerContext): Promise<AnswerResult> {
-  const config = getAnthropicConfig();
-  if (!config) throw new Error('ANTHROPIC_API_KEY não configurada');
-
+/** O histórico da conversa + o pedido, no formato da API (começando pelo usuário). */
+export function conversation(ctx: AnswerContext, text: string): Anthropic.MessageParam[] {
   const messages: Anthropic.MessageParam[] = [
     ...ctx.history.map(
       (m): Anthropic.MessageParam => ({
@@ -163,10 +166,33 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
         content: m.text,
       })
     ),
-    { role: 'user', content: question },
+    { role: 'user', content: text },
   ];
-  // A API pede a primeira mensagem do usuário e os papéis alternando.
+  // A API pede a primeira mensagem do usuário.
   while (messages.length > 1 && messages[0].role !== 'user') messages.shift();
+  return messages;
+}
+
+export interface ToolLoopResult extends AnswerResult {
+  /** Entradas das chamadas à ferramenta final (`final`), quando o modelo a chamou. */
+  finals: Record<string, unknown>[];
+}
+
+/**
+ * O Haiku com as consultas só de leitura, até responder em texto ou chamar a ferramenta `final`
+ * (a rodada em que ele a chama é a última). Lança erro se o modelo falhar.
+ */
+export async function runToolLoop(
+  ctx: QueryContext,
+  options: {
+    system: string;
+    messages: Anthropic.MessageParam[];
+    final?: Anthropic.Tool;
+  }
+): Promise<ToolLoopResult> {
+  const config = getAnthropicConfig();
+  if (!config) throw new Error('ANTHROPIC_API_KEY não configurada');
+  const { messages, final } = options;
 
   let inputTokens = 0;
   let outputTokens = 0;
@@ -175,8 +201,8 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
     const response = await anthropic(config.apiKey).messages.create({
       model: config.model,
       max_tokens: MAX_TOKENS,
-      system: answerPrompt(ctx),
-      tools: TOOLS,
+      system: options.system,
+      tools: final ? [...TOOLS, final] : TOOLS,
       output_config: { effort: 'low' },
       messages,
     });
@@ -184,21 +210,24 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
     outputTokens += response.usage.output_tokens;
 
     if (response.stop_reason === 'refusal') break;
+    const text = response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n')
+      .trim();
     const calls = response.content.filter(
       (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
     );
-    if (response.stop_reason !== 'tool_use' || calls.length === 0) {
-      const text = response.content
-        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-        .map((block) => block.text)
-        .join('\n')
-        .trim();
-      return { text, inputTokens, outputTokens, tools };
+    tools.push(...calls.map((call) => call.name));
+    const finals = calls
+      .filter((call) => call.name === final?.name)
+      .map((call) => (call.input ?? {}) as Record<string, unknown>);
+    if (finals.length > 0 || response.stop_reason !== 'tool_use' || calls.length === 0) {
+      return { text, inputTokens, outputTokens, tools, finals };
     }
 
     // O conteúdo inteiro volta (com os blocos de raciocínio), e os resultados numa mensagem só.
     messages.push({ role: 'assistant', content: response.content });
-    tools.push(...calls.map((call) => call.name));
     const results = await Promise.all(
       calls.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
         const handler = QUERY_HANDLERS[call.name];
@@ -225,5 +254,14 @@ export async function answerQuestion(question: string, ctx: AnswerContext): Prom
     );
     messages.push({ role: 'user', content: results });
   }
-  return { text: '', inputTokens, outputTokens, tools };
+  return { text: '', inputTokens, outputTokens, tools, finals: [] };
+}
+
+/** Responde às perguntas do pedido. Lança erro se o modelo falhar. */
+export async function answerQuestion(question: string, ctx: AnswerContext): Promise<AnswerResult> {
+  const { finals: _finals, ...result } = await runToolLoop(ctx, {
+    system: answerPrompt(ctx),
+    messages: conversation(ctx, question),
+  });
+  return result;
 }

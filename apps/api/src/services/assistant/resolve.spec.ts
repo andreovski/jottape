@@ -13,7 +13,7 @@ import {
   resolveDate,
   resolveItem,
 } from './resolve';
-import { extractMoney, replyText, restoreMoney } from './text';
+import { CHANGE_FAILED, extractMoney, replyText, restoreMoney } from './text';
 
 const accounts: AccountOption[] = [
   { id: 'a-nubank', name: 'Nubank', type: 'CHECKING' },
@@ -217,6 +217,16 @@ describe('resolveItem', () => {
 });
 
 describe('replyText', () => {
+  it('mudança pede confirmação, e sem mudança repassa o que o Haiku disse', () => {
+    expect(replyText([{ type: 'change', saved: false, missing: [] }], ['change'])).toBe(
+      'Confira a mudança e confirme.'
+    );
+    expect(replyText([], ['change'], 'Achei dois Uber ontem. Qual deles?')).toBe(
+      'Achei dois Uber ontem. Qual deles?'
+    );
+    expect(replyText([], ['change'])).toBe(CHANGE_FAILED);
+  });
+
   it('fala do que salvou, do que falta e do que ainda não sabe fazer', () => {
     expect(replyText([{ type: 'transaction', saved: true, missing: [] }], [])).toBe(
       'Pronto, salvei.'

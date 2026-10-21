@@ -83,7 +83,9 @@ async function transactions(ctx: QueryContext, input: Record<string, unknown>) {
       ...(search ? { description: { contains: search, mode: 'insensitive' as const } } : {}),
     },
     select: {
+      id: true,
       date: true,
+      createdAt: true,
       description: true,
       amountCents: true,
       kind: true,
@@ -99,14 +101,17 @@ async function transactions(ctx: QueryContext, input: Record<string, unknown>) {
     ate: to,
     ...summarizeLedger(
       rows.map((r) => ({
+        id: r.id,
         date: fromDbDate(r.date),
+        createdAt: r.createdAt.toISOString(),
         description: r.description,
         amountCents: r.amountCents,
         kind: r.kind,
         status: r.status,
         category: r.categoryId ? (categoryName.get(r.categoryId) ?? null) : null,
         account: accountName.get(r.accountId) ?? '',
-      }))
+      })),
+      input.ordem === 'recentes' ? 'recentes' : 'valor'
     ),
   };
 }
@@ -214,8 +219,11 @@ async function agenda(ctx: QueryContext, input: Record<string, unknown>) {
     de: from,
     ate: to,
     eventos: occurrences.slice(0, 60).map((o) => {
+      // id + ocorrencia: o que a mudança precisa para mexer neste evento (ou só nesta ocorrência).
+      const ids = { id: o.eventId, ocorrencia: o.isRecurring ? o.occurrenceStart : null };
       if (o.allDay) {
         return {
+          ...ids,
           titulo: o.title,
           data: o.startAt.slice(0, 10),
           dia_inteiro: true,
@@ -224,6 +232,7 @@ async function agenda(ctx: QueryContext, input: Record<string, unknown>) {
       }
       const start = wallClock(o.startAt, ctx.timezone);
       return {
+        ...ids,
         titulo: o.title,
         data: start.date,
         inicio: start.time,
@@ -262,6 +271,7 @@ async function tasks(ctx: QueryContext, input: Record<string, unknown>) {
   return {
     quantidade: rows.length,
     tarefas: rows.slice(0, 40).map((t) => ({
+      id: t.id,
       titulo: t.title,
       lista: name.get(t.listId) ?? null,
       prazo: t.dueAt

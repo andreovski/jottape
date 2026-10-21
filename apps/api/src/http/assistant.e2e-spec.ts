@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { answerQuestion } from '@/services/assistant/answer';
+import { buildChange, planChanges } from '@/services/assistant/change';
 import { extractItems } from '@/services/assistant/haiku';
 import { askJev } from '@/services/assistant/jev';
 import { QUERY_HANDLERS } from '@/services/assistant/queries';
@@ -20,6 +21,11 @@ import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
 vi.mock('@/services/assistant/haiku', () => ({ extractItems: vi.fn() }));
 vi.mock('@/services/assistant/jev', () => ({ askJev: vi.fn() }));
 vi.mock('@/services/assistant/answer', () => ({ answerQuestion: vi.fn() }));
+// A busca do item é do Haiku; a conferência da proposta (buildChange) é a de verdade.
+vi.mock('@/services/assistant/change', async (original) => ({
+  ...(await original<typeof import('@/services/assistant/change')>()),
+  planChanges: vi.fn(),
+}));
 
 // 20/10/2026, 17:00 em São Paulo.
 const NOW = new Date('2026-10-20T20:00:00Z');
@@ -68,6 +74,7 @@ describe('assistente', () => {
     vi.mocked(extractItems).mockReset();
     vi.mocked(askJev).mockReset();
     vi.mocked(answerQuestion).mockReset();
+    vi.mocked(planChanges).mockReset();
     await resetDatabase();
     const login = await loginAsOwner(app);
     cookieHeader = login.cookie;
@@ -571,5 +578,226 @@ describe('assistente', () => {
     expect(state.messages.at(-1)!.trace).toEqual(trace);
     // Os passos ficam gravados em toda resposta; só a entrega depende de quem pede.
     expect(state.messages[1].trace).not.toBeNull();
+  });
+  describe('mudanças', () => {
+    /** O que o Haiku "propôs": o resto dos campos vai null. */
+    const proposal = (fields: Record<string, unknown>) => ({
+      ocorrencia: null,
+      acao: 'editar',
+      descricao: null,
+      valor_centavos: null,
+      data: null,
+      hora_inicio: null,
+      hora_fim: null,
+      categoria: null,
+      conta: null,
+      local: null,
+      sem_prazo: false,
+      ...fields,
+    });
+
+    const changeRequest = (text: string, proposals: Record<string, unknown>[]) => {
+      vi.mocked(extractItems).mockResolvedValue({
+        items: [item({ intent: 'change', excerpt: text, amountCents: null })],
+        inputTokens: 900,
+        outputTokens: 80,
+      });
+      vi.mocked(planChanges).mockImplementation(async (_text, ctx) => {
+        const drafts = [];
+        for (const p of proposals) {
+          const draft = await buildChange(ctx, p);
+          if (draft) drafts.push(draft);
+        }
+        return {
+          text: drafts.length ? '' : 'Não achei esse lançamento.',
+          inputTokens: 2000,
+          outputTokens: 100,
+          tools: ['lancamentos', 'propor_mudanca'],
+          drafts,
+        };
+      });
+      return send(text);
+    };
+
+    it('muda o valor do lançamento só com a confirmação e desfaz', async () => {
+      const [uber] = (
+        await api.post('/transactions', {
+          kind: 'EXPENSE',
+          amountCents: 3000,
+          date: '2026-10-19',
+          accountId: nubank.id,
+          description: 'Uber',
+        })
+      ).json() as TransactionResponse[];
+
+      const reply = await changeRequest('o uber de ontem foi 35', [
+        proposal({ alvo: 'lancamento', id: uber.id, valor_centavos: 3500 }),
+      ]);
+      expect(reply.messages[1].text).toBe('Confira a mudança e confirme.');
+      const [card] = reply.messages[1].cards;
+      expect(card.status).toBe('DRAFT');
+      expect(card.draft).toMatchObject({
+        type: 'change',
+        target: 'transaction',
+        action: 'update',
+        title: 'Uber',
+        diffs: [{ field: 'amount', before: 3000, after: 3500 }],
+      });
+      // Nada muda antes de confirmar.
+      expect(
+        (await prisma.transaction.findUniqueOrThrow({ where: { id: uber.id } })).amountCents
+      ).toBe(3000);
+
+      const saved = (
+        await api.post(`/assistant/cards/${card.id}/save`, {})
+      ).json() as AssistantCardResponse;
+      expect(saved.status).toBe('SAVED');
+      expect(
+        (await prisma.transaction.findUniqueOrThrow({ where: { id: uber.id } })).amountCents
+      ).toBe(3500);
+
+      const undone = (
+        await api.post(`/assistant/cards/${card.id}/undo`)
+      ).json() as AssistantCardResponse;
+      expect(undone.status).toBe('UNDONE');
+      expect(
+        (await prisma.transaction.findUniqueOrThrow({ where: { id: uber.id } })).amountCents
+      ).toBe(3000);
+    });
+
+    it('apaga o lançamento e não deixa desfazer', async () => {
+      const [uber] = (
+        await api.post('/transactions', {
+          kind: 'EXPENSE',
+          amountCents: 3000,
+          date: '2026-10-19',
+          accountId: nubank.id,
+          description: 'Uber',
+        })
+      ).json() as TransactionResponse[];
+      const [card] = (
+        await changeRequest('apaga o último lançamento', [
+          proposal({ alvo: 'lancamento', id: uber.id, acao: 'apagar' }),
+        ])
+      ).messages[1].cards;
+      expect(card.draft).toMatchObject({ action: 'delete', diffs: [], revert: null });
+
+      await api.post(`/assistant/cards/${card.id}/save`, {});
+      expect(await prisma.transaction.count()).toBe(0);
+      expect((await api.post(`/assistant/cards/${card.id}/undo`)).statusCode).toBe(409);
+    });
+
+    it('não mexe no que é de outro usuário e repassa o que o Haiku disse', async () => {
+      const other = await prisma.user.create({
+        data: { email: 'outra@example.com', name: 'Outra', timezone: 'America/Sao_Paulo' },
+      });
+      const account = await prisma.account.create({
+        data: { userId: other.id, name: 'Dela', type: 'CHECKING' },
+      });
+      const theirs = await prisma.transaction.create({
+        data: {
+          userId: other.id,
+          accountId: account.id,
+          kind: 'EXPENSE',
+          amountCents: 1000,
+          description: 'Dela',
+          date: new Date('2026-10-19T00:00:00Z'),
+          status: 'DONE',
+        },
+      });
+      const reply = await changeRequest('apaga o lançamento', [
+        proposal({ alvo: 'lancamento', id: theirs.id, acao: 'apagar' }),
+      ]);
+      expect(reply.messages[1].cards).toHaveLength(0);
+      expect(reply.messages[1].text).toBe('Não achei esse lançamento.');
+      expect(await prisma.transaction.count({ where: { userId: other.id } })).toBe(1);
+    });
+
+    it('muda o horário do evento mantendo a duração', async () => {
+      const event = (
+        await api.post('/events', {
+          title: 'Dentista',
+          startAt: '2026-10-23T18:00:00.000Z',
+          endAt: '2026-10-23T19:00:00.000Z',
+          reminders: [],
+        })
+      ).json();
+      const [card] = (
+        await changeRequest('muda o dentista para as 16h', [
+          proposal({ alvo: 'evento', id: event.id, hora_inicio: '16:00' }),
+        ])
+      ).messages[1].cards;
+      expect(card.draft).toMatchObject({
+        target: 'event',
+        date: '2026-10-23',
+        diffs: [
+          { field: 'start', before: '15:00', after: '16:00' },
+          { field: 'end', before: '16:00', after: '17:00' },
+        ],
+      });
+
+      await api.post(`/assistant/cards/${card.id}/save`, {});
+      expect(await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({
+        startAt: new Date('2026-10-23T19:00:00.000Z'),
+        endAt: new Date('2026-10-23T20:00:00.000Z'),
+      });
+      await api.post(`/assistant/cards/${card.id}/undo`);
+      expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).startAt).toEqual(
+        new Date('2026-10-23T18:00:00.000Z')
+      );
+    });
+
+    it('em evento que se repete, mexe só na ocorrência', async () => {
+      // Toda segunda às 9h de São Paulo.
+      const event = (
+        await api.post('/events', {
+          title: 'Academia',
+          startAt: '2026-10-19T12:00:00.000Z',
+          endAt: '2026-10-19T13:00:00.000Z',
+          rrule: 'FREQ=WEEKLY;BYDAY=MO',
+          reminders: [],
+        })
+      ).json();
+      const [card] = (
+        await changeRequest('a academia de segunda que vem é às 19h', [
+          proposal({
+            alvo: 'evento',
+            id: event.id,
+            ocorrencia: '2026-10-26T12:00:00.000Z',
+            hora_inicio: '19:00',
+          }),
+        ])
+      ).messages[1].cards;
+      expect(card.draft).toMatchObject({ date: '2026-10-26' });
+      await api.post(`/assistant/cards/${card.id}/save`, {});
+
+      const list = (
+        await api.get('/events?from=2026-10-18T00:00:00Z&to=2026-11-03T00:00:00Z')
+      ).json() as { startAt: string }[];
+      expect(list.map((o) => o.startAt)).toEqual([
+        '2026-10-19T12:00:00.000Z',
+        '2026-10-26T22:00:00.000Z',
+        '2026-11-02T12:00:00.000Z',
+      ]);
+    });
+
+    it('conclui a tarefa e desfaz', async () => {
+      const task = (await api.post('/tasks', { title: 'Pagar o IPVA' })).json();
+      const [card] = (
+        await changeRequest('marca a tarefa do IPVA como feita', [
+          proposal({ alvo: 'tarefa', id: task.id, acao: 'concluir' }),
+        ])
+      ).messages[1].cards;
+      expect(card.draft).toMatchObject({ action: 'complete', title: 'Pagar o IPVA' });
+
+      await api.post(`/assistant/cards/${card.id}/save`, {});
+      expect(
+        (await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).completedAt
+      ).not.toBeNull();
+      await api.post(`/assistant/cards/${card.id}/undo`);
+      expect(
+        (await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).completedAt
+      ).toBeNull();
+    });
   });
 });
