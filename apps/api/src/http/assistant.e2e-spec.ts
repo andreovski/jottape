@@ -49,6 +49,7 @@ function item(overrides: Partial<ExtractedItem> = {}): ExtractedItem {
     allDay: false,
     list: null,
     location: null,
+    notes: null,
     confidence: 0.95,
     ...overrides,
   };
@@ -306,6 +307,7 @@ describe('assistente', () => {
           time: '15:00',
           account: null,
           category: null,
+          notes: 'Levar os exames',
         }),
       ],
       inputTokens: 900,
@@ -319,6 +321,7 @@ describe('assistente', () => {
     expect(card.status).toBe('SAVED');
     expect(card.event).toMatchObject({
       title: 'Dentista',
+      description: 'Levar os exames',
       allDay: false,
       // 15h em São Paulo (UTC-3).
       startAt: '2026-10-21T18:00:00.000Z',
@@ -366,6 +369,10 @@ describe('assistente', () => {
     ).json() as AssistantCardResponse;
     expect(saved.status).toBe('SAVED');
     expect(saved.event?.title).toBe('Reunião de equipe');
+    // Completar o horário não é correção; trocar o título é.
+    const row = await prisma.assistantCard.findUniqueOrThrow({ where: { id: card.id } });
+    expect(row).toMatchObject({ edited: true, corrections: ['title'] });
+    expect(row.saved).toMatchObject({ event: { title: 'Reunião de equipe' } });
   });
 
   it('anota tarefa na lista com prazo e desfaz', async () => {
@@ -385,6 +392,7 @@ describe('assistente', () => {
           description: 'Trocar a lâmpada',
           date: '2026-10-23',
           list: 'Casa',
+          notes: 'A da cozinha',
         }),
       ],
       inputTokens: 900,
@@ -404,6 +412,7 @@ describe('assistente', () => {
     expect(card.task).toMatchObject({
       title: 'Trocar a lâmpada',
       listId: list.id,
+      notes: 'A da cozinha',
       hasTime: false,
       // Meia-noite de sexta em São Paulo.
       dueAt: '2026-10-23T03:00:00.000Z',
@@ -881,6 +890,13 @@ describe('assistente', () => {
       const state = (await api.get('/assistant')).json() as AssistantStateResponse;
       expect(state.messages[1].reported).toBe(true);
 
+      // O valor trocado no cartão conta como correção; a falha do Jev vem com o erro.
+      const [before] = ((await api.get('/assistant/admin')).json() as AssistantAdminResponse).users;
+      expect(before.corrections).toEqual({ amount: 1 });
+      expect(before.failures).toEqual([
+        { engine: 'jev', error: 'timeout', at: expect.any(String) },
+      ]);
+
       // A conversa some, o relato fica.
       await api.delete('/assistant/messages');
       const panel = (await api.get('/assistant/admin')).json() as AssistantAdminResponse;
@@ -898,6 +914,20 @@ describe('assistente', () => {
         ['jev', 'failed'],
       ]);
       expect(panel.users[0].month).toMatchObject({ requests: 1 });
+      // O caso sugerido sai do cartão, por nome, no dia do pedido.
+      const suggested = panel.feedback[0].suggestedCase;
+      expect(suggested).toMatchObject({
+        text: 'gastei 32 no mercado no nubank',
+        timezone: 'America/Sao_Paulo',
+        expect: {
+          intents: ['expense'],
+          amountCents: 3500,
+          account: 'Nubank',
+          category: 'Mercado',
+        },
+      });
+      expect(suggested.context.accounts.map((a) => a.name)).toContain('Nubank');
+      expect(panel.feedback[0].testCaseId).toBeNull();
 
       const resolved = (
         await api.post(`/assistant/admin/feedback/${panel.feedback[0].id}/resolve`, {
@@ -905,6 +935,79 @@ describe('assistente', () => {
         })
       ).json() as AssistantAdminResponse;
       expect(resolved.feedback[0].resolvedAt).not.toBeNull();
+    });
+
+    it('relato vira caso de teste, que roda junto no teste de acerto', async () => {
+      owner();
+      vi.mocked(extractItems).mockResolvedValue({
+        items: [
+          item({
+            intent: 'event',
+            amountCents: null,
+            description: 'Entrega de trabalho',
+            date: '2026-10-21',
+            time: '14:00',
+            account: null,
+            category: null,
+          }),
+        ],
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+      vi.mocked(askJev).mockResolvedValue(null);
+      const text = 'entrega de trabalho amanhã às 14h, nas notas: pela plataforma';
+      const answer = (await send(text)).messages[1];
+      await api.post(`/assistant/messages/${answer.id}/feedback`, { note: 'faltou a nota' });
+      const [report] = ((await api.get('/assistant/admin')).json() as AssistantAdminResponse)
+        .feedback;
+      expect(report.suggestedCase.expect).toEqual({
+        intents: ['event'],
+        date: '2026-10-21',
+        allDay: false,
+        time: '14:00',
+        endTime: '15:00',
+        notes: false,
+      });
+
+      // O dono corrige o que estava errado (a nota) e salva.
+      const created = (
+        await api.post('/assistant/admin/cases', {
+          ...report.suggestedCase,
+          feedbackId: report.id,
+          expect: { ...report.suggestedCase.expect, notes: true },
+        })
+      ).json() as AssistantAdminResponse;
+      expect(created.testCases).toHaveLength(1);
+      expect(created.testCases[0]).toMatchObject({ text, active: true, feedbackId: report.id });
+      expect(created.feedback[0]).toMatchObject({ testCaseId: created.testCases[0].id });
+      expect(created.feedback[0].resolvedAt).not.toBeNull();
+
+      // Roda com o dia e os nomes do relato; sem a nota, falha.
+      const result = (
+        await api.post('/assistant/admin/benchmark')
+      ).json() as AssistantBenchmarkResponse;
+      expect(result.total).toBe(51);
+      expect(result.cases[50]).toMatchObject({
+        text,
+        source: 'real',
+        caseId: created.testCases[0].id,
+        passed: false,
+        problems: ['notes'],
+      });
+
+      // Desligado, não roda; apagado, some.
+      await api.patch(`/assistant/admin/cases/${created.testCases[0].id}`, { active: false });
+      expect(
+        ((await api.post('/assistant/admin/benchmark')).json() as AssistantBenchmarkResponse).total
+      ).toBe(50);
+      const deleted = (
+        await api.delete(`/assistant/admin/cases/${created.testCases[0].id}`)
+      ).json() as AssistantAdminResponse;
+      expect(deleted.testCases).toHaveLength(0);
+
+      const exported = await api.get('/assistant/admin/export');
+      expect(exported.headers['content-disposition']).toMatch(/jotta-relatos-\d{4}-\d{2}\.json/);
+      expect(exported.json()).toMatchObject({ feedback: [{ request: text }] });
     });
 
     it('conta salvos sozinhos, editados, desfeitos e falhas', async () => {
@@ -947,6 +1050,9 @@ describe('assistente', () => {
         haikuFailed: 1,
         jevFailed: 0,
       });
+      expect(me.failures).toEqual([
+        { engine: 'haiku', error: 'overloaded', at: expect.any(String) },
+      ]);
     });
 
     it('roda o teste de acerto e registra o custo fora do limite', async () => {

@@ -50,6 +50,8 @@ export interface ExtractedItem {
   /** Lista de tarefas que o pedido nomeou. */
   list: string | null;
   location: string | null;
+  /** O que anotar no evento ou na tarefa. */
+  notes: string | null;
   confidence: number;
 }
 
@@ -210,6 +212,8 @@ function finish(
 const kindConfidence = (item: ExtractedItem, jev: JevAnswers | null) =>
   jev?.kind ? (jev.kind.probabilities[item.intent] ?? 0) : 1;
 
+const notesOf = (item: ExtractedItem) => item.notes?.trim().slice(0, 2000) || null;
+
 const isTime = (value: string | null): value is string =>
   Boolean(value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
 
@@ -346,6 +350,7 @@ export function resolveEvent({
     endTime,
     allDay,
     location: item.location?.trim().slice(0, 300) || null,
+    notes: notesOf(item),
   };
   const missing: AssistantMissing[] = !allDay && !startTime ? ['time'] : [];
   return finish(draft, missing, { kind: kindConfidence(item, jev) }, item, Boolean(jev));
@@ -384,6 +389,7 @@ export function resolveTask({
     date,
     time: date && isTime(item.time) ? item.time : null,
     listId: list.value?.id ?? null,
+    notes: notesOf(item),
   };
   return finish(draft, [], confidences, item, Boolean(jev));
 }

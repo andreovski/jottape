@@ -186,10 +186,13 @@ export function PrivacyPage() {
 
       <p>
         O dono do app vê, para cada pessoa, quantos pedidos ela fez ao Jotta, o custo estimado e
-        quantos itens foram salvos, desfeitos ou descartados, sem o texto dos pedidos. Se você tocar
-        em &quot;Isso está errado&quot; numa resposta, o pedido, a resposta, o que o Jotta montou e
-        o seu comentário vão para o dono do app, para melhorar o Jotta, e ficam guardados mesmo
-        depois que a conversa some.
+        quantos itens foram salvos, desfeitos ou descartados, quais campos foram corrigidos antes de
+        salvar (só a contagem, como &quot;conta&quot; ou &quot;categoria&quot;) e o erro técnico das
+        falhas, sem o texto dos pedidos. Se você tocar em &quot;Isso está errado&quot; numa
+        resposta, o pedido, a resposta, o que o Jotta montou, o seu comentário e os nomes das suas
+        contas, categorias e listas naquele dia vão para o dono do app, para melhorar o Jotta, e
+        ficam guardados mesmo depois que a conversa some. O dono pode transformar esse relato num
+        caso de teste do Jotta.
       </p>
 
       <p>

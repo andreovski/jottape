@@ -45,6 +45,7 @@ function item(
     allDay: false,
     list: null,
     location: null,
+    notes: null,
     confidence: 0.95,
     ...overrides,
   } as ExtractedItem & { intent: FinanceIntent };
@@ -276,6 +277,7 @@ describe('resolveEvent', () => {
       endTime: '16:00',
       allDay: false,
       location: null,
+      notes: null,
     });
     expect(result.autoSave).toBe(true);
   });
@@ -320,8 +322,19 @@ describe('resolveTask', () => {
       date: null,
       time: null,
       listId: 'l-mercado',
+      notes: null,
     });
     expect(result.autoSave).toBe(true);
+  });
+
+  it('leva as notas do pedido, sem espaço sobrando', () => {
+    const result = resolveTask({
+      item: task({ description: 'Entregar o trabalho', notes: '  Pela plataforma  ' }),
+      lists,
+      jev: null,
+      today: TODAY,
+    });
+    expect(result.draft).toMatchObject({ notes: 'Pela plataforma' });
   });
 
   it('lista que não existe cai na Entrada e fica marcada', () => {

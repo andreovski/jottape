@@ -1,7 +1,9 @@
 import {
   assistantFeedbackBodySchema,
   assistantMessageBodySchema,
+  createAssistantTestCaseBodySchema,
   saveAssistantCardBodySchema,
+  updateAssistantTestCaseBodySchema,
   updateAssistantUserBodySchema,
 } from '@jottape/schemas';
 import type { FastifyInstance } from 'fastify';
@@ -21,8 +23,12 @@ import {
 import {
   adminOverview,
   benchmark,
+  createTestCase,
+  deleteTestCase,
+  exportAdmin,
   resolveFeedback,
   updateAssistantUser,
+  updateTestCase,
 } from '@/services/assistant/admin';
 import { AUDIO_TYPES } from '@/services/assistant/transcribe';
 
@@ -116,4 +122,29 @@ export async function assistantRoutes(app: FastifyInstance) {
   });
 
   app.post('/assistant/admin/benchmark', async (request) => benchmark(request.userId));
+
+  app.get('/assistant/admin/export', async (request, reply) => {
+    const data = await exportAdmin(request.userId);
+    return reply
+      .header('content-disposition', `attachment; filename="jotta-relatos-${data.month}.json"`)
+      .send(data);
+  });
+
+  app.post('/assistant/admin/cases', async (request) =>
+    createTestCase(request.userId, createAssistantTestCaseBodySchema.parse(request.body))
+  );
+
+  app.patch('/assistant/admin/cases/:id', async (request) => {
+    const { id } = idParams.parse(request.params);
+    return updateTestCase(
+      request.userId,
+      id,
+      updateAssistantTestCaseBodySchema.parse(request.body)
+    );
+  });
+
+  app.delete('/assistant/admin/cases/:id', async (request) => {
+    const { id } = idParams.parse(request.params);
+    return deleteTestCase(request.userId, id);
+  });
 }

@@ -464,6 +464,7 @@ function EventCard({ card, draft }: { card: AssistantCardResponse; draft: Assist
       ...base,
       title: draft.title,
       location: draft.location ?? '',
+      notes: draft.notes ?? '',
       allDay: draft.allDay,
       ...(draft.startTime ? { startTime: draft.startTime } : {}),
       ...(draft.startTime ? { endTime: draft.endTime ?? draft.startTime } : {}),
@@ -484,6 +485,7 @@ function EventCard({ card, draft }: { card: AssistantCardResponse; draft: Assist
           uncertain: card.missing.includes('time'),
         },
         ...(draft.location ? [{ label: 'Local', value: draft.location }] : []),
+        ...(draft.notes ? [{ label: 'Notas', value: draft.notes }] : []),
       ]}
       savedLabel='Na agenda'
       prompt={
@@ -532,6 +534,7 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
           uncertain: card.uncertain.includes('list'),
         },
         { label: 'Prazo', value: due },
+        ...(draft.notes ? [{ label: 'Notas', value: draft.notes }] : []),
       ]}
       savedLabel='Nas tarefas'
       sheet={
@@ -546,6 +549,7 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
               title: draft.title,
               date: draft.date ?? undefined,
               time: draft.time ?? undefined,
+              notes: draft.notes ?? undefined,
             }}
             onCreate={(task) => actions.saveFrom({ task })}
           />

@@ -5,8 +5,10 @@ import type {
   AssistantMessageBody,
   AssistantReplyResponse,
   AssistantStateResponse,
+  CreateAssistantTestCaseBody,
   SaveAssistantCardBody,
   TranscriptionResponse,
+  UpdateAssistantTestCaseBody,
   UpdateAssistantUserBody,
 } from '@jottape/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -175,7 +177,41 @@ export const useResolveFeedback = () =>
       .json<AssistantAdminResponse>()
   );
 
-/** Os 50 pedidos levam perto de um minuto. */
+/** Relato vira caso de teste (o relato fica resolvido). */
+export const useCreateTestCase = () =>
+  useAdminMutation((body: CreateAssistantTestCaseBody) =>
+    api.post('assistant/admin/cases', { json: body }).json<AssistantAdminResponse>()
+  );
+
+export const useUpdateTestCase = () =>
+  useAdminMutation(({ id, body }: { id: string; body: UpdateAssistantTestCaseBody }) =>
+    api.patch(`assistant/admin/cases/${id}`, { json: body }).json<AssistantAdminResponse>()
+  );
+
+export const useDeleteTestCase = () =>
+  useAdminMutation((id: string) =>
+    api.delete(`assistant/admin/cases/${id}`).json<AssistantAdminResponse>()
+  );
+
+/** Baixa relatos, casos e números num JSON. */
+export function useExportAdmin() {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await api.get('assistant/admin/export');
+      const name =
+        response.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] ??
+        'jotta-relatos.json';
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
+}
+
+/** Os 50 pedidos (e os casos reais) levam perto de um minuto. */
 export function useRunBenchmark() {
   const client = useQueryClient();
   return useMutation({

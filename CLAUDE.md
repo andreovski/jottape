@@ -91,10 +91,14 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   A conversa some em 30 dias. Pedido ditado grava `voiceSeconds` (a linha do tempo mostra "voz · 3 s").
   Beta: o dono convida pelo painel (Ajustes › Beta do Assistente, `assistant/admin.ts`), que liga
   `User.assistantAccess` e muda `assistantLimit`; vê pedidos e custo do mês (`AssistantUsage`) e os
-  números de 30 dias dos cartões (`autoSaved`, `edited`) e dos `trace`. "Isso está errado" copia o
-  pedido, a resposta e os passos em `AssistantFeedback`, que não some com a conversa. O teste de
-  acerto (`benchmark.ts`, 50 pedidos num dia fixo) roda o Haiku e o Jev de verdade e grava o custo
-  como `BENCHMARK`, fora do limite.
+  números de 30 dias dos cartões (`autoSaved`, `edited`, e em `corrections` os campos trocados
+  antes de salvar, comparados por `corrections.ts`) e dos `trace` (passo com falha leva `error`).
+  "Isso está errado" copia o pedido, a resposta, os passos e o contexto do dia (nomes das contas,
+  categorias e listas) em `AssistantFeedback`, que não some com a conversa; o dono transforma o
+  relato em `AssistantTestCase` (resposta certa por nome). O teste de acerto (`benchmark.ts`, 50
+  pedidos num dia fixo mais os casos ativos, cada um no seu dia e com os seus nomes) roda o Haiku
+  e o Jev de verdade e grava o custo como `BENCHMARK`, fora do limite. Evento e tarefa levam
+  `notes` (descrição do evento, notas da tarefa).
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.
 

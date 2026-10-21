@@ -669,6 +669,10 @@ model AssistantCard {
   autoSaved      Boolean             @default(false) @map("auto_saved")
   /// Salvo pela folha de edição ou com o que o usuário trocou no cartão.
   edited         Boolean             @default(false)
+  /// Campos que o usuário trocou antes de salvar ("account", "category"...).
+  corrections    String[]            @default([])
+  /// O que foi salvo pela folha, quando diferente do rascunho (para ver e aprender a correção).
+  saved          Json?
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 
@@ -720,13 +724,40 @@ model AssistantFeedback {
   /// Os rascunhos dos cartões da resposta, como estavam no relato.
   cards      Json      @default("[]")
   note       String?
+  /// O dia (AAAA-MM-DD) e o fuso do pedido, e os nomes das contas, categorias e listas daquele
+  /// momento: o que o caso de teste precisa para rodar igual depois.
+  today      String?
+  timezone   String?
+  context    Json?
   resolvedAt DateTime? @map("resolved_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testCase AssistantTestCase?
 
   @@index([createdAt])
   @@map("assistant_feedback")
+}
+
+/// Caso de teste vindo de um relato: o pedido, o contexto do dia e a resposta certa. O teste de
+/// acerto roda os ativos junto com os fixos.
+model AssistantTestCase {
+  id         String   @id @default(uuid())
+  feedbackId String?  @unique @map("feedback_id")
+  text       String
+  today      String
+  timezone   String
+  /// Nomes das contas (com tipo), categorias (com tipo) e listas.
+  context    Json
+  /// O que o primeiro item precisa ter (nomes, não ids).
+  expect     Json
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  feedback AssistantFeedback? @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+
+  @@map("assistant_test_cases")
 }
 
 /// Insights de IA do briefing: a última análise de cada usuário, guardada até a próxima. Datas
