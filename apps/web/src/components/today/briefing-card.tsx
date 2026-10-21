@@ -26,13 +26,12 @@ import { cn } from '@/lib/utils';
 import { briefingCatalog } from './briefing-catalog';
 import {
   groupMoments,
-  headline,
+  highlights,
   type MomentKey,
   skyGradient,
   type SkyKind,
   type SkyTheme,
   skyTheme,
-  topInsight,
 } from './sky';
 import { STOCK_PERIOD_LABELS, StockList } from './stock-chart';
 
@@ -393,6 +392,99 @@ function BriefingStory({
  * Briefing fechado: um card com o céu de agora e o resumo do dia. Tocando, abre a linha do
  * tempo completa em tela cheia.
  */
+const HIGHLIGHT_KEY = 'jottape:briefing-destaque';
+const HIGHLIGHT_INTERVAL = 7000;
+
+/** O destaque visto por último, para a próxima visita começar no seguinte. */
+function readLast() {
+  try {
+    const last = Number(localStorage.getItem(HIGHLIGHT_KEY));
+    return Number.isInteger(last) ? last : -1;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * Os destaques do card fechado, um de cada vez, começando no seguinte ao da última visita. Troca
+ * sozinho a cada 7 s (parado para quem pede menos movimento). Todos ficam empilhados na mesma
+ * célula, então o card tem a altura do maior e não pula na troca.
+ */
+function HighlightSlides({
+  items,
+  format,
+}: {
+  items: BriefingItem[];
+  format: (cents: number) => string;
+}) {
+  const count = items.length;
+  const [index, setIndex] = useState(() => readLast() + 1);
+  const current = index % count;
+
+  // Conta como visto depois de um segundo na tela: montar e desmontar na hora não avança.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(HIGHLIGHT_KEY, String(current));
+      } catch {
+        // Sem armazenamento (aba privada): só não lembra.
+      }
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [current]);
+
+  useEffect(() => {
+    if (count < 2 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => setIndex((i) => (i + 1) % count), HIGHLIGHT_INTERVAL);
+    return () => window.clearInterval(timer);
+  }, [count]);
+
+  return (
+    <>
+      <div className='grid'>
+        {items.map((item, i) => {
+          // No card fechado, só os compromissos que ainda vêm (até 3); a timeline mostra o dia todo.
+          const upcoming = item.events?.filter((event) => event.status !== 'past') ?? [];
+          return (
+            <div
+              key={`${item.plugin}-${i}`}
+              aria-hidden={i !== current}
+              className={cn(
+                '[grid-area:1/1] motion-safe:transition-opacity motion-safe:duration-500',
+                i === current ? 'opacity-100' : 'pointer-events-none opacity-0'
+              )}
+            >
+              <div className='text-footnote flex items-center gap-1 font-semibold text-white/80'>
+                {item.plugin === 'insights' && (
+                  <WandSparkles className='size-3.5' aria-label='Insight de IA' />
+                )}
+                Briefing · {briefingCatalog[item.plugin].name}
+              </div>
+              <p className='text-headline mt-1 line-clamp-3 font-semibold'>
+                <Filled item={item} format={format} />
+              </p>
+              <EventList events={upcoming} limit={3} className='text-subhead mt-2 text-white/90' />
+            </div>
+          );
+        })}
+      </div>
+      {count > 1 && (
+        <div className='mt-3 flex gap-1.5' aria-hidden>
+          {items.map((item, i) => (
+            <span
+              key={`${item.plugin}-${i}`}
+              className={cn(
+                'h-1.5 rounded-full bg-white/45 motion-safe:transition-all',
+                i === current ? 'w-4 bg-white' : 'w-1.5'
+              )}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function BriefingCard({ format }: { format: (cents: number) => string }) {
   const briefing = useBriefing();
   const router = useRouter();
@@ -418,11 +510,6 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
     );
   }
 
-  const top = headline(data.items);
-  const insight = topInsight(data.items, top);
-  // No card fechado, só o que ainda vem (até 3); a timeline mostra o dia inteiro.
-  const upcoming = top.events?.filter((event) => event.status !== 'past') ?? [];
-
   function close(href?: string) {
     setOpen(false);
     if (href) router.history.push(href);
@@ -438,19 +525,7 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
           <SkyBackdrop theme={theme} className='absolute inset-0' />
           <div className='relative flex min-h-[132px] gap-4 p-4'>
             <div className='flex min-w-0 flex-1 flex-col'>
-              <div className='text-footnote font-semibold text-white/80'>Briefing</div>
-              <p className='text-headline mt-1 line-clamp-3 font-semibold'>
-                <Filled item={top} format={format} />
-              </p>
-              <EventList events={upcoming} limit={3} className='text-subhead mt-2 text-white/90' />
-              {insight && (
-                <p className='text-subhead mt-2 flex gap-1.5 text-white/90'>
-                  <WandSparkles className='mt-0.5 size-4 shrink-0' aria-label='Insight de IA' />
-                  <span className='line-clamp-2'>
-                    <Filled item={insight} format={format} />
-                  </span>
-                </p>
-              )}
+              <HighlightSlides items={highlights(data.items)} format={format} />
               <div className='text-footnote mt-auto flex items-center gap-1 pt-2 text-white/75'>
                 {data.items.length === 1 ? '1 destaque' : `${data.items.length} destaques`}
                 <ChevronRight className='size-4' />

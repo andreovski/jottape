@@ -122,13 +122,20 @@ export function groupMoments(items: BriefingItem[], auto = true): Moment[] {
   return moments;
 }
 
-/** Frase do card fechado: o resumo do dia, se estiver ligado; senão a primeira. */
-export function headline(items: BriefingItem[]) {
-  return items.find((item) => item.plugin === 'day') ?? items[0];
-}
+/** Quantos destaques o card fechado alterna, no máximo. */
+export const MAX_HIGHLIGHTS = 5;
 
-/** O insight principal da IA, que o card fechado mostra embaixo da frase (se não for ela). */
-export function topInsight(items: BriefingItem[], top: BriefingItem) {
-  const insight = items.find((item) => item.plugin === 'insights' && item.href);
-  return insight && insight !== top ? insight : null;
+/**
+ * O que o card fechado alterna: o resumo do dia, o insight da IA (já pronto) e os alertas
+ * (tom ruim antes de atenção), nessa ordem. Sem nada disso, a primeira frase.
+ */
+export function highlights(items: BriefingItem[]): BriefingItem[] {
+  const picked = [
+    ...items.filter((item) => item.plugin === 'day'),
+    ...items.filter((item) => item.plugin === 'insights' && item.href),
+    ...items.filter((item) => item.plugin !== 'day' && item.tone === 'bad'),
+    ...items.filter((item) => item.plugin !== 'day' && item.tone === 'warning'),
+  ];
+  const unique = [...new Set(picked)].slice(0, MAX_HIGHLIGHTS);
+  return unique.length > 0 ? unique : items.slice(0, 1);
 }
