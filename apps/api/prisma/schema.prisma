@@ -56,6 +56,10 @@ model User {
   assistantUsage    AssistantUsage[]
   assistantFeedback AssistantFeedback[]
   financeInsight    FinanceInsight?
+  pluggyCredential  PluggyCredential?
+  pluggyItems       PluggyItem[]
+  bankAccounts      BankAccount[]
+  bankMovements     BankMovement[]
 
   @@map("users")
 }
@@ -345,6 +349,7 @@ model Account {
   transactions      Transaction[]       @relation("TransactionAccount")
   incomingTransfers Transaction[]       @relation("TransactionToAccount")
   invoices          CreditCardInvoice[]
+  bankAccount       BankAccount?
 
   @@map("accounts")
 }
@@ -365,11 +370,12 @@ model Category {
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent       Category?     @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
-  children     Category[]    @relation("Subcategories")
-  transactions Transaction[]
-  budgets      Budget[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent        Category?      @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Category[]     @relation("Subcategories")
+  transactions  Transaction[]
+  budgets       Budget[]
+  bankMovements BankMovement[]
 
   @@map("categories")
 }
@@ -410,14 +416,15 @@ model Transaction {
   createdAt             DateTime          @default(now()) @map("created_at")
   updatedAt             DateTime          @updatedAt @map("updated_at")
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account     Account            @relation("TransactionAccount", fields: [accountId], references: [id], onDelete: Cascade)
-  toAccount   Account?           @relation("TransactionToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
-  category    Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  recurrence  Recurrence?        @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
-  invoice     CreditCardInvoice? @relation("InvoiceItems", fields: [invoiceId], references: [id], onDelete: SetNull)
-  paysInvoice CreditCardInvoice? @relation("InvoicePayment", fields: [paysInvoiceId], references: [id], onDelete: SetNull)
-  tasks       Task[]
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account       Account            @relation("TransactionAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount     Account?           @relation("TransactionToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  category      Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recurrence    Recurrence?        @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
+  invoice       CreditCardInvoice? @relation("InvoiceItems", fields: [invoiceId], references: [id], onDelete: SetNull)
+  paysInvoice   CreditCardInvoice? @relation("InvoicePayment", fields: [paysInvoiceId], references: [id], onDelete: SetNull)
+  tasks         Task[]
+  bankMovements BankMovement[]
 
   @@index([userId, date])
   @@index([accountId, date])
@@ -477,6 +484,112 @@ model Budget {
 
   @@unique([categoryId, month])
   @@map("budgets")
+}
+
+// ---------------------------------------------------------------- bancos (Meu Pluggy)
+
+/// Chaves da aplicação que o próprio usuário cria no painel da Pluggy para ler o Meu Pluggy dele
+/// (de graça, só contas do mesmo titular). O secret fica cifrado como os tokens do Google.
+model PluggyCredential {
+  userId                String    @id @map("user_id")
+  clientId              String    @map("client_id")
+  clientSecretEncrypted String    @map("client_secret_encrypted")
+  syncedAt              DateTime? @map("synced_at")
+  lastError             String?   @map("last_error")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("pluggy_credentials")
+}
+
+/// Um banco conectado (um "item" da Pluggy). `itemId` é o id na Pluggy.
+model PluggyItem {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  itemId    String    @map("item_id")
+  name      String
+  imageUrl  String?   @map("image_url")
+  status    String?
+  lastError String?   @map("last_error")
+  syncedAt  DateTime? @map("synced_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts BankAccount[]
+
+  @@unique([userId, itemId])
+  @@map("pluggy_items")
+}
+
+enum BankAccountType {
+  BANK
+  CREDIT
+}
+
+/// Conta ou cartão que a Pluggy enxerga. Só a ligada a uma conta do Jottape (`accountId`) traz
+/// lançamentos, e só a partir de `importFrom`.
+model BankAccount {
+  id           String          @id @default(uuid())
+  userId       String          @map("user_id")
+  itemId       String          @map("item_id")
+  externalId   String          @map("external_id")
+  name         String
+  number       String?
+  type         BankAccountType
+  balanceCents Int             @default(0) @map("balance_cents")
+  accountId    String?         @unique @map("account_id")
+  importFrom   DateTime?       @map("import_from") @db.Date
+  syncedAt     DateTime?       @map("synced_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      PluggyItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  account   Account?       @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  movements BankMovement[]
+
+  @@unique([userId, externalId])
+  @@map("bank_accounts")
+}
+
+enum BankMovementStatus {
+  PENDING
+  MATCHED
+  IMPORTED
+  IGNORED
+}
+
+/// Lançamento lido do banco. PENDING espera a revisão; MATCHED casou com um lançamento que já
+/// existia; IMPORTED virou lançamento; IGNORED foi dispensado (ou é o pagamento da fatura no cartão).
+/// Nunca é apagado enquanto a conta do banco existe: é o que impede importar duas vezes.
+model BankMovement {
+  id                  String             @id @default(uuid())
+  userId              String             @map("user_id")
+  bankAccountId       String             @map("bank_account_id")
+  externalId          String             @map("external_id")
+  kind                TransactionKind
+  amountCents         Int                @map("amount_cents")
+  date                DateTime           @db.Date
+  description         String
+  installmentNumber   Int?               @map("installment_number")
+  installmentTotal    Int?               @map("installment_total")
+  status              BankMovementStatus
+  suggestedCategoryId String?            @map("suggested_category_id")
+  transactionId       String?            @map("transaction_id")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccount       BankAccount  @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  suggestedCategory Category?    @relation(fields: [suggestedCategoryId], references: [id], onDelete: SetNull)
+  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@unique([bankAccountId, externalId])
+  @@index([userId, status])
+  @@map("bank_movements")
 }
 
 // ---------------------------------------------------------------- briefing

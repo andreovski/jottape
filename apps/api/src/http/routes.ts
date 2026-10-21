@@ -4,6 +4,7 @@ import { health } from './controllers/health';
 import { agendaRoutes } from './routes/agenda';
 import { assistantRoutes } from './routes/assistant';
 import { authRoutes } from './routes/auth';
+import { bankRoutes } from './routes/bank';
 import { briefingRoutes } from './routes/briefing';
 import { exportRoutes } from './routes/export';
 import { financeRoutes } from './routes/finance';
@@ -22,6 +23,7 @@ export async function appRoutes(app: FastifyInstance) {
   app.register(microsoftRoutes);
   app.register(pushRoutes);
   app.register(financeRoutes);
+  app.register(bankRoutes);
   app.register(agendaRoutes);
   app.register(taskRoutes);
   app.register(briefingRoutes);

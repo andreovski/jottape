@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Globe,
   KeyRound,
+  Landmark,
   LogOut,
   Moon,
   Newspaper,
@@ -30,6 +31,7 @@ import { Page } from '@/components/ios/page';
 import { Sheet } from '@/components/ios/sheet';
 import { useAssistant } from '@/features/assistant';
 import { useChangePassword, useCurrentUser, useLogout, useUpdateProfile } from '@/features/auth';
+import { useBankStatus } from '@/features/bank';
 import { useGoogleStatus } from '@/features/google';
 import { useApiHealth } from '@/features/health';
 import { isStandalone, usePush } from '@/features/push';
@@ -53,6 +55,7 @@ export function SettingsPage() {
   const update = useUpdateProfile();
   const logout = useLogout();
   const google = useGoogleStatus();
+  const bank = useBankStatus();
   const health = useApiHealth();
   const push = usePush();
   const devModeAvailable = useAssistant().data?.devMode ?? false;
@@ -189,6 +192,23 @@ export function SettingsPage() {
                 : 'Calendário, Tarefas e login'
             }
             detail={googleDetail}
+          />
+        </Link>
+        <Link to='/ajustes/bancos' className='block'>
+          <Row
+            chevron
+            leading={
+              <IconChip color='var(--green)'>
+                <Landmark />
+              </IconChip>
+            }
+            title='Bancos'
+            subtitle='Open Finance, grátis'
+            detail={
+              bank.data?.items.length
+                ? `${bank.data.items.length} ${bank.data.items.length === 1 ? 'banco' : 'bancos'}`
+                : undefined
+            }
           />
         </Link>
         <Link to='/ajustes/briefing' className='block'>
