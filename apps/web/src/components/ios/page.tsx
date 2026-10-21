@@ -8,6 +8,8 @@ interface PageProps {
   eyebrow?: ReactNode;
   /** Linha logo abaixo do título grande (o status do Jotta). */
   subtitle?: ReactNode;
+  /** Classes a mais do título, grande e pequeno (a fonte quadrada do Jotta). */
+  titleClassName?: string;
   /** Botões do canto direito da barra (ícones na cor da seção). */
   actions?: ReactNode;
   /** Botão do canto esquerdo (voltar). */
@@ -26,6 +28,7 @@ export function Page({
   title,
   eyebrow,
   subtitle,
+  titleClassName,
   actions,
   leading,
   accessory,
@@ -55,7 +58,8 @@ export function Page({
           <div
             className={cn(
               'text-headline min-w-0 flex-1 truncate transition-opacity duration-200',
-              compact ? 'opacity-100' : 'opacity-0'
+              compact ? 'opacity-100' : 'opacity-0',
+              titleClassName
             )}
             aria-hidden={!compact}
           >
@@ -73,7 +77,7 @@ export function Page({
           {eyebrow && (
             <div className='text-footnote text-tint font-semibold uppercase'>{eyebrow}</div>
           )}
-          <h1 className='text-large-title'>{title}</h1>
+          <h1 className={cn('text-large-title', titleClassName)}>{title}</h1>
           {subtitle}
           <div ref={sentinel} />
         </header>
