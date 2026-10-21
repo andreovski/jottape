@@ -102,11 +102,37 @@ export const assistantCardResponseSchema = z.object({
 });
 export type AssistantCardResponse = z.infer<typeof assistantCardResponseSchema>;
 
+/** Um passo do pedido, para o modo dev: quem rodou, quanto levou e quanto custou. */
+export const assistantTraceStepSchema = z.object({
+  /** haiku: leitura do pedido; jev: conferência de um item; answer: o Haiku respondendo. */
+  engine: z.enum(['haiku', 'jev', 'answer']),
+  /** off: o serviço não está configurado (sem a chave). */
+  status: z.enum(['ok', 'failed', 'off']),
+  ms: z.number().int(),
+  inputTokens: z.number().int(),
+  outputTokens: z.number().int(),
+  /** Custo estimado em milionésimos de dólar. */
+  costMicros: z.number().int(),
+  /** O que saiu do passo, em poucas palavras ("despesa 97%", "lancamentos, contas"). */
+  detail: z.string().nullable(),
+});
+export type AssistantTraceStep = z.infer<typeof assistantTraceStepSchema>;
+
+export const assistantTraceSchema = z.object({
+  steps: z.array(assistantTraceStepSchema),
+  costMicros: z.number().int(),
+});
+export type AssistantTrace = z.infer<typeof assistantTraceSchema>;
+
 export const assistantMessageResponseSchema = z.object({
   id: z.string(),
   role: z.enum(['USER', 'ASSISTANT']),
+  /** `{0}`, `{1}`... marcam valores em dinheiro (em `values`, centavos), para o app poder ocultar. */
   text: z.string(),
+  values: z.array(z.number().int()),
   cards: z.array(assistantCardResponseSchema),
+  /** O que rodou na resposta. Só vai para o dono (modo dev); para os outros, null. */
+  trace: assistantTraceSchema.nullable(),
   createdAt: isoDateTimeSchema,
 });
 export type AssistantMessageResponse = z.infer<typeof assistantMessageResponseSchema>;
@@ -123,6 +149,8 @@ export const assistantStateResponseSchema = z.object({
   enabled: z.boolean(),
   /** O servidor transcreve áudio; sem isso, o app usa o reconhecimento de voz do navegador. */
   transcription: z.boolean(),
+  /** O modo dev pode ser ligado (só o dono do app). */
+  devMode: z.boolean(),
   usage: assistantUsageResponseSchema,
   messages: z.array(assistantMessageResponseSchema),
 });

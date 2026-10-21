@@ -4,6 +4,8 @@ import {
   type AssistantMessageResponse,
   type AssistantMissing,
   type AssistantStateResponse,
+  assistantTraceSchema,
+  type AssistantTraceStep,
   type AssistantUncertain,
   type AssistantUsageResponse,
   type SaveAssistantCardBody,
@@ -15,6 +17,7 @@ import {
   getAnthropicConfig,
   getAssistantEmails,
   getAssistantMonthlyLimit,
+  getJevConfig,
   getOwner,
   getTranscriptionConfig,
 } from '@/lib/env';
@@ -23,6 +26,7 @@ import { prisma } from '@/lib/prisma';
 import { userTimezone } from '@/services/finance';
 import { toTransaction } from '@/services/serializers';
 
+import { answerQuestion } from './answer';
 import {
   type Created,
   createFromDraft,
@@ -47,13 +51,15 @@ import {
   resolveTask,
   type TaskListOption,
 } from './resolve';
-import { type CardOutcome, READ_FAILED, replyText } from './text';
+import { type CardOutcome, extractMoney, READ_FAILED, replyText, restoreMoney } from './text';
 import { transcribe } from './transcribe';
 
 /** Itens por pedido: o resto é ignorado (o Haiku pode exagerar). */
 const MAX_ITEMS = 5;
 /** Mensagens que voltam com a tela. */
 const HISTORY = 60;
+/** Mensagens anteriores que vão junto com uma pergunta ("e anteontem?"). */
+const QUESTION_HISTORY = 6;
 /** A conversa some depois disto (job diário). */
 export const RETENTION_DAYS = 30;
 
@@ -64,6 +70,38 @@ const JEV_INPUT = 0.042;
 /** whisper-large-v3-turbo na Groq: US$ 0,04 por hora, cobrando no mínimo 10 s por áudio. */
 const TRANSCRIPTION_PER_SECOND = (0.04 / 3600) * 1_000_000;
 const TRANSCRIPTION_MIN_SECONDS = 10;
+
+const INTENT_LABELS: Record<Intent, string> = {
+  expense: 'despesa',
+  income: 'receita',
+  transfer: 'transferência',
+  event: 'evento',
+  task: 'tarefa',
+  question: 'pergunta',
+  other: 'outro',
+};
+
+const percent = (value: number) => `${Math.round(value * 100)}%`;
+
+function haikuStep(
+  engine: 'haiku' | 'answer',
+  status: 'ok' | 'failed',
+  started: number,
+  usage: { inputTokens: number; outputTokens: number } | null,
+  detail: string | null
+): AssistantTraceStep {
+  const inputTokens = usage?.inputTokens ?? 0;
+  const outputTokens = usage?.outputTokens ?? 0;
+  return {
+    engine,
+    status,
+    ms: Date.now() - started,
+    inputTokens,
+    outputTokens,
+    costMicros: Math.round(inputTokens * HAIKU_INPUT + outputTokens * HAIKU_OUTPUT),
+    detail,
+  };
+}
 
 export interface Logger {
   warn: (error: unknown, message: string) => void;
@@ -125,7 +163,8 @@ async function assertWithinLimit(userId: string, timezone: string) {
 
 type MessageWithCards = AssistantMessage & { cards: AssistantCard[] };
 
-async function toMessages(userId: string, messages: MessageWithCards[]) {
+/** `withTrace`: o dono vê os passos de cada resposta (modo dev). */
+async function toMessages(userId: string, messages: MessageWithCards[], withTrace: boolean) {
   const ids = messages.flatMap((m) => m.cards.flatMap((c) => c.transactionIds));
   const transactions =
     ids.length === 0
@@ -143,6 +182,8 @@ async function toMessages(userId: string, messages: MessageWithCards[]) {
         id: message.id,
         role: message.role,
         text: message.text,
+        values: message.values,
+        trace: withTrace && message.trace ? assistantTraceSchema.parse(message.trace) : null,
         createdAt: message.createdAt.toISOString(),
         cards: await Promise.all(
           [...message.cards]
@@ -177,7 +218,8 @@ export async function assistantState(userId: string): Promise<AssistantStateResp
     enabled: await assistantEnabled(userId),
     transcription: getTranscriptionConfig() !== null,
     usage: await usageOf(userId, timezone),
-    messages: await toMessages(userId, recent.reverse()),
+    devMode: await isOwner(userId),
+    messages: await toMessages(userId, recent.reverse(), await isOwner(userId)),
   };
 }
 
@@ -244,13 +286,25 @@ export async function sendMessage(
 
   let items: ExtractedItem[] | null = null;
   const cost = { modelInput: 0, modelOutput: 0, jevInput: 0 };
+  const trace: AssistantTraceStep[] = [];
+  let started = Date.now();
   try {
     const extracted = await extractItems(text, { today, timezone, accounts, categories, lists });
     items = extracted.items;
     cost.modelInput = extracted.inputTokens;
     cost.modelOutput = extracted.outputTokens;
+    trace.push(
+      haikuStep(
+        'haiku',
+        'ok',
+        started,
+        extracted,
+        items.map((i) => INTENT_LABELS[i.intent]).join(', ')
+      )
+    );
   } catch (error) {
     log.warn(error, 'assistente: leitura do pedido falhou');
+    trace.push(haikuStep('haiku', 'failed', started, null, null));
   }
 
   const planned: PlannedCard[] = [];
@@ -262,26 +316,54 @@ export async function sendMessage(
     const usualAccountId = actions.some((item) => isFinanceIntent(item.intent))
       ? await usualAccount(userId, accounts)
       : null;
-    const resolutions = await Promise.all(
+    const jevOn = getJevConfig() !== null;
+    const resolved = await Promise.all(
       actions.map(async (item) => {
+        const jevStarted = Date.now();
+        let failed = false;
         const jev = await askJev(item, { accounts, categories, lists }).catch((error) => {
           log.warn(error, 'assistente: Jev falhou');
+          failed = true;
           return null;
         });
         cost.jevInput += jev?.inputTokens ?? 0;
         const answers = jev?.answers ?? null;
-        if (item.intent === 'event') return resolveEvent({ item, jev: answers, today });
-        if (item.intent === 'task') return resolveTask({ item, lists, jev: answers, today });
-        return resolveItem({
-          item: item as ExtractedItem & { intent: FinanceIntent },
-          accounts,
-          categories,
-          jev: answers,
-          today,
-          usualAccountId,
-        });
+        const resolution =
+          item.intent === 'event'
+            ? resolveEvent({ item, jev: answers, today })
+            : item.intent === 'task'
+              ? resolveTask({ item, lists, jev: answers, today })
+              : resolveItem({
+                  item: item as ExtractedItem & { intent: FinanceIntent },
+                  accounts,
+                  categories,
+                  jev: answers,
+                  today,
+                  usualAccountId,
+                });
+        const kind = answers?.kind;
+        const step: AssistantTraceStep = {
+          engine: 'jev',
+          status: !jevOn ? 'off' : failed || !jev ? 'failed' : 'ok',
+          ms: jevOn ? Date.now() - jevStarted : 0,
+          inputTokens: jev?.inputTokens ?? 0,
+          outputTokens: 0,
+          costMicros: Math.round((jev?.inputTokens ?? 0) * JEV_INPUT),
+          detail: [
+            kind
+              ? `${INTENT_LABELS[kind.choice as Intent] ?? kind.choice} ${percent(kind.probabilities[kind.choice] ?? 0)}`
+              : null,
+            `score ${resolution.score.toFixed(2).replace('.', ',')}`,
+            resolution.autoSave ? 'salva sozinho' : 'rascunho',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        };
+        return { resolution, step };
       })
     );
+    trace.push(...resolved.map((r) => r.step));
+    const resolutions = resolved.map((r) => r.resolution);
 
     // Salva em ordem, um por vez (cada um abre a sua transação no banco).
     for (const resolution of resolutions) {
@@ -297,6 +379,46 @@ export async function sendMessage(
     }
   }
 
+  // Perguntas: o Haiku consulta os dados e responde (dinheiro como {n} + values).
+  let answer: { text: string; values: number[] } | null = null;
+  if (otherIntents.includes('question')) {
+    started = Date.now();
+    try {
+      const previous = await prisma.assistantMessage.findMany({
+        where: { userId, createdAt: { lt: userMessage.createdAt } },
+        orderBy: { createdAt: 'desc' },
+        take: QUESTION_HISTORY,
+        select: { role: true, text: true, values: true },
+      });
+      const result = await answerQuestion(text, {
+        userId,
+        timezone,
+        today,
+        accounts,
+        categories,
+        lists,
+        history: previous
+          .reverse()
+          .map((m) => ({ role: m.role, text: restoreMoney(m.text, m.values) })),
+      });
+      cost.modelInput += result.inputTokens;
+      cost.modelOutput += result.outputTokens;
+      if (result.text) answer = extractMoney(result.text);
+      trace.push(
+        haikuStep(
+          'answer',
+          result.text ? 'ok' : 'failed',
+          started,
+          result,
+          result.tools.length ? result.tools.join(', ') : 'sem consultas'
+        )
+      );
+    } catch (error) {
+      log.warn(error, 'assistente: resposta da pergunta falhou');
+      trace.push(haikuStep('answer', 'failed', started, null, null));
+    }
+  }
+
   const isSaved = (created: Created) =>
     created.transactionIds.length > 0 || Boolean(created.eventId || created.taskId);
   const outcomes: CardOutcome[] = planned.map((p) => ({
@@ -304,13 +426,18 @@ export async function sendMessage(
     saved: isSaved(p.created),
     missing: p.resolution.missing,
   }));
-  const reply = items ? replyText(outcomes, otherIntents) : READ_FAILED;
+  const reply = items ? replyText(outcomes, otherIntents, answer?.text) : READ_FAILED;
 
   const assistantMessage = await prisma.assistantMessage.create({
     data: {
       userId,
       role: 'ASSISTANT',
       text: reply,
+      values: answer?.values ?? [],
+      trace: {
+        steps: trace,
+        costMicros: trace.reduce((sum, step) => sum + step.costMicros, 0),
+      } as unknown as Prisma.InputJsonValue,
       // Um milissegundo depois do pedido, para a ordem não depender do relógio do banco.
       createdAt: new Date(userMessage.createdAt.getTime() + 1),
       cards: {
@@ -352,7 +479,7 @@ export async function sendMessage(
     orderBy: { createdAt: 'asc' },
   });
   return {
-    messages: await toMessages(userId, messages),
+    messages: await toMessages(userId, messages, await isOwner(userId)),
     usage: await usageOf(userId, timezone),
   };
 }
@@ -370,7 +497,7 @@ async function cardResponse(userId: string, id: string): Promise<AssistantCardRe
     where: { userId, cards: { some: { id } } },
     include: { cards: { where: { id } } },
   });
-  const [response] = await toMessages(userId, [message]);
+  const [response] = await toMessages(userId, [message], await isOwner(userId));
   return response.cards[0];
 }
 

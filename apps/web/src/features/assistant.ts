@@ -59,9 +59,11 @@ export function useSendAssistantMessage() {
   const client = useQueryClient();
   const invalidateFinance = useInvalidateFinance();
   return useMutation({
-    // O Haiku pode levar alguns segundos; o timeout padrão (30 s) sobra.
+    // Pergunta faz o Haiku consultar os dados em algumas rodadas: pode passar dos 30 s padrão.
     mutationFn: (text: string) =>
-      api.post('assistant/messages', { json: { text } }).json<AssistantReplyResponse>(),
+      api
+        .post('assistant/messages', { json: { text }, timeout: 60_000 })
+        .json<AssistantReplyResponse>(),
     onSuccess: (reply) => {
       client.setQueryData<AssistantStateResponse>(KEY, (state) =>
         state

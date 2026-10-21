@@ -13,7 +13,7 @@ import {
   resolveDate,
   resolveItem,
 } from './resolve';
-import { replyText } from './text';
+import { extractMoney, replyText, restoreMoney } from './text';
 
 const accounts: AccountOption[] = [
   { id: 'a-nubank', name: 'Nubank', type: 'CHECKING' },
@@ -239,7 +239,11 @@ describe('replyText', () => {
     expect(replyText([{ type: 'event', saved: false, missing: ['time'] }], [])).toBe(
       'Falta o horário para salvar.'
     );
-    expect(replyText([], ['question'])).toMatch(/^Perguntas sobre/);
+    expect(replyText([], ['question'], 'Você gastou {0} ontem.')).toBe('Você gastou {0} ontem.');
+    expect(replyText([], ['question'], null)).toMatch(/^Não consegui responder/);
+    expect(replyText([{ type: 'task', saved: true, missing: [] }], ['question'], 'Tem {0}.')).toBe(
+      'Pronto, anotei nas tarefas. Tem {0}.'
+    );
     expect(replyText([], ['other'])).toMatch(/^Não entendi/);
   });
 });
@@ -320,5 +324,21 @@ describe('resolveTask', () => {
     expect(result.draft).toMatchObject({ listId: null, date: '2026-10-23' });
     expect(result.uncertain).toEqual(['list']);
     expect(result.autoSave).toBe(false);
+  });
+});
+
+describe('extractMoney', () => {
+  it('troca [[centavos]] por marcadores e não deixa chave solta virar valor', () => {
+    expect(extractMoney('Você gastou R$ [[3250]] ontem, [[ 1000 ]] no iFood.')).toEqual({
+      text: 'Você gastou {0} ontem, {1} no iFood.',
+      values: [3250, 1000],
+    });
+    expect(extractMoney('Saldo de [[-500]] {0}')).toEqual({
+      text: 'Saldo de {0} (0)',
+      values: [-500],
+    });
+    expect(restoreMoney('Você gastou {0} e {1}.', [3250, 10])).toBe(
+      'Você gastou [[3250]] e [[10]].'
+    );
   });
 });

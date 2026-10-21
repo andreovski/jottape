@@ -507,7 +507,11 @@ model AssistantMessage {
   id        String        @id @default(uuid())
   userId    String        @map("user_id")
   role      AssistantRole
+  // `{0}`, `{1}`... no texto marcam valores em dinheiro (em `values`, centavos).
   text      String
+  values    Int[]         @default([])
+  // Passos da resposta (Haiku, Jev, consultas) com tempo e custo, para o modo dev.
+  trace     Json?
   createdAt DateTime      @default(now()) @map("created_at")
 
   user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import {
   Bell,
   CalendarSync,
+  Code,
   Download,
   FileSpreadsheet,
   Globe,
@@ -26,11 +27,13 @@ import { FieldRow, SelectInput, TextInput } from '@/components/ios/fields';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { Page } from '@/components/ios/page';
 import { Sheet } from '@/components/ios/sheet';
+import { useAssistant } from '@/features/assistant';
 import { useChangePassword, useCurrentUser, useLogout, useUpdateProfile } from '@/features/auth';
 import { useGoogleStatus } from '@/features/google';
 import { useApiHealth } from '@/features/health';
 import { isStandalone, usePush } from '@/features/push';
 import { errorMessage } from '@/lib/api';
+import { setDevMode, useDevMode } from '@/lib/dev-mode';
 import { useFormErrors } from '@/lib/use-form-errors';
 
 import { REMINDER_OPTIONS, SUMMARY_OPTIONS, TIMEZONES } from './options';
@@ -51,6 +54,8 @@ export function SettingsPage() {
   const google = useGoogleStatus();
   const health = useApiHealth();
   const push = usePush();
+  const devModeAvailable = useAssistant().data?.devMode ?? false;
+  const devMode = useDevMode();
   const { theme = 'system', setTheme } = useTheme();
   const [sheet, setSheet] = useState<'profile' | 'password' | null>(null);
 
@@ -288,6 +293,20 @@ export function SettingsPage() {
               subtitle='Passo a passo para o seu aparelho'
             />
           </Link>
+        </Section>
+      )}
+
+      {devModeAvailable && (
+        <Section footer='Mostra, embaixo de cada resposta do Assistente, o que passou pelo Haiku e pelo Jev, o tempo e o custo estimado. Só para o dono do app.'>
+          <Row
+            leading={
+              <IconChip color='var(--indigo)'>
+                <Code />
+              </IconChip>
+            }
+            title='Modo dev'
+            trailing={<Switch label='Modo dev' checked={devMode} onChange={setDevMode} />}
+          />
         </Section>
       )}
 

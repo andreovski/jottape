@@ -1,10 +1,11 @@
-import type { AssistantMessageResponse } from '@jottape/schemas';
+import type { AssistantMessageResponse, AssistantTrace } from '@jottape/schemas';
 import { ArrowUp, Mic, Sparkles, SquarePen, X } from 'lucide-react';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
 import { EmptyState, Skeleton, Spinner } from '@/components/ios/controls';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { fillValues } from '@/components/today/briefing-card';
 import {
   useAssistant,
   useClearAssistant,
@@ -12,6 +13,8 @@ import {
   useTranscribe,
 } from '@/features/assistant';
 import { useAccounts, useCategories } from '@/features/finance';
+import { useDevMode } from '@/lib/dev-mode';
+import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
 
 import { AssistantCard } from './assistant-card';
@@ -20,8 +23,10 @@ import { MAX_SECONDS, useVoice, voiceMode } from './use-voice';
 /** Exemplos acima do campo: mostram o que dá para pedir. */
 const SUGGESTIONS = [
   'Gastei 32 reais no mercado',
+  'Quanto gastei ontem com comida?',
   'Dentista amanhã às 15h',
   'Me lembra de pagar o IPVA sexta',
+  'O que tenho amanhã?',
   'Almoço de 45 no crédito',
   'Reunião com a Ana segunda às 10h',
   'Recebi o salário de 5 mil',
@@ -128,7 +133,8 @@ export function AssistantPage() {
           </div>
           <p className='text-body max-w-xs'>
             Conte o que gastou, o que tem marcado ou o que precisa fazer, do jeito que falaria. Eu
-            monto o lançamento, o evento ou a tarefa e, quando tenho certeza, já salvo.
+            monto o lançamento, o evento ou a tarefa e, quando tenho certeza, já salvo. Também
+            respondo sobre seus gastos, saldos, agenda e tarefas.
           </p>
           <p className='text-footnote text-label-2 mt-2 max-w-xs'>
             Tudo que eu salvar pode ser desfeito na hora.
@@ -303,10 +309,75 @@ function Message({
   if (message.role === 'USER') return <Bubble mine>{message.text}</Bubble>;
   return (
     <div className='space-y-2'>
-      <Bubble>{message.text}</Bubble>
+      <Bubble>
+        <AnswerText text={message.text} values={message.values} />
+      </Bubble>
+      {message.trace && <TraceDetails trace={message.trace} />}
       {message.cards.map((card) => (
         <AssistantCard key={card.id} card={card} accounts={accounts} categories={categories} />
       ))}
+    </div>
+  );
+}
+
+/** Texto da resposta com os valores no lugar (ou ocultos, como no Hoje). */
+function AnswerText({ text, values }: { text: string; values: number[] }) {
+  const { format } = useHiddenMoney();
+  if (values.length === 0) return <>{text}</>;
+  return (
+    <>
+      {fillValues(text, values, format).map((part, index) => (
+        <Fragment key={index}>{part}</Fragment>
+      ))}
+    </>
+  );
+}
+
+const ENGINE_LABELS: Record<AssistantTrace['steps'][number]['engine'], string> = {
+  haiku: 'Haiku · leitura',
+  jev: 'Jev',
+  answer: 'Haiku · resposta',
+};
+
+/** Custo em dólar com casas suficientes para centavos de centavo (US$ 0,00042). */
+function usd(micros: number) {
+  return `US$\u00a0${(micros / 1_000_000).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: micros < 10_000 ? 5 : 4,
+  })}`;
+}
+
+const seconds = (ms: number) =>
+  `${(ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`;
+
+/** Modo dev: o que rodou nesta resposta, com tempo, tokens e custo. */
+function TraceDetails({ trace }: { trace: AssistantTrace }) {
+  const devMode = useDevMode();
+  if (!devMode) return null;
+  return (
+    <div className='text-caption text-label-2 numeric space-y-0.5 px-3'>
+      {trace.steps.map((step, index) => (
+        <p key={index}>
+          <span className={cn('font-semibold', step.status === 'failed' && 'text-red')}>
+            {ENGINE_LABELS[step.engine]}
+          </span>
+          {step.status === 'off'
+            ? ' · desligado (sem chave)'
+            : [
+                step.status === 'failed' ? 'falhou' : null,
+                step.detail,
+                seconds(step.ms),
+                step.outputTokens
+                  ? `${step.inputTokens.toLocaleString('pt-BR')} → ${step.outputTokens.toLocaleString('pt-BR')} tokens`
+                  : `${step.inputTokens.toLocaleString('pt-BR')} tokens`,
+                usd(step.costMicros),
+              ]
+                .filter(Boolean)
+                .map((part) => ` · ${part}`)
+                .join('')}
+        </p>
+      ))}
+      <p className='font-semibold'>Total {usd(trace.costMicros)}</p>
     </div>
   );
 }

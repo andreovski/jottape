@@ -84,7 +84,7 @@ const outputSchema = z.object({
     .max(10),
 });
 
-const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+export const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 
 export interface ExtractContext {
   today: string;
@@ -118,7 +118,7 @@ Listas de tarefas: ${lists.map((l) => l.name).join(', ') || '(nenhuma)'}
 
 Regras:
 - Um item por coisa pedida ("30 no uber e 50 no mercado" são dois; "marca dentista amanhã e me lembra de comprar pão" também). Texto sem pedido vira um item só com o intent certo.
-- intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso com dia e hora para a agenda: consulta, reunião, aula, viagem, aniversário), task (algo a fazer ou lembrar, sem ser um compromisso marcado: "me lembra de", "preciso", "anota para"), question (pergunta sobre saldo, gastos, agenda), other (o resto).
+- intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso com dia e hora para a agenda: consulta, reunião, aula, viagem, aniversário), task (algo a fazer ou lembrar, sem ser um compromisso marcado: "me lembra de", "preciso", "anota para"), question (pergunta sobre os dados: saldo, gastos, fatura, orçamento, agenda, tarefas: "quanto gastei ontem?", "o que tenho amanhã?"; vira um item só, mesmo com várias perguntas), other (o resto).
 - excerpt: o trecho do pedido que fala deste item, como o usuário escreveu.
 - amount_cents: valor em centavos inteiros ("R$ 32,50" = 3250, "mil e duzentos" = 120000, "50 conto" = 5000). Sem valor ou fora de finanças: null. Em compra parcelada, o valor TOTAL (12x de 100 = 120000).
 - installments: número de parcelas quando o pedido disser ("em 3x"), senão null.
@@ -140,7 +140,7 @@ export interface ExtractResult {
 }
 
 let client: Anthropic | null = null;
-function anthropic(apiKey: string) {
+export function anthropic(apiKey: string) {
   client ??= new Anthropic({ apiKey, maxRetries: 2, timeout: 20_000 });
   return client;
 }

@@ -66,6 +66,11 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   `opcao_N` na ordem das contas/categorias), e `resolve.ts` (puro, com teste) monta o rascunho e o
   score. Também cria eventos (sem horário falta `time`; fim padrão +1 h, no calendário padrão) e
   tarefas (lista nomeada ou Entrada), pelos mesmos serviços das telas (`assistant/create.ts`).
+  Perguntas ("quanto gastei ontem?") vão para `answer.ts`: o Haiku chama ferramentas só de leitura
+  (`queries.ts`, sempre com `userId`) e escreve dinheiro como `[[centavos]]`, que vira `{0}` +
+  `values` na mensagem (o app oculta como no briefing).
+  Cada resposta grava em `trace` os passos (Haiku, Jev, resposta) com tempo, tokens e custo; só
+  o dono recebe (`devMode`), e a web mostra com o "Modo dev" dos Ajustes (localStorage).
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
   usuário, o dono sem limite). Só o dono e os e-mails de `ASSISTANT_EMAILS` veem o Assistente.
