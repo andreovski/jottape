@@ -104,3 +104,11 @@ export function duration(start: string, end: string) {
   const m = minutes % 60;
   return m ? `${h} h ${m}` : `${h} h`;
 }
+
+/** Custo em dólar com casas suficientes para centavos de centavo (US$ 0,00042). */
+export function usd(micros: number) {
+  return `US$\u00a0${(micros / 1_000_000).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: micros < 10_000 ? 5 : 4,
+  })}`;
+}

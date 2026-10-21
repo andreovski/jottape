@@ -176,6 +176,14 @@ export function PrivacyPage() {
         ficam guardados mesmo depois que a conversa some.
       </p>
 
+      <p>
+        Com os insights de IA do briefing ligados, uma vez por dia (ou quando você pede para
+        atualizar) a Anthropic recebe os totais do mês por categoria, os maiores lançamentos com
+        descrição, data, conta e categoria, os orçamentos e a previsão de saldo, e devolve até três
+        observações curtas. Ela também não recebe seu nome nem seu e-mail. Guardamos só a última
+        análise, que é trocada pela seguinte.
+      </p>
+
       <H2>Cookies e armazenamento local</H2>
       <p>
         Usamos um único cookie de sessão, necessário para manter você conectado, e o armazenamento

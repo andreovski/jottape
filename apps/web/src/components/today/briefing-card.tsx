@@ -12,6 +12,7 @@ import {
   Sun,
   Sunrise,
   Sunset,
+  WandSparkles,
   X,
 } from 'lucide-react';
 import { Dialog } from 'radix-ui';
@@ -31,6 +32,7 @@ import {
   type SkyKind,
   type SkyTheme,
   skyTheme,
+  topInsight,
 } from './sky';
 import { STOCK_PERIOD_LABELS, StockList } from './stock-chart';
 
@@ -360,7 +362,11 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
   if (briefing.isError) return null;
   if (briefing.isPending) return <Skeleton className='mb-7 h-[132px] rounded-[22px]' />;
 
-  const data = briefing.data;
+  // Plugin que este app ainda não conhece (a API foi atualizada antes do app no aparelho) fica de fora.
+  const data = {
+    ...briefing.data,
+    items: briefing.data.items.filter((item) => item.plugin in briefingCatalog),
+  };
   if (data.items.length === 0) {
     return (
       <Link
@@ -373,6 +379,7 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
   }
 
   const top = headline(data.items);
+  const insight = topInsight(data.items, top);
 
   function close(href?: string) {
     setOpen(false);
@@ -393,6 +400,14 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
               <p className='text-headline mt-1 line-clamp-3 font-semibold'>
                 <Filled item={top} format={format} />
               </p>
+              {insight && (
+                <p className='text-subhead mt-2 flex gap-1.5 text-white/90'>
+                  <WandSparkles className='mt-0.5 size-4 shrink-0' aria-label='Insight de IA' />
+                  <span className='line-clamp-2'>
+                    <Filled item={insight} format={format} />
+                  </span>
+                </p>
+              )}
               <div className='text-footnote mt-auto flex items-center gap-1 pt-2 text-white/75'>
                 {data.items.length === 1 ? '1 destaque' : `${data.items.length} destaques`}
                 <ChevronRight className='size-4' />

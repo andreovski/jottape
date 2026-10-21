@@ -110,7 +110,15 @@ const appRoutes = appRoute.addChildren([
     }),
   }),
   route('/financas/contas/$accountId', AccountPage),
-  route('/assistente', AssistantPage),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/assistente',
+    component: AssistantPage,
+    // Pergunta pronta (vinda de um insight do briefing): entra no campo, sem enviar.
+    validateSearch: (search: Record<string, unknown>): { pergunta?: string } => ({
+      pergunta: typeof search.pergunta === 'string' ? search.pergunta.slice(0, 200) : undefined,
+    }),
+  }),
   route('/ajustes', SettingsPage),
   route('/ajustes/categorias', CategoriesPage),
   route('/ajustes/google', GooglePage),

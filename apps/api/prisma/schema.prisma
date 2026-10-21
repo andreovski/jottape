@@ -55,6 +55,7 @@ model User {
   assistantCards    AssistantCard[]
   assistantUsage    AssistantUsage[]
   assistantFeedback AssistantFeedback[]
+  financeInsight    FinanceInsight?
 
   @@map("users")
 }
@@ -566,6 +567,7 @@ model AssistantCard {
 enum AssistantUsageKind {
   MESSAGE
   TRANSCRIPTION
+  INSIGHT
   /// Teste de acerto rodado pelo dono no painel (não conta no limite).
   BENCHMARK
 }
@@ -610,4 +612,34 @@ model AssistantFeedback {
 
   @@index([createdAt])
   @@map("assistant_feedback")
+}
+
+/// Insights de IA do briefing: a última análise de cada usuário, guardada até a próxima. Datas
+/// em AAAA-MM-DD no fuso do usuário.
+model FinanceInsight {
+  userId       String    @id @map("user_id")
+  /// "month" (mês corrente até hoje) ou "close" (fechamento do mês anterior).
+  kind         String?
+  /// Mês analisado (AAAA-MM).
+  period       String?
+  /// Resumo dos lançamentos e orçamentos usados: igual, a análise não é refeita.
+  fingerprint  String?
+  /// [{ text, values, tone, question }]
+  items        Json      @default("[]")
+  generatedOn  String?   @map("generated_on")
+  generatedAt  DateTime? @map("generated_at")
+  /// Última tentativa (automática ou não): no máximo uma por dia, mesmo se falhar.
+  attemptedOn  String?   @map("attempted_on")
+  /// Último uso do botão de atualizar (uma vez por dia).
+  refreshedOn  String?   @map("refreshed_on")
+  /// Última vez que o briefing foi aberto: sem abrir há 3 dias, a rotina não gera.
+  viewedAt     DateTime  @default(now()) @map("viewed_at")
+  inputTokens  Int       @default(0) @map("input_tokens")
+  outputTokens Int       @default(0) @map("output_tokens")
+  costMicros   Int       @default(0) @map("cost_micros")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([viewedAt])
+  @@map("finance_insights")
 }

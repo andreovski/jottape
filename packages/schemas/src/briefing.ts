@@ -15,6 +15,7 @@ export const briefingPluginIds = [
   'stale',
   'yesterday',
   'month',
+  'insights',
   'streak',
   'weather',
   'tide',
@@ -36,6 +37,7 @@ export const defaultBriefingPlugins: BriefingPluginId[] = [
   'balance',
   'budget',
   'stale',
+  'insights',
 ];
 
 export const zodiacSigns = [
@@ -206,6 +208,28 @@ export const briefingResponseSchema = z.object({
   autoOrder: z.boolean().default(true),
 });
 export type BriefingResponse = z.infer<typeof briefingResponseSchema>;
+
+/** Insights de IA do briefing: o que a tela de ajustes mostra e o botão de atualizar. */
+export const briefingInsightsStatusSchema = z.object({
+  /** Só para quem tem o Assistente. */
+  available: z.boolean(),
+  /** "month": o mês corrente até hoje. "close": o fechamento do mês anterior (dias 1 a 3). */
+  kind: z.enum(['month', 'close']).nullable(),
+  /** Mês analisado (AAAA-MM). */
+  period: z.string().nullable(),
+  generatedAt: z.string().nullable(),
+  /** O botão de atualizar vale uma vez por dia. */
+  canRefresh: z.boolean(),
+  /** Só no modo dev (dono): tokens e custo da última análise. */
+  cost: z
+    .object({
+      inputTokens: z.number().int(),
+      outputTokens: z.number().int(),
+      costMicros: z.number().int(),
+    })
+    .nullable(),
+});
+export type BriefingInsightsStatus = z.infer<typeof briefingInsightsStatusSchema>;
 
 export const stockLookupQuerySchema = z.object({ ticker: stockTickerSchema });
 

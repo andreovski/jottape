@@ -87,6 +87,7 @@ const MOMENT_OF: Record<BriefingPluginId, MomentKey> = {
   bills: 'semana',
   budget: 'mes',
   month: 'mes',
+  insights: 'mes',
   balance: 'adiante',
   holidays: 'adiante',
   quote: 'fim',
@@ -124,4 +125,10 @@ export function groupMoments(items: BriefingItem[], auto = true): Moment[] {
 /** Frase do card fechado: o resumo do dia, se estiver ligado; senão a primeira. */
 export function headline(items: BriefingItem[]) {
   return items.find((item) => item.plugin === 'day') ?? items[0];
+}
+
+/** O insight principal da IA, que o card fechado mostra embaixo da frase (se não for ela). */
+export function topInsight(items: BriefingItem[], top: BriefingItem) {
+  const insight = items.find((item) => item.plugin === 'insights' && item.href);
+  return insight && insight !== top ? insight : null;
 }

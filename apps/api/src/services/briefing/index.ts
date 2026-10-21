@@ -16,6 +16,7 @@ import { invoiceTotal, userTimezone } from '@/services/finance';
 import { budgetStatuses, forecast } from '@/services/reports';
 
 import * as external from './external';
+import { briefingInsights } from './insights';
 import {
   balanceLine,
   billsLine,
@@ -59,6 +60,7 @@ export async function saveBriefingSettings(userId: string, settings: BriefingSet
 
 interface Context {
   userId: string;
+  log?: (error: unknown, plugin: string) => void;
   timeZone: string;
   now: Date;
   today: string;
@@ -252,6 +254,12 @@ const plugins: Record<BriefingPluginId, Plugin> = {
     return monthLine(current, before, monthName);
   },
 
+  async insights(ctx) {
+    return briefingInsights(ctx.userId, ctx.today, ctx.now, (error) =>
+      ctx.log?.(error, 'insights')
+    );
+  },
+
   async streak(ctx) {
     const since = startOfDayInZone(addDays(ctx.today, -61), ctx.timeZone);
     const [due, completed] = await Promise.all([
@@ -378,6 +386,7 @@ export async function buildBriefing(
   const memo = new Map<string, Promise<unknown>>();
   const ctx: Context = {
     userId,
+    log: options.log,
     timeZone,
     now,
     today,

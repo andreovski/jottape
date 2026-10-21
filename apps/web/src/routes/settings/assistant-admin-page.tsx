@@ -20,10 +20,10 @@ import {
   useRunBenchmark,
   useUpdateAssistantUser,
 } from '@/features/assistant';
-import { dayKey, monthTitle, relativeDay, time } from '@/lib/format';
+import { dayKey, monthTitle, relativeDay, time, usd } from '@/lib/format';
 import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
-import { AnswerText, TraceDetails, usd } from '@/routes/assistant/assistant-page';
+import { AnswerText, TraceDetails } from '@/routes/assistant/assistant-page';
 
 // Painel do beta do Assistente (só o dono): quem usa, quanto custa, quanto acerta, e os relatos.
 
@@ -83,7 +83,7 @@ export function AssistantAdminPage() {
     <Page title='Assistente' eyebrow='Beta' leading={back}>
       <Section
         header={monthTitle(data.month)}
-        footer='O custo é estimado pelos tokens de cada pedido e inclui as transcrições e os testes.'
+        footer='O custo é estimado pelos tokens de cada pedido e inclui as transcrições, os insights do briefing e os testes.'
       >
         <Row title='Pedidos' detail={requests.toLocaleString('pt-BR')} />
         <Row title='Custo estimado' detail={usd(cost)} />
