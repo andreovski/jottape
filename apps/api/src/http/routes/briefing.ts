@@ -15,6 +15,7 @@ import {
   saveBriefingSettings,
 } from '@/services/briefing';
 import { searchCities, stockQuote } from '@/services/briefing/external';
+import { insightsStatus, refreshInsights } from '@/services/briefing/insights';
 
 import { authenticate } from '../session';
 
@@ -33,6 +34,11 @@ export async function briefingRoutes(app: FastifyInstance) {
   app.put('/briefing/settings', async (request) =>
     saveBriefingSettings(request.userId, briefingSettingsSchema.parse(request.body))
   );
+
+  app.get('/briefing/insights', async (request) => insightsStatus(request.userId));
+
+  /** Refaz a análise de IA agora (uma vez por dia). */
+  app.post('/briefing/insights/refresh', async (request) => refreshInsights(request.userId));
 
   app.get('/briefing/cities', async (request) => {
     const { q } = citySearchQuerySchema.parse(request.query);

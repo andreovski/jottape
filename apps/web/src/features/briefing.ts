@@ -1,5 +1,6 @@
 import type {
   BriefingCity,
+  BriefingInsightsStatus,
   BriefingResponse,
   BriefingSettings,
   NextEventResponse,
@@ -14,6 +15,11 @@ export function useBriefing() {
   return useQuery({
     queryKey: ['briefing'],
     queryFn: () => api.get('briefing').json<BriefingResponse>(),
+    // Primeira análise de IA sendo feita (frase sem destino): volta a perguntar até ficar pronta.
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.plugin === 'insights' && !item.href)
+        ? 6000
+        : false,
   });
 }
 
@@ -71,5 +77,22 @@ export function useNextEvent(from: Date, enabled = true) {
         .get('events/next', { searchParams: { from: from.toISOString() } })
         .json<NextEventResponse>(),
     enabled,
+  });
+}
+
+/** Estado dos insights de IA (disponível, quando foi a última análise, se dá para atualizar). */
+export function useInsightsStatus() {
+  return useQuery({
+    queryKey: ['briefing-insights'],
+    queryFn: () => api.get('briefing/insights').json<BriefingInsightsStatus>(),
+  });
+}
+
+/** Refaz a análise agora (uma vez por dia); o briefing volta com o texto novo. */
+export function useRefreshInsights() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post('briefing/insights/refresh').json<BriefingInsightsStatus>(),
+    onSuccess: (status) => client.setQueryData(['briefing-insights'], status),
   });
 }

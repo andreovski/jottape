@@ -1,7 +1,7 @@
 import type { BriefingItem } from '@jottape/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { groupMoments, headline, skyKind } from './sky';
+import { groupMoments, headline, skyKind, topInsight } from './sky';
 
 const item = (plugin: BriefingItem['plugin']): BriefingItem => ({
   plugin,
@@ -67,5 +67,13 @@ describe('linha do tempo', () => {
   it('o card fechado mostra o resumo do dia', () => {
     expect(headline([item('weather'), item('day')]).plugin).toBe('day');
     expect(headline([item('weather'), item('bills')]).plugin).toBe('weather');
+  });
+
+  it('o card fechado mostra o primeiro insight de IA embaixo, mas não o "preparando"', () => {
+    const insight = { ...item('insights'), href: '/assistente?pergunta=x' };
+    const day = item('day');
+    expect(topInsight([day, insight], day)).toBe(insight);
+    expect(topInsight([day, item('insights')], day)).toBeNull();
+    expect(topInsight([insight], insight)).toBeNull();
   });
 });

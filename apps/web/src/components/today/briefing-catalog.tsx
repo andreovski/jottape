@@ -16,6 +16,7 @@ import {
   Sunset,
   TrendingDown,
   TrendingUp,
+  WandSparkles,
   Waves,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -78,6 +79,13 @@ export const briefingCatalog: Record<BriefingPluginId, BriefingPluginInfo> = {
     description: 'Quanto já saiu este mês, comparado ao mesmo ponto do mês passado.',
     icon: <TrendingUp />,
     color: 'var(--mint)',
+  },
+  insights: {
+    name: 'Insights de IA',
+    description:
+      'Uma análise curta dos seus gastos e ganhos do mês, feita pela IA uma vez por dia. Toque para perguntar mais ao Assistente.',
+    icon: <WandSparkles />,
+    color: 'var(--purple)',
   },
   streak: {
     name: 'Sequência',

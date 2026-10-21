@@ -3,6 +3,7 @@ import cron from 'node-cron';
 import { prisma } from '@/lib/prisma';
 import { pruneAssistantMessages } from '@/services/assistant';
 import { pruneExternalCache } from '@/services/briefing/external';
+import { runInsights } from '@/services/briefing/insights';
 import { extendRecurrences } from '@/services/finance';
 import { syncAllCalendars } from '@/services/google/calendar';
 import { syncTasks } from '@/services/google/tasks';
@@ -51,6 +52,11 @@ export function startJobs() {
   cron.schedule(
     '*/5 * * * *',
     guarded('tasks', () => eachGoogleUser(syncTasks))
+  );
+  // Insights de IA: no máximo um por usuário por dia, a partir das 5h no fuso dele.
+  cron.schedule(
+    '7 * * * *',
+    guarded('insights', () => runInsights())
   );
   cron.schedule(
     '17 3 * * *',
