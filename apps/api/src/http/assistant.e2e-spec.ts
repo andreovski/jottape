@@ -12,9 +12,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { answerQuestion } from '@/services/assistant/answer';
+import { BENCHMARK_CASES } from '@/services/assistant/benchmark';
 import { buildChange, planChanges } from '@/services/assistant/change';
 import { extractItems } from '@/services/assistant/haiku';
-import { BENCHMARK_CASES } from '@/services/assistant/benchmark';
 import { askJev } from '@/services/assistant/jev';
 import { QUERY_HANDLERS } from '@/services/assistant/queries';
 import type { ExtractedItem } from '@/services/assistant/resolve';
