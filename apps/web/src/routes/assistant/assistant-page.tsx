@@ -1,4 +1,5 @@
 import type { AssistantMessageResponse, AssistantTrace } from '@jottape/schemas';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { ArrowUp, Mic, Sparkles, SquarePen, X } from 'lucide-react';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
@@ -14,6 +15,7 @@ import {
 } from '@/features/assistant';
 import { useAccounts, useCategories } from '@/features/finance';
 import { useDevMode } from '@/lib/dev-mode';
+import { usd } from '@/lib/format';
 import { useHiddenMoney } from '@/lib/hidden-money';
 import { cn } from '@/lib/utils';
 
@@ -43,9 +45,17 @@ export function AssistantPage() {
   const send = useSendAssistantMessage();
   const transcribe = useTranscribe();
   const clear = useClearAssistant();
-  const [text, setText] = useState('');
+  const { pergunta } = useSearch({ from: '/app/assistente' });
+  const navigate = useNavigate();
+  // Pergunta de um insight do briefing: fica no campo para a pessoa conferir e enviar.
+  const [text, setText] = useState(() => pergunta ?? '');
   const [menu, setMenu] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
+
+  // Tira a pergunta do endereço, para não voltar ao recarregar.
+  useEffect(() => {
+    if (pergunta) void navigate({ to: '/assistente', search: {}, replace: true });
+  }, [pergunta, navigate]);
 
   const data = state.data;
   const messages = data?.messages ?? [];
@@ -339,14 +349,6 @@ const ENGINE_LABELS: Record<AssistantTrace['steps'][number]['engine'], string> =
   answer: 'Haiku · resposta',
   change: 'Haiku · mudança',
 };
-
-/** Custo em dólar com casas suficientes para centavos de centavo (US$ 0,00042). */
-function usd(micros: number) {
-  return `US$\u00a0${(micros / 1_000_000).toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: micros < 10_000 ? 5 : 4,
-  })}`;
-}
 
 const seconds = (ms: number) =>
   `${(ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`;

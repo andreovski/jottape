@@ -65,8 +65,8 @@ const QUESTION_HISTORY = 6;
 export const RETENTION_DAYS = 30;
 
 // Custo estimado, em milionésimos de dólar por token (= US$ por milhão de tokens).
-const HAIKU_INPUT = 0.1;
-const HAIKU_OUTPUT = 0.5;
+export const HAIKU_INPUT = 0.1;
+export const HAIKU_OUTPUT = 0.5;
 const JEV_INPUT = 0.042;
 /** whisper-large-v3-turbo na Groq: US$ 0,04 por hora, cobrando no mínimo 10 s por áudio. */
 const TRANSCRIPTION_PER_SECOND = (0.04 / 3600) * 1_000_000;
@@ -130,7 +130,7 @@ async function assertEnabled(userId: string) {
 
 // ---------------------------------------------------------------- uso
 
-async function isOwner(userId: string) {
+export async function isOwner(userId: string) {
   const owner = getOwner();
   if (!owner) return false;
   return (await userEmail(userId)) === owner.email;

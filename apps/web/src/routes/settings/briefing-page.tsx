@@ -48,10 +48,14 @@ import { STOCK_PERIOD_LABELS } from '@/components/today/stock-chart';
 import {
   useBriefingSettings,
   useCitySearch,
+  useInsightsStatus,
+  useRefreshInsights,
   useSaveBriefingSettings,
   useStockLookup,
 } from '@/features/briefing';
 import { errorMessage } from '@/lib/api';
+import { useDevMode } from '@/lib/dev-mode';
+import { dayKey, relativeDay, time, usd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 const SIGN_LABELS: Record<(typeof zodiacSigns)[number], string> = {
@@ -300,6 +304,9 @@ export function BriefingSettingsPage() {
   const navigate = useNavigate();
   const settings = useBriefingSettings();
   const save = useSaveBriefingSettings();
+  const insights = useInsightsStatus();
+  const refreshInsights = useRefreshInsights();
+  const devMode = useDevMode();
   const [citySheet, setCitySheet] = useState(false);
   const [stockSheet, setStockSheet] = useState(false);
   const sensors = useSensors(
@@ -329,8 +336,11 @@ export function BriefingSettingsPage() {
     );
   }
 
-  const enabled = data.plugins.filter((p) => p.enabled);
-  const disabled = data.plugins.filter((p) => !p.enabled);
+  // Os insights de IA só aparecem para quem tem o Assistente.
+  const visible = data.plugins.filter((p) => p.id !== 'insights' || insights.data?.available);
+  const enabled = visible.filter((p) => p.enabled);
+  const disabled = visible.filter((p) => !p.enabled);
+  const status = insights.data;
   const update = (patch: Partial<BriefingSettings>) => save.mutate({ ...data, ...patch });
 
   // Ligados primeiro, na ordem da tela; o que liga vai para o fim dos ligados.
@@ -416,6 +426,43 @@ export function BriefingSettingsPage() {
           {disabled.map((p) => (
             <PluginRow key={p.id} id={p.id} enabled={false} onToggle={(on) => toggle(p.id, on)} />
           ))}
+        </Section>
+      )}
+
+      {status?.available && (
+        <Section
+          header='Insights de IA'
+          footer='A análise é feita uma vez por dia, a partir das 5h, com o Claude Haiku. Ele recebe os totais e os maiores lançamentos do mês, os orçamentos e a previsão de saldo, sem o seu nome nem o e-mail. Sem lançamento novo, a análise anterior continua valendo. Você pode atualizar uma vez por dia.'
+        >
+          <Row
+            leading={
+              <IconChip color={briefingCatalog.insights.color}>
+                {briefingCatalog.insights.icon}
+              </IconChip>
+            }
+            title={status.kind === 'close' ? 'Fechamento do mês' : 'Análise do mês'}
+            detail={
+              status.generatedAt
+                ? `${relativeDay(dayKey(status.generatedAt))}, ${time(status.generatedAt)}`
+                : 'Ainda não feita'
+            }
+            disabled={!uses('insights')}
+          />
+          {devMode && status.cost && (
+            <Row
+              title='Custo da última análise'
+              detail={`${usd(status.cost.costMicros)} · ${(
+                status.cost.inputTokens + status.cost.outputTokens
+              ).toLocaleString('pt-BR')} tokens`}
+            />
+          )}
+          <Row
+            action
+            title={refreshInsights.isPending ? 'Analisando…' : 'Atualizar agora'}
+            disabled={!status.canRefresh || refreshInsights.isPending || !uses('insights')}
+            trailing={refreshInsights.isPending ? <Spinner /> : undefined}
+            onClick={() => refreshInsights.mutate()}
+          />
         </Section>
       )}
 
