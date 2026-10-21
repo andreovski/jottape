@@ -1,14 +1,15 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
-import { CalendarDays, CircleCheck, Settings, Sparkles, Sun, Wallet } from 'lucide-react';
+import { CalendarDays, CircleCheck, Settings, Sun, Wallet } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
+import { JottaIcon } from '@/components/jotta-icon';
 import { useAssistant } from '@/features/assistant';
 import { cn } from '@/lib/utils';
 
 export const SECTIONS = [
   { to: '/', label: 'Hoje', icon: Sun, tint: 'var(--indigo)' },
   { to: '/agenda', label: 'Agenda', icon: CalendarDays, tint: 'var(--red)' },
-  { to: '/assistente', label: 'Jotta', icon: Sparkles, tint: 'var(--purple)' },
+  { to: '/assistente', label: 'Jotta', icon: JottaIcon, tint: 'var(--purple)' },
   { to: '/tarefas', label: 'Tarefas', icon: CircleCheck, tint: 'var(--orange)' },
   { to: '/financas', label: 'Finanças', icon: Wallet, tint: 'var(--green)' },
   { to: '/ajustes', label: 'Ajustes', icon: Settings, tint: 'var(--blue)' },
