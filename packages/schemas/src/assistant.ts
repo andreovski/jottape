@@ -55,6 +55,45 @@ export const assistantTaskDraftSchema = z.object({
 });
 export type AssistantTaskDraft = z.infer<typeof assistantTaskDraftSchema>;
 
+const changeValueSchema = z.union([z.string(), z.number(), z.null()]);
+
+/**
+ * Mudar, apagar ou concluir algo que já existe ("o uber de ontem foi 35", "apaga o dentista").
+ * `apply` é o corpo que vai para o serviço da tela; `revert`, o que desfaz (null: apagar não volta).
+ */
+export const assistantChangeDraftSchema = z.object({
+  type: z.literal('change'),
+  target: z.enum(['transaction', 'event', 'task']),
+  targetId: z.string(),
+  action: z.enum(['update', 'delete', 'complete']),
+  /** Como o item está hoje, para o cartão. */
+  title: z.string(),
+  date: z.string().nullable(),
+  amountCents: z.number().int().nullable(),
+  /** O que muda, campo a campo. Datas AAAA-MM-DD, horas HH:MM, valor em centavos. */
+  diffs: z.array(
+    z.object({
+      field: z.enum([
+        'description',
+        'amount',
+        'date',
+        'category',
+        'account',
+        'title',
+        'start',
+        'end',
+        'location',
+        'due',
+      ]),
+      before: changeValueSchema,
+      after: changeValueSchema,
+    })
+  ),
+  apply: z.record(z.unknown()),
+  revert: z.record(z.unknown()).nullable(),
+});
+export type AssistantChangeDraft = z.infer<typeof assistantChangeDraftSchema>;
+
 export const assistantDraftSchema = z.preprocess(
   // Os primeiros rascunhos (só lançamentos) não tinham o tipo.
   (value) =>
@@ -65,6 +104,7 @@ export const assistantDraftSchema = z.preprocess(
     assistantTransactionDraftSchema,
     assistantEventDraftSchema,
     assistantTaskDraftSchema,
+    assistantChangeDraftSchema,
   ])
 );
 export type AssistantDraft = z.infer<typeof assistantDraftSchema>;
@@ -104,8 +144,8 @@ export type AssistantCardResponse = z.infer<typeof assistantCardResponseSchema>;
 
 /** Um passo do pedido, para o modo dev: quem rodou, quanto levou e quanto custou. */
 export const assistantTraceStepSchema = z.object({
-  /** haiku: leitura do pedido; jev: conferência de um item; answer: o Haiku respondendo. */
-  engine: z.enum(['haiku', 'jev', 'answer']),
+  /** haiku: leitura; jev: conferência de um item; answer: resposta; change: achar o que mudar. */
+  engine: z.enum(['haiku', 'jev', 'answer', 'change']),
   /** off: o serviço não está configurado (sem a chave). */
   status: z.enum(['ok', 'failed', 'off']),
   ms: z.number().int(),

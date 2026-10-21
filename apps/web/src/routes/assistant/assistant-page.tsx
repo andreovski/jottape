@@ -337,6 +337,7 @@ const ENGINE_LABELS: Record<AssistantTrace['steps'][number]['engine'], string> =
   haiku: 'Haiku · leitura',
   jev: 'Jev',
   answer: 'Haiku · resposta',
+  change: 'Haiku · mudança',
 };
 
 /** Custo em dólar com casas suficientes para centavos de centavo (US$ 0,00042). */

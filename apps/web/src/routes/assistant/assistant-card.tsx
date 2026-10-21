@@ -1,6 +1,7 @@
 import type {
   AccountResponse,
   AssistantCardResponse,
+  AssistantChangeDraft,
   AssistantEventDraft,
   AssistantTaskDraft,
   AssistantTransactionDraft,
@@ -8,7 +9,7 @@ import type {
   CategoryResponse,
   SaveAssistantCardBody,
 } from '@jottape/schemas';
-import { CalendarDays, Check, CircleCheck, RotateCcw } from 'lucide-react';
+import { CalendarDays, Check, CircleCheck, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
 import { newEventForm } from '@/components/agenda/event-form-model';
@@ -56,6 +57,7 @@ export function AssistantCard(props: Props) {
   const { draft } = props.card;
   if (draft.type === 'event') return <EventCard card={props.card} draft={draft} />;
   if (draft.type === 'task') return <TaskCard card={props.card} draft={draft} />;
+  if (draft.type === 'change') return <ChangeCard card={props.card} draft={draft} />;
   return <TransactionCard {...props} draft={draft} />;
 }
 
@@ -421,5 +423,150 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
         )
       }
     />
+  );
+}
+
+// ---------------------------------------------------------------- mudança
+
+const CHANGE_FIELD: Record<AssistantChangeDraft['diffs'][number]['field'], string> = {
+  description: 'Descrição',
+  amount: 'Valor',
+  date: 'Data',
+  category: 'Categoria',
+  account: 'Conta',
+  title: 'Título',
+  start: 'Início',
+  end: 'Fim',
+  location: 'Local',
+  due: 'Prazo',
+};
+
+const CHANGE_ACTION = {
+  update: { button: 'Mudar', done: 'Mudado', color: 'var(--blue)', icon: Pencil },
+  delete: { button: 'Apagar', done: 'Apagado', color: 'var(--red)', icon: Trash2 },
+  complete: { button: 'Concluir', done: 'Concluído', color: 'var(--orange)', icon: CircleCheck },
+} as const;
+
+const TARGET_LABEL = { transaction: 'Lançamento', event: 'Evento', task: 'Tarefa' } as const;
+
+/** Mudança no que já existe: mostra antes e depois e só vale com a confirmação. */
+function ChangeCard({ card, draft }: { card: AssistantCardResponse; draft: AssistantChangeDraft }) {
+  const save = useSaveAssistantCard();
+  const undo = useUndoAssistantCard();
+  const discard = useDiscardAssistantCard();
+  const { format } = useHiddenMoney();
+  const busy = save.isPending || undo.isPending || discard.isPending;
+  const action = CHANGE_ACTION[draft.action];
+  const Icon = action.icon;
+  const open = card.status === 'DRAFT' || card.status === 'UNDONE';
+
+  const show = (
+    field: AssistantChangeDraft['diffs'][number]['field'],
+    value: string | number | null
+  ) => {
+    if (value === null || value === '') return '—';
+    if (field === 'amount' && typeof value === 'number') return format(value);
+    if ((field === 'date' || field === 'due') && typeof value === 'string') {
+      const [day, time] = value.split(' ');
+      return `${relativeDay(day)}${time ? `, ${time}` : ''}`;
+    }
+    return String(value);
+  };
+
+  return (
+    <div
+      className={cn(
+        'bg-surface rounded-[var(--radius)]',
+        card.status === 'DISCARDED' && 'opacity-50'
+      )}
+    >
+      <div className='flex items-center gap-3 px-4 py-3'>
+        <IconChip color={action.color}>
+          <Icon strokeWidth={2.25} />
+        </IconChip>
+        <div className='min-w-0 flex-1'>
+          <div
+            className={cn(
+              'text-body truncate',
+              card.status === 'SAVED' && draft.action === 'delete' && 'text-label-2 line-through'
+            )}
+          >
+            {draft.title}
+          </div>
+          <div className='text-footnote text-label-2 truncate'>
+            {[
+              TARGET_LABEL[draft.target],
+              draft.date && relativeDay(draft.date),
+              draft.amountCents !== null && format(draft.amountCents),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
+        </div>
+        <div className='flex flex-col items-end gap-1'>
+          {card.status === 'SAVED' && (
+            <Pill color='var(--green)'>
+              <Check className='size-3' strokeWidth={3} /> {action.done}
+            </Pill>
+          )}
+          {card.status === 'UNDONE' && <Pill>Desfeito</Pill>}
+          {card.status === 'DISCARDED' && <Pill>Descartado</Pill>}
+        </div>
+      </div>
+
+      {draft.diffs.length > 0 && (
+        <div className='hairline-t space-y-1 px-4 py-2.5'>
+          {draft.diffs.map((diff) => (
+            <div key={diff.field} className='text-footnote flex items-baseline gap-2'>
+              <span className='text-label-2 w-20 shrink-0'>{CHANGE_FIELD[diff.field]}</span>
+              <span className='min-w-0 flex-1 truncate'>
+                <span className='text-label-2 line-through'>{show(diff.field, diff.before)}</span>
+                <span className='text-label-3'> → </span>
+                <span className='font-medium'>{show(diff.field, diff.after)}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {card.status === 'SAVED' && draft.revert && (
+        <div className='hairline-t flex items-center justify-end px-4 py-1.5'>
+          <Button
+            variant='plain'
+            size='sm'
+            loading={undo.isPending}
+            onClick={() => undo.mutate({ id: card.id })}
+          >
+            <RotateCcw className='size-3.5' strokeWidth={2.5} /> Desfazer
+          </Button>
+        </div>
+      )}
+
+      {open && (
+        <div className='hairline-t flex gap-2 px-4 pt-2.5 pb-3'>
+          <Button
+            variant={draft.action === 'delete' ? 'destructive' : 'filled'}
+            size='md'
+            className='flex-1'
+            disabled={busy}
+            loading={save.isPending}
+            onClick={() => save.mutate({ id: card.id })}
+          >
+            {card.status === 'UNDONE' ? `${action.button} de novo` : action.button}
+          </Button>
+          {card.status === 'DRAFT' && (
+            <Button
+              variant='gray'
+              size='md'
+              className='text-label-2'
+              disabled={busy}
+              onClick={() => discard.mutate({ id: card.id })}
+            >
+              Descartar
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

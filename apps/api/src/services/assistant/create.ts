@@ -21,6 +21,8 @@ import { deleteEvent, createEvent, getEvent } from '@/services/events';
 import { createTransactions } from '@/services/finance';
 import { createTask, deleteTask, getTask } from '@/services/tasks';
 
+import { applyChange } from './change';
+
 // Do rascunho ao que existe de verdade (lançamentos, evento ou tarefa), e de volta no Desfazer.
 // Tudo passa pelos serviços de cada tela, então o Google e os lembretes seguem as mesmas regras.
 
@@ -121,6 +123,11 @@ export async function createFromDraft(
     if (!body) return null;
     const created = await createTransactions(userId, body);
     return { ...NOTHING, transactionIds: created.map((t) => t.id) };
+  }
+  if (draft.type === 'change') {
+    // Mudança no que já existe: não cria nada que o Desfazer precise apagar.
+    await applyChange(userId, draft);
+    return NOTHING;
   }
   if (draft.type === 'event') {
     const body = sheet.event ?? (await eventBody(userId, draft, timeZone));

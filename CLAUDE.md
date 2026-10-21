@@ -69,6 +69,10 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   Perguntas ("quanto gastei ontem?") vão para `answer.ts`: o Haiku chama ferramentas só de leitura
   (`queries.ts`, sempre com `userId`) e escreve dinheiro como `[[centavos]]`, que vira `{0}` +
   `values` na mensagem (o app oculta como no briefing).
+  Mudanças ("o uber de ontem foi 35", "apaga o dentista", "marca o IPVA como feito") são o intent
+  `change`: `change.ts` roda o mesmo laço de consultas com a ferramenta final `propor_mudanca`
+  (pelo id que as consultas devolvem), confere a proposta no banco e monta um cartão com antes e
+  depois, `apply` e `revert`. Mudança **nunca** salva sozinha; apagar não tem Desfazer.
   Cada resposta grava em `trace` os passos (Haiku, Jev, resposta) com tempo, tokens e custo; só
   o dono recebe (`devMode`), e a web mostra com o "Modo dev" dos Ajustes (localStorage).
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
