@@ -35,6 +35,9 @@ import { Waveform } from './waveform';
 // a etiqueta do módulo (FIN, AGD, TAR, ASK), a hora e se veio por voz ou texto.
 
 /** Exemplos da tela vazia: mostram o que dá para pedir em cada módulo. */
+/** O título "Jotta" na letra quadrada, um pouco aberta, como o nome de um painel. */
+const JOTTA_TITLE = 'font-square font-bold tracking-wide';
+
 const COMMANDS: { tag: Tag; text: string }[] = [
   { tag: 'FIN', text: 'Gastei 32 reais no mercado' },
   { tag: 'AGD', text: 'Dentista amanhã às 15h' },
@@ -130,7 +133,7 @@ export function AssistantPage() {
 
   if (data && !data.enabled) {
     return (
-      <Page title='Jotta'>
+      <Page title='Jotta' titleClassName={JOTTA_TITLE}>
         <EmptyState
           icon={<JottaIcon />}
           title='Jotta indisponível'
@@ -147,6 +150,7 @@ export function AssistantPage() {
   return (
     <Page
       title='Jotta'
+      titleClassName={JOTTA_TITLE}
       subtitle={usage && <StatusLine used={usage.used} limit={usage.limit} voice={Boolean(mode)} />}
       actions={
         messages.length > 0 && (
