@@ -11,6 +11,8 @@ import {
   matchByName,
   NO_ACCOUNT,
   resolveDate,
+  historyHints,
+  mergeHints,
   resolveItem,
 } from './resolve';
 import { CHANGE_FAILED, extractMoney, replyText, restoreMoney } from './text';
@@ -61,6 +63,104 @@ describe('matchByName', () => {
     expect(matchByName(accounts, 'NUBANK')?.id).toBe('a-nubank');
     expect(matchByName(accounts, 'banco')).toBeNull();
     expect(matchByName(accounts, null)).toBeNull();
+  });
+});
+
+describe('memória', () => {
+  const sureJev = (account: string, category: string) => ({
+    kind: sure('expense'),
+    account: sure(account),
+    category: sure(category),
+  });
+
+  it('o histórico só conta quando um valor domina', () => {
+    const rows = (account: string, n: number) =>
+      Array.from({ length: n }, () => ({ accountId: account, categoryId: 'c-alimentacao' }));
+    expect(historyHints([...rows('a-cartao', 4), ...rows('a-nubank', 1)])).toEqual({
+      account: { id: 'a-cartao', source: 'history' },
+      category: { id: 'c-alimentacao', source: 'history' },
+    });
+    // Dois de três não é o bastante, e 3 de 5 fica abaixo de 70%.
+    expect(historyHints(rows('a-cartao', 2))).toEqual({});
+    expect(historyHints([...rows('a-cartao', 3), ...rows('a-nubank', 2)]).account).toBeUndefined();
+  });
+
+  it('a memória vence o histórico, campo a campo', () => {
+    expect(
+      mergeHints(
+        { account: { id: 'a-cartao', source: 'memory' } },
+        {
+          account: { id: 'a-nubank', source: 'history' },
+          category: { id: 'c-alimentacao', source: 'history' },
+        }
+      )
+    ).toEqual({
+      account: { id: 'a-cartao', source: 'memory' },
+      category: { id: 'c-alimentacao', source: 'history' },
+    });
+  });
+
+  it('memória que concorda com o Jev deixa salvar sozinho', () => {
+    const result = resolveItem({
+      item: item({ account: null, description: 'iFood', category: null }),
+      accounts,
+      categories,
+      jev: {
+        kind: sure('expense'),
+        account: { choice: 'opcao_3', probabilities: { opcao_3: 0.7 } },
+        category: sure('opcao_1'),
+      },
+      today: TODAY,
+      usualAccountId: null,
+      hints: { account: { id: 'a-cartao', source: 'memory' } },
+    });
+    expect(result.draft).toMatchObject({ accountId: 'a-cartao' });
+    expect(result.uncertain).toEqual([]);
+    expect(result.autoSave).toBe(true);
+  });
+
+  it('memória que discorda do Jev vale, mas pede conferência', () => {
+    const result = resolveItem({
+      item: item({ account: null, description: 'iFood', category: null }),
+      accounts,
+      categories,
+      jev: sureJev('opcao_1', 'opcao_2'),
+      today: TODAY,
+      usualAccountId: null,
+      hints: {
+        account: { id: 'a-cartao', source: 'memory' },
+        category: { id: 'c-alimentacao', source: 'memory' },
+      },
+    });
+    expect(result.draft).toMatchObject({ accountId: 'a-cartao', categoryId: 'c-alimentacao' });
+    expect(result.uncertain).toEqual(['account', 'category']);
+    expect(result.autoSave).toBe(false);
+  });
+
+  it('conta dita no pedido vence a memória', () => {
+    const result = resolveItem({
+      item: item({ account: 'Carteira' }),
+      accounts,
+      categories,
+      jev: sureJev('opcao_2', 'opcao_2'),
+      today: TODAY,
+      usualAccountId: null,
+      hints: { account: { id: 'a-cartao', source: 'memory' } },
+    });
+    expect(result.draft).toMatchObject({ accountId: 'a-carteira' });
+  });
+
+  it('receita não vai para o cartão, mesmo com a memória', () => {
+    const result = resolveItem({
+      item: item({ intent: 'income', account: null, category: null }),
+      accounts,
+      categories,
+      jev: null,
+      today: TODAY,
+      usualAccountId: null,
+      hints: { account: { id: 'a-cartao', source: 'memory' } },
+    });
+    expect(result.draft).toMatchObject({ accountId: null });
   });
 });
 

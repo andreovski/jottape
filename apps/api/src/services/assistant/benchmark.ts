@@ -13,9 +13,11 @@ import { prisma } from '@/lib/prisma';
 
 import { extractItems } from './haiku';
 import { askJev } from './jev';
+import { phraseOf } from './memory';
 import {
   type AccountOption,
   type CategoryOption,
+  type Hints,
   type Intent,
   isActionIntent,
   resolveAction,
@@ -69,6 +71,23 @@ interface Options {
   accounts: AccountOption[];
   categories: CategoryOption[];
   lists: TaskListOption[];
+  /** A memória da pessoa no dia do caso (só nos casos reais). */
+  memory?: NonNullable<AssistantTestContext['memory']>;
+  preferences?: { label: string; account?: string; category?: string }[];
+}
+
+/** A memória do caso como dicas para o item, pelos nomes das opções do caso. */
+function hintsOf(options: Options, description: string): Hints | undefined {
+  const phrase = phraseOf(description);
+  const hints: Hints = {};
+  for (const m of options.memory ?? []) {
+    if (phraseOf(m.label) !== phrase) continue;
+    const rows: { id: string; name: string }[] =
+      m.field === 'account' ? options.accounts : options.categories;
+    const found = rows.find((r) => r.name === m.value);
+    if (found) hints[m.field] = { id: found.id, source: 'memory' };
+  }
+  return hints.account || hints.category ? hints : undefined;
 }
 
 const FIXED: Options = {
@@ -85,12 +104,21 @@ export function optionsFromContext(
   timezone: string,
   context: AssistantTestContext
 ): Options {
+  const memory = context.memory ?? [];
+  const preferences = new Map<string, { label: string; account?: string; category?: string }>();
+  for (const m of memory) {
+    const entry = preferences.get(phraseOf(m.label)) ?? { label: m.label };
+    entry[m.field] = m.value;
+    preferences.set(phraseOf(m.label), entry);
+  }
   return {
     today,
     timezone,
     accounts: context.accounts.map((a, i) => ({ id: `a-${i}`, ...a })),
     categories: context.categories.map((c, i) => ({ id: `c-${i}`, ...c })),
     lists: context.lists.map((l, i) => ({ id: `l-${i}`, ...l })),
+    memory,
+    preferences: [...preferences.values()],
   };
 }
 
@@ -343,6 +371,7 @@ async function runCase(text: string, expect: Expect, options: Options) {
       jev: jev?.answers ?? null,
       today,
       usualAccountId: null,
+      hints: hintsOf(options, first.description),
     });
     autoSave = resolution.autoSave && extracted.items.every((i) => isActionIntent(i.intent));
     if (draft.type === 'transaction') {

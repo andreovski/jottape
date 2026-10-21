@@ -88,7 +88,13 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
   usuário, o dono sem limite). Só o dono, os e-mails de `ASSISTANT_EMAILS` e os convidados do painel veem o Assistente.
-  A conversa some em 30 dias. Pedido ditado grava `voiceSeconds` (a linha do tempo mostra "voz · 3 s").
+  A conversa some em 30 dias.
+  Memória por pessoa (`memory.ts`, `AssistantMemory`): conta ou categoria trocada (ou escolhida)
+  no cartão vira preferência pela descrição normalizada; o histórico de lançamentos com a mesma
+  descrição também sugere (`historyHints`, só quando um valor domina). Memória vence histórico;
+  conta dita no pedido vence as duas. Concordando com o Jev, sobe a confiança; discordando, vale a
+  memória e o cartão pede conferência. As 20 mais usadas vão nas instruções do Haiku; a pessoa vê
+  e apaga em Ajustes › O que o Jotta aprendeu. Pedido ditado grava `voiceSeconds` (a linha do tempo mostra "voz · 3 s").
   Beta: o dono convida pelo painel (Ajustes › Beta do Assistente, `assistant/admin.ts`), que liga
   `User.assistantAccess` e muda `assistantLimit`; vê pedidos e custo do mês (`AssistantUsage`) e os
   números de 30 dias dos cartões (`autoSaved`, `edited`, e em `corrections` os campos trocados

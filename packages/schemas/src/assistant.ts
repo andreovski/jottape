@@ -335,6 +335,12 @@ export const assistantTestContextSchema = z.object({
   ),
   categories: z.array(z.object({ name: z.string(), kind: z.enum(['INCOME', 'EXPENSE']) })),
   lists: z.array(z.object({ name: z.string() })),
+  /** O que o Jotta tinha aprendido da pessoa naquele dia (descrição → conta ou categoria). */
+  memory: z
+    .array(
+      z.object({ label: z.string(), field: z.enum(['account', 'category']), value: z.string() })
+    )
+    .optional(),
 });
 export type AssistantTestContext = z.infer<typeof assistantTestContextSchema>;
 
@@ -453,3 +459,21 @@ export const ciBenchmarkRunBodySchema = z.object({
   }),
 });
 export type CiBenchmarkRunBody = z.infer<typeof ciBenchmarkRunBodySchema>;
+
+/** Uma preferência que o Jotta aprendeu: "iFood" vai no Cartão Nubank. */
+export const assistantMemoryItemSchema = z.object({
+  id: z.string(),
+  /** A descrição como estava no cartão. */
+  label: z.string(),
+  field: z.enum(['account', 'category']),
+  /** O nome da conta ou da categoria. */
+  value: z.string(),
+  uses: z.number().int(),
+  updatedAt: isoDateTimeSchema,
+});
+export type AssistantMemoryItem = z.infer<typeof assistantMemoryItemSchema>;
+
+export const assistantMemoryResponseSchema = z.object({
+  items: z.array(assistantMemoryItemSchema),
+});
+export type AssistantMemoryResponse = z.infer<typeof assistantMemoryResponseSchema>;

@@ -55,6 +55,7 @@ model User {
   assistantCards    AssistantCard[]
   assistantUsage    AssistantUsage[]
   assistantFeedback AssistantFeedback[]
+  assistantMemory   AssistantMemory[]
   financeInsight    FinanceInsight?
   pluggyCredential  PluggyCredential?
   pluggyItems       PluggyItem[]
@@ -811,4 +812,27 @@ model AssistantBenchmarkRun {
 
   @@index([createdAt])
   @@map("assistant_benchmark_runs")
+}
+
+/// O que o Jotta aprendeu de cada pessoa: quando ela troca a conta ou a categoria no cartão,
+/// "iFood" passa a apontar para o que ela escolheu. A pessoa vê e apaga em Ajustes.
+model AssistantMemory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  /// A descrição normalizada ("ifood"), como `normalize` do resolve.
+  phrase    String
+  /// A descrição como estava no cartão ("iFood"), para mostrar.
+  label     String
+  /// account ou category.
+  field     String
+  valueId   String   @map("value_id")
+  /// Vezes que a pessoa escolheu este valor (volta a 1 quando muda).
+  uses      Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phrase, field])
+  @@map("assistant_memory")
 }

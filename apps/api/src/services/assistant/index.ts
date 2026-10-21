@@ -43,6 +43,14 @@ import {
 import { extractItems } from './haiku';
 import { askJev } from './jev';
 import {
+  hintsFor,
+  learnFromSave,
+  listMemory,
+  phraseOf,
+  promptPreferences,
+  reinforce,
+} from './memory';
+import {
   type AccountOption,
   type CategoryOption,
   type ExtractedItem,
@@ -319,6 +327,7 @@ export async function sendMessage(
 
   const today = todayIn(timezone);
   const { accounts, categories, lists } = await optionsOf(userId);
+  const preferences = await promptPreferences(userId, accounts, categories);
 
   const userMessage = await prisma.assistantMessage.create({
     data: {
@@ -334,7 +343,14 @@ export async function sendMessage(
   const trace: AssistantTraceStep[] = [];
   let started = Date.now();
   try {
-    const extracted = await extractItems(text, { today, timezone, accounts, categories, lists });
+    const extracted = await extractItems(text, {
+      today,
+      timezone,
+      accounts,
+      categories,
+      lists,
+      preferences,
+    });
     items = extracted.items;
     cost.modelInput = extracted.inputTokens;
     cost.modelOutput = extracted.outputTokens;
@@ -362,6 +378,10 @@ export async function sendMessage(
       ? await usualAccount(userId, accounts)
       : null;
     const jevOn = getJevConfig() !== null;
+    const hints = await hintsFor(
+      userId,
+      actions.filter((item) => isFinanceIntent(item.intent)).map((item) => item.description)
+    );
     const resolved = await Promise.all(
       actions.map(async (item) => {
         const jevStarted = Date.now();
@@ -373,6 +393,9 @@ export async function sendMessage(
         });
         cost.jevInput += jev?.inputTokens ?? 0;
         const answers = jev?.answers ?? null;
+        const itemHints = isFinanceIntent(item.intent)
+          ? hints.get(phraseOf(item.description))
+          : undefined;
         const resolution = resolveAction({
           item,
           accounts,
@@ -381,7 +404,9 @@ export async function sendMessage(
           jev: answers,
           today,
           usualAccountId,
+          hints: itemHints,
         });
+        const learned = [itemHints?.account, itemHints?.category].filter(Boolean);
         const kind = answers?.kind;
         const step: AssistantTraceStep = {
           engine: 'jev',
@@ -393,6 +418,11 @@ export async function sendMessage(
           detail: [
             kind
               ? `${INTENT_LABELS[kind.choice as Intent] ?? kind.choice} ${percent(kind.probabilities[kind.choice] ?? 0)}`
+              : null,
+            learned.length
+              ? learned.some((h) => h!.source === 'memory')
+                ? 'memória'
+                : 'histórico'
               : null,
             `score ${resolution.score.toFixed(2).replace('.', ',')}`,
             resolution.autoSave ? 'salva sozinho' : 'rascunho',
@@ -611,6 +641,10 @@ export async function saveCard(
   }
 
   const edited = Boolean(body.draft || body.transaction || body.event || body.task);
+  // O que a pessoa escolheu vira memória; salvo como veio, reforça a que já existe.
+  await (edited ? learnFromSave(userId, current, body) : reinforce(userId, current)).catch(
+    () => undefined
+  );
   const inbox = edited
     ? await prisma.taskList.findFirst({ where: { userId, isInbox: true }, select: { id: true } })
     : null;
@@ -676,6 +710,7 @@ export async function reportMessage(
   });
   const timezone = await userTimezone(userId);
   const options = await optionsOf(userId);
+  const memory = await listMemory(userId);
   await prisma.assistantFeedback.create({
     data: {
       userId,
@@ -690,7 +725,10 @@ export async function reportMessage(
       note: body.note || null,
       today: todayIn(timezone, request?.createdAt ?? reply.createdAt),
       timezone,
-      context: testContextOf(options) as unknown as Prisma.InputJsonValue,
+      context: {
+        ...testContextOf(options),
+        memory: memory.map(({ label, field, value }) => ({ label, field, value })),
+      } as unknown as Prisma.InputJsonValue,
     },
   });
 }

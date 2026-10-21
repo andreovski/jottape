@@ -15,6 +15,7 @@ import {
   Server,
   Shapes,
   Smartphone,
+  Sparkles,
   Sunrise,
   Timer,
   User,
@@ -58,7 +59,8 @@ export function SettingsPage() {
   const bank = useBankStatus();
   const health = useApiHealth();
   const push = usePush();
-  const devModeAvailable = useAssistant().data?.devMode ?? false;
+  const assistant = useAssistant().data;
+  const devModeAvailable = assistant?.devMode ?? false;
   const devMode = useDevMode();
   const { theme = 'system', setTheme } = useTheme();
   const [sheet, setSheet] = useState<'profile' | 'password' | null>(null);
@@ -312,6 +314,22 @@ export function SettingsPage() {
               }
               title='Instalar o app'
               subtitle='Passo a passo para o seu aparelho'
+            />
+          </Link>
+        </Section>
+      )}
+
+      {assistant?.enabled && (
+        <Section footer='As contas e categorias que o Jotta lembra das suas correções. Dá para esquecer.'>
+          <Link to='/ajustes/jotta' className='block'>
+            <Row
+              chevron
+              leading={
+                <IconChip color='var(--indigo)'>
+                  <Sparkles />
+                </IconChip>
+              }
+              title='O que o Jotta aprendeu'
             />
           </Link>
         </Section>

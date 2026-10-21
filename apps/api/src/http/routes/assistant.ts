@@ -30,6 +30,7 @@ import {
   updateAssistantUser,
   updateTestCase,
 } from '@/services/assistant/admin';
+import { clearMemory, deleteMemory, listMemory } from '@/services/assistant/memory';
 import { AUDIO_TYPES } from '@/services/assistant/transcribe';
 
 import { authenticate } from '../session';
@@ -101,6 +102,20 @@ export async function assistantRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     await reportMessage(request.userId, id, assistantFeedbackBodySchema.parse(request.body ?? {}));
     return reply.status(204).send();
+  });
+
+  // O que o Jotta aprendeu da pessoa (Ajustes): ver e apagar.
+  app.get('/assistant/memory', async (request) => ({ items: await listMemory(request.userId) }));
+
+  app.delete('/assistant/memory/:id', async (request) => {
+    const { id } = idParams.parse(request.params);
+    await deleteMemory(request.userId, id);
+    return { items: await listMemory(request.userId) };
+  });
+
+  app.delete('/assistant/memory', async (request) => {
+    await clearMemory(request.userId);
+    return { items: [] };
   });
 
   // Painel do beta: só o dono.

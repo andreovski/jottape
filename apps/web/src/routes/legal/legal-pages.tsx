@@ -185,6 +185,13 @@ export function PrivacyPage() {
       </p>
 
       <p>
+        Quando você troca a conta ou a categoria num cartão do Jotta, ele guarda essa preferência
+        (por exemplo, &quot;iFood&quot; no cartão de crédito) e olha os seus lançamentos com a mesma
+        descrição para sugerir as próximas. As preferências mais usadas vão junto com o pedido para
+        a Anthropic. Você vê e apaga tudo em Ajustes, em &quot;O que o Jotta aprendeu&quot;.
+      </p>
+
+      <p>
         O dono do app vê, para cada pessoa, quantos pedidos ela fez ao Jotta, o custo estimado e
         quantos itens foram salvos, desfeitos ou descartados, quais campos foram corrigidos antes de
         salvar (só a contagem, como &quot;conta&quot; ou &quot;categoria&quot;) e o erro técnico das

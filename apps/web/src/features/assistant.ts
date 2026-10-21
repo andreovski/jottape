@@ -2,6 +2,7 @@ import type {
   AssistantAdminResponse,
   AssistantBenchmarkResponse,
   AssistantCardResponse,
+  AssistantMemoryResponse,
   AssistantMessageBody,
   AssistantReplyResponse,
   AssistantStateResponse,
@@ -33,7 +34,11 @@ const FINANCE_KEYS = [
 function useInvalidateFinance() {
   const client = useQueryClient();
   return () =>
-    Promise.all(FINANCE_KEYS.map((key) => client.invalidateQueries({ queryKey: [key] })));
+    Promise.all([
+      ...FINANCE_KEYS.map((key) => client.invalidateQueries({ queryKey: [key] })),
+      // Salvar com uma correção ensina o Jotta.
+      client.invalidateQueries({ queryKey: ['assistant', 'memory'] }),
+    ]);
 }
 
 export function useAssistant() {
@@ -143,6 +148,30 @@ export function useReportMessage() {
             }
           : state
       ),
+  });
+}
+
+// ---------------------------------------------------------------- memória
+
+const MEMORY_KEY = ['assistant', 'memory'];
+
+/** O que o Jotta aprendeu com as correções da pessoa. */
+export function useAssistantMemory() {
+  return useQuery({
+    queryKey: MEMORY_KEY,
+    queryFn: () => api.get('assistant/memory').json<AssistantMemoryResponse>(),
+  });
+}
+
+/** Esquece uma preferência (com id) ou todas. */
+export function useForgetMemory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string | null) =>
+      api
+        .delete(id ? `assistant/memory/${id}` : 'assistant/memory')
+        .json<AssistantMemoryResponse>(),
+    onSuccess: (data) => client.setQueryData(MEMORY_KEY, data),
   });
 }
 

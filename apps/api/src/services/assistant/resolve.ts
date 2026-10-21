@@ -19,6 +19,15 @@ export const MODEL_ONLY_CAP = 0.8;
 const JEV_GUESS_MIN = 0.6;
 /** Conta mais usada, sugerida quando nada aponta para uma conta: sempre pede confirmação. */
 const FALLBACK_ACCOUNT_CONFIDENCE = 0.5;
+/** Memória (ou histórico) que concorda com o Jev: dá para salvar sozinho. */
+const HINT_AGREES = 0.9;
+/** Memória sem o Jev ter escolhido nada: vale, mas o cartão pede conferência. */
+const HINT_ALONE = 0.8;
+/** Memória que discorda do Jev: vale a memória, e o cartão pede conferência. */
+const HINT_DISAGREES = 0.6;
+/** Histórico: lançamentos com a mesma descrição, e a parte que precisa concordar. */
+const HISTORY_MIN = 3;
+const HISTORY_SHARE = 0.7;
 
 export type Intent =
   | 'expense'
@@ -84,6 +93,46 @@ export interface JevAnswers {
   toAccount?: JevChoice;
   category?: JevChoice;
   list?: JevChoice;
+}
+
+/** O que a pessoa costuma usar para uma descrição: da memória (correções) ou do histórico. */
+export interface Hint {
+  id: string;
+  source: 'memory' | 'history';
+}
+
+export interface Hints {
+  account?: Hint;
+  category?: Hint;
+}
+
+/** Conta e categoria que mais aparecem nos lançamentos com a mesma descrição, se dominarem. */
+export function historyHints(
+  rows: { accountId: string | null; categoryId: string | null }[]
+): Hints {
+  const top = (ids: (string | null)[]) => {
+    const counts = new Map<string, number>();
+    for (const id of ids) if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    const [best] = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    if (!best || best[1] < HISTORY_MIN || best[1] / rows.length < HISTORY_SHARE) return undefined;
+    return { id: best[0], source: 'history' as const };
+  };
+  const hints: Hints = {};
+  const account = top(rows.map((r) => r.accountId));
+  const category = top(rows.map((r) => r.categoryId));
+  if (account) hints.account = account;
+  if (category) hints.category = category;
+  return hints;
+}
+
+/** A memória vence o histórico, campo a campo. */
+export function mergeHints(memory: Hints, history: Hints): Hints {
+  return {
+    ...((memory.account ?? history.account) ? { account: memory.account ?? history.account } : {}),
+    ...((memory.category ?? history.category)
+      ? { category: memory.category ?? history.category }
+      : {}),
+  };
 }
 
 export interface Resolution {
@@ -229,6 +278,24 @@ export interface ResolveInput {
   today: string;
   /** Conta que o usuário mais usa: sugestão quando o pedido não diz qual. */
   usualAccountId: string | null;
+  /** O que a pessoa costuma usar com esta descrição. */
+  hints?: Hints;
+}
+
+/**
+ * Junta a escolha (Haiku + Jev) com a memória da pessoa. Conta nomeada no pedido vence; memória
+ * que concorda sobe a confiança, e a que discorda troca o valor mas pede conferência.
+ */
+function applyHint<T extends { id: string }>(
+  pick: Pick<T>,
+  hinted: T | undefined,
+  named: boolean
+): Pick<T> {
+  if (!hinted || named) return pick;
+  if (pick.value?.id === hinted.id) {
+    return { value: hinted, confidence: Math.max(pick.confidence, HINT_AGREES) };
+  }
+  return { value: hinted, confidence: pick.value ? HINT_DISAGREES : HINT_ALONE };
 }
 
 export function resolveItem({
@@ -238,6 +305,7 @@ export function resolveItem({
   jev,
   today,
   usualAccountId,
+  hints,
 }: ResolveInput): Resolution {
   const kind = KIND[item.intent];
   const confidences: Partial<Record<AssistantUncertain, number>> = {};
@@ -249,8 +317,14 @@ export function resolveItem({
   if (sources.length === 1) {
     account = { value: sources[0], confidence: 1 };
   } else {
-    account = pickOption(accounts, matchByName(accounts, item.account), jev?.account, NO_ACCOUNT);
+    const named = matchByName(accounts, item.account);
+    account = pickOption(accounts, named, jev?.account, NO_ACCOUNT);
     if (account.value && !sources.includes(account.value)) account = { value: null, confidence: 0 };
+    account = applyHint(
+      account,
+      sources.find((a) => a.id === hints?.account?.id),
+      Boolean(named && sources.includes(named))
+    );
     if (!account.value) {
       const usual = sources.find((a) => a.id === usualAccountId);
       if (usual) account = { value: usual, confidence: FALLBACK_ACCOUNT_CONFIDENCE };
@@ -283,6 +357,12 @@ export function resolveItem({
       NO_CATEGORY
     );
     if (category.value && category.value.kind !== kind) category = { value: null, confidence: 1 };
+    // A categoria que o Haiku leu do pedido não é "nomeada" pela pessoa: a memória vence.
+    category = applyHint(
+      category,
+      categories.find((c) => c.id === hints?.category?.id && c.kind === kind),
+      false
+    );
     if (category.value) confidences.category = category.confidence;
   }
 
@@ -417,6 +497,7 @@ export function resolveAction(input: {
   jev: JevAnswers | null;
   today: string;
   usualAccountId: string | null;
+  hints?: Hints;
 }): Resolution {
   const { item, jev, today } = input;
   if (item.intent === 'event') return resolveEvent({ item, jev, today });
@@ -428,5 +509,6 @@ export function resolveAction(input: {
     jev,
     today,
     usualAccountId: input.usualAccountId,
+    hints: input.hints,
   });
 }

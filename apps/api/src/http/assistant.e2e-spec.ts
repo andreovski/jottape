@@ -2,6 +2,7 @@ import type {
   AccountResponse,
   AssistantAdminResponse,
   AssistantBenchmarkResponse,
+  AssistantMemoryResponse,
   AssistantCardResponse,
   AssistantReplyResponse,
   AssistantStateResponse,
@@ -373,6 +374,66 @@ describe('assistente', () => {
     const row = await prisma.assistantCard.findUniqueOrThrow({ where: { id: card.id } });
     expect(row).toMatchObject({ edited: true, corrections: ['title'] });
     expect(row.saved).toMatchObject({ event: { title: 'Reunião de equipe' } });
+  });
+
+  it('aprende a conta trocada no cartão e usa no próximo pedido', async () => {
+    const ifood = (overrides: Partial<ExtractedItem> = {}) => ({
+      items: [item({ description: 'iFood', account: null, category: null, ...overrides })],
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    vi.mocked(extractItems).mockResolvedValue(ifood());
+    vi.mocked(askJev).mockResolvedValue(null);
+    const [first] = (await send('45 no ifood')).messages[1].cards;
+    // A pessoa troca para a Carteira na folha.
+    await api.post(`/assistant/cards/${first.id}/save`, {
+      transaction: {
+        kind: 'EXPENSE',
+        amountCents: 3200,
+        date: '2026-10-20',
+        accountId: wallet.id,
+        description: 'iFood',
+      },
+    });
+    const memory = (await api.get('/assistant/memory')).json() as AssistantMemoryResponse;
+    expect(memory.items).toEqual([
+      expect.objectContaining({ label: 'iFood', field: 'account', value: 'Carteira', uses: 1 }),
+    ]);
+
+    // No próximo, o Haiku recebe a preferência e o cartão já vem na Carteira, pedindo conferência
+    // porque o Jev escolheu o Nubank.
+    const accounts = await prisma.account.findMany({
+      orderBy: [{ type: 'asc' }, { createdAt: 'asc' }],
+    });
+    vi.mocked(askJev).mockResolvedValue({
+      answers: {
+        kind: sure('expense'),
+        account: sure(`opcao_${accounts.findIndex((a) => a.id === nubank.id) + 1}`),
+      },
+      inputTokens: 1,
+    });
+    vi.mocked(extractItems).mockClear();
+    vi.mocked(extractItems).mockResolvedValue(ifood());
+    const reply = await send('30 no ifood');
+    expect(vi.mocked(extractItems).mock.calls[0][1].preferences).toEqual([
+      { label: 'iFood', account: 'Carteira' },
+    ]);
+    const [card] = reply.messages[1].cards;
+    expect(card.draft).toMatchObject({ accountId: wallet.id });
+    expect(card.uncertain).toContain('account');
+    expect(card.status).toBe('DRAFT');
+
+    // Salvo como veio, reforça.
+    await api.post(`/assistant/cards/${card.id}/save`, {});
+    const after = (await api.get('/assistant/memory')).json() as AssistantMemoryResponse;
+    expect(after.items[0].uses).toBe(2);
+
+    // A pessoa apaga e o Jotta esquece.
+    const left = (
+      await api.delete(`/assistant/memory/${after.items[0].id}`)
+    ).json() as AssistantMemoryResponse;
+    expect(left.items).toEqual([]);
+    expect((await api.delete(`/assistant/memory/${after.items[0].id}`)).statusCode).toBe(404);
   });
 
   it('anota tarefa na lista com prazo e desfaz', async () => {
