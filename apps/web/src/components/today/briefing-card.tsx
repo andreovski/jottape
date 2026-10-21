@@ -1,5 +1,5 @@
 import { addDays } from '@jottape/finance-engine';
-import type { BriefingItem, BriefingResponse } from '@jottape/schemas';
+import type { BriefingEvent, BriefingItem, BriefingResponse } from '@jottape/schemas';
 import { Link, useRouter } from '@tanstack/react-router';
 import {
   ChevronRight,
@@ -61,6 +61,40 @@ function Filled({ item, format }: { item: BriefingItem; format: (cents: number) 
         <Fragment key={index}>{part}</Fragment>
       ))}
     </>
+  );
+}
+
+/**
+ * Os compromissos do dia, um por linha: horário (ou "dia todo") e título. `limit` corta a lista
+ * e mostra "+N"; os que já passaram ficam apagados.
+ */
+export function EventList({
+  events,
+  limit,
+  className,
+}: {
+  events: BriefingEvent[];
+  limit?: number;
+  className?: string;
+}) {
+  if (events.length === 0) return null;
+  const shown = limit === undefined ? events : events.slice(0, limit);
+  const rest = events.length - shown.length;
+  return (
+    <ul className={cn('space-y-0.5', className)}>
+      {shown.map((event, index) => (
+        <li
+          key={index}
+          className={cn('flex min-w-0 gap-2', event.status === 'past' && 'text-white/55')}
+        >
+          <span className='numeric w-[4.2em] shrink-0 font-semibold'>
+            {event.status === 'now' ? 'agora' : (event.time ?? 'dia todo')}
+          </span>
+          <span className='truncate'>{event.title}</span>
+        </li>
+      ))}
+      {rest > 0 && <li className='text-white/70'>+{rest}</li>}
+    </ul>
   );
 }
 
@@ -197,6 +231,12 @@ function TimelineItem({
         <p className='text-[19px] leading-[1.35] font-medium text-white'>
           <Filled item={item} format={format} />
         </p>
+      )}
+      {item.events && (
+        <EventList
+          events={item.events}
+          className='text-subhead mt-3 border-t border-white/20 pt-3 text-white'
+        />
       )}
     </div>
   );
@@ -380,6 +420,8 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
 
   const top = headline(data.items);
   const insight = topInsight(data.items, top);
+  // No card fechado, só o que ainda vem (até 3); a timeline mostra o dia inteiro.
+  const upcoming = top.events?.filter((event) => event.status !== 'past') ?? [];
 
   function close(href?: string) {
     setOpen(false);
@@ -400,6 +442,7 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
               <p className='text-headline mt-1 line-clamp-3 font-semibold'>
                 <Filled item={top} format={format} />
               </p>
+              <EventList events={upcoming} limit={3} className='text-subhead mt-2 text-white/90' />
               {insight && (
                 <p className='text-subhead mt-2 flex gap-1.5 text-white/90'>
                   <WandSparkles className='mt-0.5 size-4 shrink-0' aria-label='Insight de IA' />

@@ -88,6 +88,9 @@ describe('briefing', () => {
     expect(text('day')).toEqual([
       'Hoje: 1 compromisso, o primeiro às 14:00 (Dentista) e 1 tarefa (atrasada).',
     ]);
+    expect(items.find((i) => i.plugin === 'day')?.events).toEqual([
+      { title: 'Dentista', time: '14:00', status: 'upcoming' },
+    ]);
     expect(text('free')).toEqual(['Livre das 15:00 às 20:00.']);
     expect(text('bills')).toEqual(['Aluguel vence na quarta-feira: {0}.']);
     expect(items.find((i) => i.plugin === 'bills')?.values).toEqual([50000]);
