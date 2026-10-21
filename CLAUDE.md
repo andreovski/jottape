@@ -93,7 +93,7 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   `User.assistantAccess` e muda `assistantLimit`; vê pedidos e custo do mês (`AssistantUsage`) e os
   números de 30 dias dos cartões (`autoSaved`, `edited`) e dos `trace`. "Isso está errado" copia o
   pedido, a resposta e os passos em `AssistantFeedback`, que não some com a conversa. O teste de
-  acerto (`benchmark.ts`, 50 pedidos num dia fixo) roda o Haiku e o Jev de verdade e grava o custo
+  acerto (`benchmark.ts`, 60 pedidos, 10 deles fora do assunto num dia fixo) roda o Haiku e o Jev de verdade e grava o custo
   como `BENCHMARK`, fora do limite.
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.

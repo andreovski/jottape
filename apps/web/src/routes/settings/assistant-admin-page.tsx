@@ -357,7 +357,7 @@ function BenchmarkSection({ run }: { run: ReturnType<typeof useRunBenchmark> }) 
     <>
       <Section
         header='Teste de acerto'
-        footer='Roda 50 pedidos de exemplo pelo Haiku e pelo Jev de verdade, num dia fixo e com contas de exemplo. Leva perto de um minuto, custa alguns centavos de dólar e não conta no limite.'
+        footer='Roda 60 pedidos de exemplo pelo Haiku e pelo Jev de verdade, num dia fixo e com contas de exemplo. Leva perto de um minuto, custa alguns centavos de dólar e não conta no limite.'
       >
         <Row
           leading={
@@ -365,7 +365,7 @@ function BenchmarkSection({ run }: { run: ReturnType<typeof useRunBenchmark> }) 
               <FlaskConical />
             </IconChip>
           }
-          title={run.isPending ? 'Rodando os 50 pedidos…' : 'Rodar o teste'}
+          title={run.isPending ? 'Rodando os 60 pedidos…' : 'Rodar o teste'}
           action={!run.isPending}
           disabled={run.isPending}
           onClick={() => run.mutate()}
