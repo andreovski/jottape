@@ -97,7 +97,11 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   categorias e listas) em `AssistantFeedback`, que não some com a conversa; o dono transforma o
   relato em `AssistantTestCase` (resposta certa por nome). O teste de acerto (`benchmark.ts`, 50
   pedidos num dia fixo mais os casos ativos, cada um no seu dia e com os seus nomes) roda o Haiku
-  e o Jev de verdade e grava o custo como `BENCHMARK`, fora do limite. Evento e tarefa levam
+  e o Jev de verdade e grava o custo como `BENCHMARK`, fora do limite. Cada rodada vai para
+  `AssistantBenchmarkRun`. Na CI, o job "Teste de acerto do Jotta" roda em PR que mexe no
+  Assistente (`scripts/benchmark-ci.ts`): busca os casos em `/ci/assistant/cases` (`BENCH_TOKEN`),
+  roda a base (em cache pelo commit) e o PR, repete o caso que quebrou e fica vermelho se ele
+  falhar de novo. Evento e tarefa levam
   `notes` (descrição do evento, notas da tarefa).
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.

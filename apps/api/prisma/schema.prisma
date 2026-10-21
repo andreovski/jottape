@@ -789,3 +789,26 @@ model FinanceInsight {
   @@index([viewedAt])
   @@map("finance_insights")
 }
+
+/// Cada rodada do teste de acerto: pelo painel ou pela CI (num PR, com o commit).
+model AssistantBenchmarkRun {
+  id             String   @id @default(uuid())
+  /// PANEL: botão do painel; CI: job do GitHub.
+  source         String
+  commit         String?
+  /// Título ou número do PR, para o painel.
+  label          String?
+  total          Int
+  passed         Int
+  autoSavedWrong Int      @map("auto_saved_wrong")
+  /// Casos que passavam na base e quebraram (só CI).
+  regressions    Int      @default(0)
+  costMicros     Int      @map("cost_micros")
+  ms             Int
+  /// AssistantBenchmarkCase[]
+  cases          Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("assistant_benchmark_runs")
+}

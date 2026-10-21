@@ -1,6 +1,8 @@
 import {
   type AssistantAdminResponse,
   type AssistantAdminUser,
+  assistantBenchmarkCaseSchema,
+  type AssistantBenchmarkRun,
   type AssistantDraft,
   assistantDraftSchema,
   type AssistantFeedbackItem,
@@ -14,6 +16,7 @@ import {
   type UpdateAssistantTestCaseBody,
   type UpdateAssistantUserBody,
 } from '@jottape/schemas';
+import { z } from 'zod';
 
 import { todayIn } from '@/lib/dates';
 import { getAssistantMonthlyLimit, getJevConfig, getTranscriptionConfig } from '@/lib/env';
@@ -37,12 +40,19 @@ import { runBenchmark, toTestCase } from './benchmark';
 // "Isso está errado".
 
 const FEEDBACK_LIMIT = 50;
+/** Rodadas do teste de acerto no histórico do painel. */
+const RUNS_LIMIT = 5;
 /** Falhas mostradas por pessoa. */
 const FAILURES_LIMIT = 10;
 
 export async function assertAdmin(userId: string) {
   if (!(await isOwner(userId))) throw new AppError(403, 'Só o dono do app vê o painel.');
 }
+
+const casesOf = (value: unknown) => {
+  const parsed = z.array(assistantBenchmarkCaseSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
+};
 
 const traceOf = (value: unknown) => {
   const parsed = assistantTraceSchema.safeParse(value);
@@ -86,6 +96,10 @@ export async function adminOverview(userId: string): Promise<AssistantAdminRespo
     }),
   ]);
   const testCases = await prisma.assistantTestCase.findMany({ orderBy: { createdAt: 'desc' } });
+  const runs = await prisma.assistantBenchmarkRun.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: RUNS_LIMIT,
+  });
 
   const rows = users.map((user): AssistantAdminUser => {
     const access = accessOf(user);
@@ -182,6 +196,23 @@ export async function adminOverview(userId: string): Promise<AssistantAdminRespo
       const parsed = toTestCase(row);
       return parsed ? [parsed] : [];
     }),
+    runs: runs.map(
+      (run): AssistantBenchmarkRun => ({
+        id: run.id,
+        source: run.source === 'CI' ? 'CI' : 'PANEL',
+        commit: run.commit,
+        label: run.label,
+        regressions: run.regressions,
+        ranAt: run.createdAt.toISOString(),
+        total: run.total,
+        passed: run.passed,
+        autoSavedWrong: run.autoSavedWrong,
+        autoSavedRight: casesOf(run.cases).filter((c) => c.autoSave && c.passed).length,
+        ms: run.ms,
+        costMicros: run.costMicros,
+        cases: casesOf(run.cases),
+      })
+    ),
   };
 }
 

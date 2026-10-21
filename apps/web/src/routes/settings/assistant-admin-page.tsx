@@ -2,11 +2,12 @@ import type {
   AssistantAccess,
   AssistantAdminUser,
   AssistantBenchmarkResponse,
+  AssistantBenchmarkRun,
   AssistantDraft,
   AssistantFeedbackItem,
 } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronLeft, Download, Flag, FlaskConical, ListChecks } from 'lucide-react';
+import { Check, ChevronLeft, Download, Flag, FlaskConical, ListChecks } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button, Pill, Skeleton, Switch } from '@/components/ios/controls';
@@ -205,7 +206,7 @@ export function AssistantAdminPage() {
         ))}
       </Section>
 
-      <BenchmarkSection run={benchmark} />
+      <BenchmarkSection run={benchmark} runs={data.runs} />
 
       <Section footer='Baixa um arquivo com os relatos, os casos de teste e os números de cada pessoa.'>
         <Row
@@ -484,8 +485,16 @@ function FeedbackSheet({
 
 // ---------------------------------------------------------------- teste de acerto
 
-function BenchmarkSection({ run }: { run: ReturnType<typeof useRunBenchmark> }) {
-  const result: AssistantBenchmarkResponse | undefined = run.data;
+function BenchmarkSection({
+  run,
+  runs,
+}: {
+  run: ReturnType<typeof useRunBenchmark>;
+  runs: AssistantBenchmarkRun[];
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = runs.find((r) => r.id === selectedId) ?? runs[0];
+  const result: AssistantBenchmarkResponse | undefined = selected ?? run.data;
   const failed = result?.cases.filter((c) => !c.passed) ?? [];
   const score = (source: 'fixed' | 'real') => {
     const cases = result?.cases.filter((c) => c.source === source) ?? [];
@@ -532,6 +541,39 @@ function BenchmarkSection({ run }: { run: ReturnType<typeof useRunBenchmark> }) 
           </>
         )}
       </Section>
+      {runs.length > 0 && (
+        <Section
+          header='Rodadas'
+          footer='As do painel e as da CI, em cada PR que mexe no Jotta. Toque para ver os erros de uma.'
+        >
+          {runs.map((r) => (
+            <Row
+              key={r.id}
+              onClick={() => setSelectedId(r.id)}
+              title={`${r.passed} de ${r.total}`}
+              subtitle={[
+                r.source === 'CI' ? (r.label ?? 'CI') : 'Painel',
+                r.commit?.slice(0, 7),
+                when(r.ranAt),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              trailing={
+                <span className='flex items-center gap-2'>
+                  {r.regressions > 0 && (
+                    <Pill color='var(--red)'>
+                      {r.regressions === 1 ? '1 quebrou' : `${r.regressions} quebraram`}
+                    </Pill>
+                  )}
+                  {r.id === selected?.id && (
+                    <Check className='text-tint size-5' strokeWidth={2.5} />
+                  )}
+                </span>
+              }
+            />
+          ))}
+        </Section>
+      )}
       {failed.length > 0 && (
         <Section header={`Erros · ${failed.length}`}>
           {failed.map((c) => (

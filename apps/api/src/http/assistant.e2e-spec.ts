@@ -1075,6 +1075,66 @@ describe('assistente', () => {
       expect(result.costMicros).toBe(Math.round(50 * (100 * 0.1 + 10 * 0.5)));
       expect(await prisma.assistantUsage.count({ where: { kind: 'BENCHMARK' } })).toBe(1);
       expect(((await api.get('/assistant')).json() as AssistantStateResponse).usage.used).toBe(0);
+      // A rodada fica no histórico do painel.
+      const panel = (await api.get('/assistant/admin')).json() as AssistantAdminResponse;
+      expect(panel.runs).toHaveLength(1);
+      expect(panel.runs[0]).toMatchObject({ source: 'PANEL', total: 50, passed: result.passed });
+    });
+
+    it('a CI lê os casos e grava a rodada com o BENCH_TOKEN', async () => {
+      owner();
+      const raw = client(app, '');
+      // Sem a variável, as rotas não existem.
+      expect((await raw.get('/ci/assistant/cases')).statusCode).toBe(404);
+      vi.stubEnv('BENCH_TOKEN', 'segredo-da-ci');
+      const ci = (path: string, token: string, body?: unknown) =>
+        app.inject({
+          method: body ? 'POST' : 'GET',
+          url: path,
+          headers: { authorization: `Bearer ${token}` },
+          ...(body ? { payload: body as object } : {}),
+        });
+      expect((await ci('/ci/assistant/cases', 'errado')).statusCode).toBe(401);
+
+      await prisma.assistantTestCase.createMany({
+        data: [true, false].map((active) => ({
+          text: active ? 'ligado' : 'desligado',
+          today: '2026-10-21',
+          timezone: 'America/Sao_Paulo',
+          context: { accounts: [], categories: [], lists: [] },
+          expect: { intents: ['event'] },
+          active,
+        })),
+      });
+      const cases = (await ci('/ci/assistant/cases', 'segredo-da-ci')).json();
+      expect(cases.testCases.map((c: { text: string }) => c.text)).toEqual(['ligado']);
+
+      const posted = await ci('/ci/assistant/runs', 'segredo-da-ci', {
+        commit: 'abc1234def',
+        label: '#40 Jotta: ajusta o prompt',
+        regressions: 1,
+        usage: { modelInput: 1000, modelOutput: 100, jevInput: 50 },
+        result: {
+          ranAt: new Date().toISOString(),
+          total: 51,
+          passed: 48,
+          autoSavedRight: 30,
+          autoSavedWrong: 0,
+          ms: 40_000,
+          costMicros: 150,
+          cases: [],
+        },
+      });
+      expect(posted.statusCode).toBe(204);
+      const panel = (await api.get('/assistant/admin')).json() as AssistantAdminResponse;
+      expect(panel.runs[0]).toMatchObject({
+        source: 'CI',
+        commit: 'abc1234def',
+        label: '#40 Jotta: ajusta o prompt',
+        regressions: 1,
+        passed: 48,
+      });
+      expect(await prisma.assistantUsage.count({ where: { kind: 'BENCHMARK' } })).toBe(1);
     });
   });
 });

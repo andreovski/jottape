@@ -131,3 +131,8 @@ export function jobsEnabled(): boolean {
 export function isSecureCookie(): boolean {
   return isProduction();
 }
+
+/** Chave do job da CI que roda o teste de acerto (lê os casos e grava a rodada). Sem ela, fechado. */
+export function getBenchToken(): string | null {
+  return process.env.BENCH_TOKEN || null;
+}

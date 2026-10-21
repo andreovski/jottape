@@ -390,6 +390,8 @@ export const assistantAdminResponseSchema = z.object({
   /** Relatos em aberto primeiro, os mais novos. */
   feedback: z.array(assistantFeedbackItemSchema),
   testCases: z.array(assistantTestCaseSchema),
+  /** As últimas rodadas do teste de acerto (painel e CI), a mais nova primeiro. */
+  runs: z.array(z.lazy(() => assistantBenchmarkRunSchema)),
 });
 export type AssistantAdminResponse = z.infer<typeof assistantAdminResponseSchema>;
 
@@ -427,3 +429,27 @@ export const assistantBenchmarkResponseSchema = z.object({
   cases: z.array(assistantBenchmarkCaseSchema),
 });
 export type AssistantBenchmarkResponse = z.infer<typeof assistantBenchmarkResponseSchema>;
+
+/** Uma rodada guardada: pelo painel, ou pela CI num PR (com o commit e os casos que quebraram). */
+export const assistantBenchmarkRunSchema = assistantBenchmarkResponseSchema.extend({
+  id: z.string(),
+  source: z.enum(['PANEL', 'CI']),
+  commit: z.string().nullable(),
+  label: z.string().nullable(),
+  regressions: z.number().int(),
+});
+export type AssistantBenchmarkRun = z.infer<typeof assistantBenchmarkRunSchema>;
+
+/** O que o job da CI manda ao terminar (POST /ci/assistant/runs, com o BENCH_TOKEN). */
+export const ciBenchmarkRunBodySchema = z.object({
+  commit: z.string().max(64),
+  label: z.string().max(200).nullable(),
+  regressions: z.number().int().min(0),
+  result: assistantBenchmarkResponseSchema,
+  usage: z.object({
+    modelInput: z.number().int().min(0),
+    modelOutput: z.number().int().min(0),
+    jevInput: z.number().int().min(0),
+  }),
+});
+export type CiBenchmarkRunBody = z.infer<typeof ciBenchmarkRunBodySchema>;

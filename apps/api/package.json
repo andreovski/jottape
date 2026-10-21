@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.mts",
     "seed": "tsx src/scripts/seed-owner.ts",
-    "seed:prod": "node dist/scripts/seed-owner.js"
+    "seed:prod": "node dist/scripts/seed-owner.js",
+    "bench:ci": "tsx src/scripts/benchmark-ci.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.136.0",

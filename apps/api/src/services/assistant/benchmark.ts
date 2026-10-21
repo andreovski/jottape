@@ -7,7 +7,7 @@ import {
   type AssistantTestExpect,
   assistantTestExpectSchema,
 } from '@jottape/schemas';
-import type { AssistantTestCase as TestCaseRow } from '@prisma/client';
+import type { Prisma, AssistantTestCase as TestCaseRow } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
@@ -420,7 +420,7 @@ export function toTestCase(row: TestCaseRow): AssistantTestCase | null {
   };
 }
 
-interface Planned {
+export interface Planned {
   text: string;
   expect: Expect;
   options: Options;
@@ -428,42 +428,54 @@ interface Planned {
   caseId: string | null;
 }
 
-/** Os 50 fixos e os casos reais ativos. */
-async function plannedCases(): Promise<Planned[]> {
-  const rows = await prisma.assistantTestCase.findMany({
-    where: { active: true },
-    orderBy: { createdAt: 'asc' },
-  });
-  const real = rows.flatMap((row): Planned[] => {
-    const parsed = toTestCase(row);
-    if (!parsed) return [];
-    return [
-      {
-        text: parsed.text,
-        expect: parsed.expect as Expect,
-        options: optionsFromContext(parsed.today, parsed.timezone, parsed.context),
-        source: 'real',
-        caseId: parsed.id,
-      },
-    ];
-  });
+/** Chave do caso para comparar rodadas: o id do caso real, ou o texto do exemplo. */
+export const caseKey = (c: { caseId: string | null; text: string }) => c.caseId ?? c.text;
+
+/** Os 50 fixos e os casos reais dados (os ativos). */
+export function plannedFrom(testCases: AssistantTestCase[]): Planned[] {
   return [
     ...BENCHMARK_CASES.map(
       (c): Planned => ({ ...c, options: FIXED, source: 'fixed', caseId: null })
     ),
-    ...real,
+    ...testCases
+      .filter((c) => c.active)
+      .map(
+        (c): Planned => ({
+          text: c.text,
+          expect: c.expect as Expect,
+          options: optionsFromContext(c.today, c.timezone, c.context),
+          source: 'real',
+          caseId: c.id,
+        })
+      ),
   ];
 }
 
-/** Roda os 50 pedidos e os casos reais, e registra o custo (não conta no limite do mês). */
-export async function runBenchmark(
-  userId: string,
-  prices: { haikuInput: number; haikuOutput: number; jevInput: number }
-): Promise<AssistantBenchmarkResponse> {
+export async function activeTestCases(): Promise<AssistantTestCase[]> {
+  const rows = await prisma.assistantTestCase.findMany({
+    where: { active: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return rows.flatMap((row) => toTestCase(row) ?? []);
+}
+
+export interface Prices {
+  haikuInput: number;
+  haikuOutput: number;
+  jevInput: number;
+}
+
+export interface BenchmarkUsage {
+  modelInput: number;
+  modelOutput: number;
+  jevInput: number;
+}
+
+/** Roda os casos (5 de cada vez), sem tocar no banco. */
+export async function runCases(planned: Planned[]) {
   const started = Date.now();
-  const planned = await plannedCases();
   const cases: AssistantBenchmarkCase[] = new Array(planned.length);
-  const usage = { modelInput: 0, modelOutput: 0, jevInput: 0 };
+  const usage: BenchmarkUsage = { modelInput: 0, modelOutput: 0, jevInput: 0 };
   let next = 0;
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
@@ -491,12 +503,45 @@ export async function runBenchmark(
       }
     })
   );
+  return { cases, usage, ms: Date.now() - started };
+}
 
-  const costMicros = Math.round(
+export const costOf = (usage: BenchmarkUsage, prices: Prices) =>
+  Math.round(
     usage.modelInput * prices.haikuInput +
       usage.modelOutput * prices.haikuOutput +
       usage.jevInput * prices.jevInput
   );
+
+export function summarize(
+  cases: AssistantBenchmarkCase[],
+  ms: number,
+  costMicros: number
+): AssistantBenchmarkResponse {
+  return {
+    ranAt: new Date().toISOString(),
+    total: cases.length,
+    passed: cases.filter((c) => c.passed).length,
+    autoSavedRight: cases.filter((c) => c.autoSave && c.passed).length,
+    autoSavedWrong: cases.filter((c) => c.autoSave && !c.passed).length,
+    ms,
+    costMicros,
+    cases,
+  };
+}
+
+/** Guarda a rodada no histórico e o custo (fora do limite do mês), no nome do dono. */
+export async function recordRun(
+  userId: string,
+  result: AssistantBenchmarkResponse,
+  usage: BenchmarkUsage,
+  meta: {
+    source: 'PANEL' | 'CI';
+    commit?: string | null;
+    label?: string | null;
+    regressions?: number;
+  }
+) {
   await prisma.assistantUsage.create({
     data: {
       userId,
@@ -504,17 +549,32 @@ export async function runBenchmark(
       jevInputTokens: usage.jevInput,
       modelInputTokens: usage.modelInput,
       modelOutputTokens: usage.modelOutput,
-      costMicros,
+      costMicros: result.costMicros,
     },
   });
-  return {
-    ranAt: new Date().toISOString(),
-    total: cases.length,
-    passed: cases.filter((c) => c.passed).length,
-    autoSavedRight: cases.filter((c) => c.autoSave && c.passed).length,
-    autoSavedWrong: cases.filter((c) => c.autoSave && !c.passed).length,
-    ms: Date.now() - started,
-    costMicros,
-    cases,
-  };
+  await prisma.assistantBenchmarkRun.create({
+    data: {
+      source: meta.source,
+      commit: meta.commit ?? null,
+      label: meta.label ?? null,
+      total: result.total,
+      passed: result.passed,
+      autoSavedWrong: result.autoSavedWrong,
+      regressions: meta.regressions ?? 0,
+      costMicros: result.costMicros,
+      ms: result.ms,
+      cases: result.cases as unknown as Prisma.InputJsonValue,
+    },
+  });
+}
+
+/** Roda os 50 pedidos e os casos reais pelo painel, e guarda a rodada. */
+export async function runBenchmark(
+  userId: string,
+  prices: Prices
+): Promise<AssistantBenchmarkResponse> {
+  const { cases, usage, ms } = await runCases(plannedFrom(await activeTestCases()));
+  const result = summarize(cases, ms, costOf(usage, prices));
+  await recordRun(userId, result, usage, { source: 'PANEL' });
+  return result;
 }

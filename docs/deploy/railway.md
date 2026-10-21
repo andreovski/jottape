@@ -55,11 +55,22 @@ openssl rand -hex 32 | railway variable set ENCRYPTION_KEY --stdin --service jot
 | `JEV_API_KEY`                                            | api      | Jev (TypeSafe): confere tipo, conta e categoria e dá o score. Sem ela nada é salvo sozinho, tudo vira rascunho.                                     |
 | `GROQ_API_KEY`                                           | api      | Transcrição do áudio no servidor (Whisper na Groq, chave em console.groq.com). Sem ela o microfone usa a voz do navegador, que não existe em todos. |
 | `ASSISTANT_MONTHLY_LIMIT`                                | api      | Pedidos por usuário por mês (padrão 300). O dono não tem limite.                                                                                    |
+| `BENCH_TOKEN`                                            | api      | Chave do job da CI que roda o teste de acerto do Jotta (lê os casos reais e grava a rodada no painel). Mesmo valor no segredo do GitHub. Opcional.  |
 | `ASSISTANT_MODEL`, `JEV_MODEL`, `TRANSCRIPTION_MODEL`    | api      | Opcionais: trocam os modelos (padrão `claude-haiku-5-5`, `jev-latest`, `whisper-large-v3-turbo`).                                                   |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | api      | Notificações (seção 4). Sem elas não há lembretes por push.                                                                                         |
 | `HOST`                                                   | api      | `::` (já no arquivo): a rede privada do Railway pode ser só IPv6.                                                                                   |
 | `PORT`                                                   | api, web | `8080` e `4173` (já no arquivo).                                                                                                                    |
 | `API_URL`                                                | web      | Endereço privado da API (já no arquivo, por referência).                                                                                            |
+
+### Teste de acerto do Jotta na CI
+
+Todo PR que mexe no Assistente roda o teste de acerto (os 50 exemplos e os casos reais) no código
+do PR e compara com a base. Precisa destes segredos no GitHub (Settings › Secrets and variables ›
+Actions): `ANTHROPIC_API_KEY` e `JEV_API_KEY` (as mesmas da API) e `BENCH_TOKEN` (qualquer texto
+longo, o mesmo da variável na API). Sem a `ANTHROPIC_API_KEY` o job só avisa e passa; sem o
+`BENCH_TOKEN` roda só os 50 exemplos e não grava a rodada. O endereço da API vem da variável
+`BENCH_API_URL` do GitHub, com o domínio de produção do web (`/api`) como padrão. Cada PR custa
+perto de US$ 0,05; a base fica em cache e só roda de novo quando muda.
 
 ## 3. Google (Agenda, Tarefas e login)
 
