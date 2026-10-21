@@ -18,6 +18,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { Area, AreaChart, ResponsiveContainer, YAxis } from 'recharts';
 import { toast } from 'sonner';
 
+import { InstallInvite } from '@/components/install-invite';
 import { CategoryIcon } from '@/components/finance/category-icon';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { CheckCircle, EmptyState, Skeleton } from '@/components/ios/controls';
@@ -748,6 +749,7 @@ export function TodayPage() {
           { label: 'Novo lançamento', onSelect: () => setTxSheet({ open: true }) },
         ]}
       />
+      <InstallInvite />
       <TransactionSheet
         open={txSheet.open}
         onOpenChange={(open) => setTxSheet((s) => ({ ...s, open }))}

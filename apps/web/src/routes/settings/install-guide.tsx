@@ -14,21 +14,8 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ios/controls';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { Page } from '@/components/ios/page';
+import { detectPlatform, type Platform, useInstallPrompt } from '@/features/install';
 import { isStandalone } from '@/features/push';
-
-type Platform = 'ios' | 'android';
-
-interface InstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
-}
-
-function detectPlatform(): Platform | null {
-  const ua = navigator.userAgent;
-  const iPadOs = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
-  if (/iPhone|iPad|iPod/.test(ua) || iPadOs) return 'ios';
-  return /Android/i.test(ua) ? 'android' : null;
-}
 
 interface Step {
   icon: ReactNode;
@@ -94,32 +81,17 @@ const PLATFORM_LABEL: Record<Platform, string> = {
 
 export function InstallPage() {
   const navigate = useNavigate();
-  const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
+  const native = useInstallPrompt();
   const [installed, setInstalled] = useState(isStandalone());
   // Celular detectado: só a instrução dele. Computador/desconhecido: mostra as duas.
   const detected = detectPlatform();
   const platforms: Platform[] = detected ? [detected] : ['ios', 'android'];
 
   useEffect(() => {
-    const onPrompt = (event: Event) => {
-      event.preventDefault();
-      setPrompt(event as InstallPromptEvent);
-    };
     const onInstalled = () => setInstalled(true);
-    window.addEventListener('beforeinstallprompt', onPrompt);
     window.addEventListener('appinstalled', onInstalled);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', onPrompt);
-      window.removeEventListener('appinstalled', onInstalled);
-    };
+    return () => window.removeEventListener('appinstalled', onInstalled);
   }, []);
-
-  async function install() {
-    if (!prompt) return;
-    await prompt.prompt();
-    await prompt.userChoice;
-    setPrompt(null);
-  }
 
   const back = (
     <button
@@ -151,8 +123,8 @@ export function InstallPage() {
             No app instalado as notificações funcionam e o Jottape abre em tela cheia, como um app
             da loja.
           </p>
-          {prompt && (
-            <Button className='mb-7 w-full' onClick={install}>
+          {native.available && (
+            <Button className='mb-7 w-full' onClick={() => void native.install()}>
               Instalar agora
             </Button>
           )}
