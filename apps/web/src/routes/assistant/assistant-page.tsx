@@ -1,15 +1,17 @@
 import type { AssistantMessageResponse, AssistantTrace } from '@jottape/schemas';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { ArrowUp, Mic, Sparkles, SquarePen, X } from 'lucide-react';
+import { ArrowUp, Flag, Mic, Sparkles, SquarePen, X } from 'lucide-react';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
 import { EmptyState, Skeleton, Spinner } from '@/components/ios/controls';
+import { TextArea } from '@/components/ios/fields';
 import { BarButton, Page } from '@/components/ios/page';
-import { ActionSheet } from '@/components/ios/sheet';
+import { ActionSheet, Sheet } from '@/components/ios/sheet';
 import { fillValues } from '@/components/today/briefing-card';
 import {
   useAssistant,
   useClearAssistant,
+  useReportMessage,
   useSendAssistantMessage,
   useTranscribe,
 } from '@/features/assistant';
@@ -326,12 +328,61 @@ function Message({
       {message.cards.map((card) => (
         <AssistantCard key={card.id} card={card} accounts={accounts} categories={categories} />
       ))}
+      <ReportButton message={message} />
     </div>
   );
 }
 
+/** "Isso está errado": manda o pedido e a resposta para o dono do app olhar. */
+function ReportButton({ message }: { message: AssistantMessageResponse }) {
+  const report = useReportMessage();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState('');
+  if (message.reported) {
+    return <p className='text-caption text-label-3 px-3'>Obrigado pelo aviso.</p>;
+  }
+  const send = () =>
+    report.mutate(
+      { id: message.id, note: note.trim() || null },
+      { onSuccess: () => setOpen(false) }
+    );
+  return (
+    <>
+      <button
+        type='button'
+        className='text-caption text-label-3 flex items-center gap-1 px-3 active:opacity-40'
+        onClick={() => setOpen(true)}
+      >
+        <Flag className='size-3' strokeWidth={2.5} /> Isso está errado
+      </button>
+      <Sheet
+        open={open}
+        onOpenChange={setOpen}
+        title='Isso está errado'
+        confirmLabel='Enviar'
+        confirmDisabled={report.isPending}
+        onConfirm={send}
+      >
+        <div className='bg-surface rounded-[var(--radius)] px-4'>
+          <TextArea
+            aria-label='O que estava errado'
+            placeholder='O que estava errado? (opcional)'
+            value={note}
+            maxLength={500}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </div>
+        <p className='text-footnote text-label-2 px-4 pt-1.5'>
+          O pedido, a resposta e o que o Assistente montou vão para o dono do app, para melhorar o
+          Assistente. Fica guardado mesmo depois que a conversa some.
+        </p>
+      </Sheet>
+    </>
+  );
+}
+
 /** Texto da resposta com os valores no lugar (ou ocultos, como no Hoje). */
-function AnswerText({ text, values }: { text: string; values: number[] }) {
+export function AnswerText({ text, values }: { text: string; values: number[] }) {
   const { format } = useHiddenMoney();
   if (values.length === 0) return <>{text}</>;
   return (
@@ -353,10 +404,10 @@ const ENGINE_LABELS: Record<AssistantTrace['steps'][number]['engine'], string> =
 const seconds = (ms: number) =>
   `${(ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`;
 
-/** Modo dev: o que rodou nesta resposta, com tempo, tokens e custo. */
-function TraceDetails({ trace }: { trace: AssistantTrace }) {
+/** Modo dev: o que rodou nesta resposta, com tempo, tokens e custo. `always`: mesmo sem o modo dev. */
+export function TraceDetails({ trace, always }: { trace: AssistantTrace; always?: boolean }) {
   const devMode = useDevMode();
-  if (!devMode) return null;
+  if (!devMode && !always) return null;
   return (
     <div className='text-caption text-label-2 numeric space-y-0.5 px-3'>
       {trace.steps.map((step, index) => (

@@ -5,6 +5,7 @@ import {
   Code,
   Download,
   FileSpreadsheet,
+  FlaskConical,
   Globe,
   KeyRound,
   LogOut,
@@ -291,6 +292,22 @@ export function SettingsPage() {
               }
               title='Instalar o app'
               subtitle='Passo a passo para o seu aparelho'
+            />
+          </Link>
+        </Section>
+      )}
+
+      {devModeAvailable && (
+        <Section footer='Quem usa o Assistente, quanto custa, quanto acerta e os relatos de “Isso está errado”.'>
+          <Link to='/ajustes/assistente' className='block'>
+            <Row
+              chevron
+              leading={
+                <IconChip color='var(--purple)'>
+                  <FlaskConical />
+                </IconChip>
+              }
+              title='Beta do Assistente'
             />
           </Link>
         </Section>

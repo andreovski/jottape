@@ -400,3 +400,27 @@ export function describeMissing(missing: AssistantMissing[]): string {
   if (parts.length <= 1) return parts.join('');
   return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
 }
+
+/** O rascunho de um item que cria algo (lançamento, evento ou tarefa). */
+export function resolveAction(input: {
+  /** Um item com isActionIntent. */
+  item: ExtractedItem;
+  accounts: AccountOption[];
+  categories: CategoryOption[];
+  lists: TaskListOption[];
+  jev: JevAnswers | null;
+  today: string;
+  usualAccountId: string | null;
+}): Resolution {
+  const { item, jev, today } = input;
+  if (item.intent === 'event') return resolveEvent({ item, jev, today });
+  if (item.intent === 'task') return resolveTask({ item, lists: input.lists, jev, today });
+  return resolveItem({
+    item: item as ExtractedItem & { intent: FinanceIntent },
+    accounts: input.accounts,
+    categories: input.categories,
+    jev,
+    today,
+    usualAccountId: input.usualAccountId,
+  });
+}

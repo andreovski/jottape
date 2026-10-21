@@ -173,6 +173,8 @@ export const assistantMessageResponseSchema = z.object({
   cards: z.array(assistantCardResponseSchema),
   /** O que rodou na resposta. Só vai para o dono (modo dev); para os outros, null. */
   trace: assistantTraceSchema.nullable(),
+  /** O usuário já tocou em "Isso está errado" nesta resposta. */
+  reported: z.boolean(),
   createdAt: isoDateTimeSchema,
 });
 export type AssistantMessageResponse = z.infer<typeof assistantMessageResponseSchema>;
@@ -191,6 +193,8 @@ export const assistantStateResponseSchema = z.object({
   transcription: z.boolean(),
   /** O modo dev pode ser ligado (só o dono do app). */
   devMode: z.boolean(),
+  /** O painel do beta (só o dono do app). */
+  admin: z.boolean(),
   usage: assistantUsageResponseSchema,
   messages: z.array(assistantMessageResponseSchema),
 });
@@ -224,3 +228,105 @@ export type SaveAssistantCardBody = z.infer<typeof saveAssistantCardBodySchema>;
 
 export const transcriptionResponseSchema = z.object({ text: z.string() });
 export type TranscriptionResponse = z.infer<typeof transcriptionResponseSchema>;
+
+// ---------------------------------------------------------------- beta
+
+/** "Isso está errado" numa resposta, com um comentário opcional. */
+export const assistantFeedbackBodySchema = z.object({
+  note: z.string().trim().max(500).nullable().optional(),
+});
+export type AssistantFeedbackBody = z.infer<typeof assistantFeedbackBodySchema>;
+
+/** De onde vem o acesso ao Assistente: dono, ASSISTANT_EMAILS, convite pelo painel, ou nenhum. */
+export const assistantAccessSchema = z.enum(['owner', 'env', 'app', 'none']);
+export type AssistantAccess = z.infer<typeof assistantAccessSchema>;
+
+export const assistantAdminUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  access: assistantAccessSchema,
+  /** Pedidos por mês que valem para ele (null: sem limite, o dono). */
+  limit: z.number().int().nullable(),
+  /** O limite próprio, quando o dono mudou; null usa o padrão. */
+  customLimit: z.number().int().nullable(),
+  /** Mês corrente (do uso, que não some). */
+  month: z.object({
+    requests: z.number().int(),
+    transcriptions: z.number().int(),
+    audioSeconds: z.number(),
+    costMicros: z.number().int(),
+  }),
+  /** Últimos 30 dias (a conversa some depois disso). */
+  recent: z.object({
+    cards: z.number().int(),
+    autoSaved: z.number().int(),
+    saved: z.number().int(),
+    edited: z.number().int(),
+    undone: z.number().int(),
+    discarded: z.number().int(),
+    pending: z.number().int(),
+    haikuFailed: z.number().int(),
+    jevFailed: z.number().int(),
+    answerFailed: z.number().int(),
+    reports: z.number().int(),
+  }),
+});
+export type AssistantAdminUser = z.infer<typeof assistantAdminUserSchema>;
+
+export const assistantFeedbackItemSchema = z.object({
+  id: z.string(),
+  userName: z.string(),
+  request: z.string(),
+  /** Como a resposta: `{n}` + `values`. */
+  reply: z.string(),
+  values: z.array(z.number().int()),
+  trace: assistantTraceSchema.nullable(),
+  cards: z.array(assistantDraftSchema),
+  note: z.string().nullable(),
+  createdAt: isoDateTimeSchema,
+  resolvedAt: isoDateTimeSchema.nullable(),
+});
+export type AssistantFeedbackItem = z.infer<typeof assistantFeedbackItemSchema>;
+
+export const assistantAdminResponseSchema = z.object({
+  month: z.string(),
+  defaultLimit: z.number().int(),
+  services: z.object({ jev: z.boolean(), transcription: z.boolean() }),
+  users: z.array(assistantAdminUserSchema),
+  /** Relatos em aberto primeiro, os mais novos. */
+  feedback: z.array(assistantFeedbackItemSchema),
+});
+export type AssistantAdminResponse = z.infer<typeof assistantAdminResponseSchema>;
+
+export const updateAssistantUserBodySchema = z.object({
+  access: z.boolean().optional(),
+  limit: z.number().int().min(1).max(10_000).nullable().optional(),
+});
+export type UpdateAssistantUserBody = z.infer<typeof updateAssistantUserBodySchema>;
+
+export const assistantBenchmarkCaseSchema = z.object({
+  text: z.string(),
+  passed: z.boolean(),
+  /** O que se esperava e o que veio, em poucas palavras. */
+  expected: z.string(),
+  got: z.string(),
+  /** Os campos que não bateram. */
+  problems: z.array(z.string()),
+  /** Salvaria sozinho (score alto e nada faltando). */
+  autoSave: z.boolean(),
+});
+export type AssistantBenchmarkCase = z.infer<typeof assistantBenchmarkCaseSchema>;
+
+export const assistantBenchmarkResponseSchema = z.object({
+  ranAt: isoDateTimeSchema,
+  total: z.number().int(),
+  passed: z.number().int(),
+  /** Acertos que salvariam sozinhos, e erros que salvariam sozinhos (os perigosos). */
+  autoSavedRight: z.number().int(),
+  autoSavedWrong: z.number().int(),
+  ms: z.number().int(),
+  costMicros: z.number().int(),
+  cases: z.array(assistantBenchmarkCaseSchema),
+});
+export type AssistantBenchmarkResponse = z.infer<typeof assistantBenchmarkResponseSchema>;

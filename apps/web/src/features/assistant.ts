@@ -1,9 +1,12 @@
 import type {
+  AssistantAdminResponse,
+  AssistantBenchmarkResponse,
   AssistantCardResponse,
   AssistantReplyResponse,
   AssistantStateResponse,
   SaveAssistantCardBody,
   TranscriptionResponse,
+  UpdateAssistantUserBody,
 } from '@jottape/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -119,5 +122,66 @@ export function useTranscribe() {
           },
         })
         .json<TranscriptionResponse>(),
+  });
+}
+
+/** "Isso está errado" numa resposta. */
+export function useReportMessage() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string | null }) =>
+      api.post(`assistant/messages/${id}/feedback`, { json: { note } }),
+    onSuccess: (_, { id }) =>
+      client.setQueryData<AssistantStateResponse>(KEY, (state) =>
+        state
+          ? {
+              ...state,
+              messages: state.messages.map((m) => (m.id === id ? { ...m, reported: true } : m)),
+            }
+          : state
+      ),
+  });
+}
+
+// ---------------------------------------------------------------- painel do beta
+
+const ADMIN_KEY = ['assistant', 'admin'];
+
+export function useAssistantAdmin() {
+  return useQuery({
+    queryKey: ADMIN_KEY,
+    queryFn: () => api.get('assistant/admin').json<AssistantAdminResponse>(),
+  });
+}
+
+function useAdminMutation<T>(call: (input: T) => Promise<AssistantAdminResponse>) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: call,
+    onSuccess: (data) => client.setQueryData(ADMIN_KEY, data),
+  });
+}
+
+export const useUpdateAssistantUser = () =>
+  useAdminMutation(({ id, body }: { id: string; body: UpdateAssistantUserBody }) =>
+    api.patch(`assistant/admin/users/${id}`, { json: body }).json<AssistantAdminResponse>()
+  );
+
+export const useResolveFeedback = () =>
+  useAdminMutation(({ id, resolved }: { id: string; resolved: boolean }) =>
+    api
+      .post(`assistant/admin/feedback/${id}/resolve`, { json: { resolved } })
+      .json<AssistantAdminResponse>()
+  );
+
+/** Os 50 pedidos levam perto de um minuto. */
+export function useRunBenchmark() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api
+        .post('assistant/admin/benchmark', { timeout: 180_000 })
+        .json<AssistantBenchmarkResponse>(),
+    onSuccess: () => client.invalidateQueries({ queryKey: ADMIN_KEY }),
   });
 }
