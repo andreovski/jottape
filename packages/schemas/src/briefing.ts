@@ -174,6 +174,14 @@ export type StockQuote = z.infer<typeof stockQuoteSchema>;
 export const briefingToneSchema = z.enum(['neutral', 'good', 'warning', 'bad']);
 export type BriefingTone = z.infer<typeof briefingToneSchema>;
 
+/** Um compromisso de hoje no resumo do dia. `time` já vem no fuso do usuário; null é dia todo. */
+export const briefingEventSchema = z.object({
+  title: z.string(),
+  time: z.string().nullable(),
+  status: z.enum(['past', 'now', 'upcoming']),
+});
+export type BriefingEvent = z.infer<typeof briefingEventSchema>;
+
 export const briefingItemSchema = z.object({
   plugin: briefingPluginIdSchema,
   /**
@@ -187,6 +195,8 @@ export const briefingItemSchema = z.object({
   href: z.string().nullable(),
   /** Só no plugin de ações: as cotações para o app desenhar os gráficos. */
   stocks: z.array(stockQuoteSchema).optional(),
+  /** Só no resumo do dia: os compromissos de hoje, em ordem (os de dia todo primeiro). */
+  events: z.array(briefingEventSchema).optional(),
 });
 export type BriefingItem = z.infer<typeof briefingItemSchema>;
 

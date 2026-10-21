@@ -85,6 +85,34 @@ describe('dayLine', () => {
   });
 });
 
+describe('dayEvents', () => {
+  it('lista cada compromisso com o horário, dia todo primeiro', () => {
+    const l = dayLine({
+      events: [
+        event('2026-10-19T17:00:00Z', '2026-10-19T18:00:00Z', 'Dentista'),
+        event('2026-10-19T11:00:00Z', '2026-10-19T12:00:00Z', 'Café'),
+        event('2026-10-19T12:30:00Z', '2026-10-19T14:00:00Z', 'Aula'),
+        event('2026-10-19T03:00:00Z', '2026-10-20T03:00:00Z', 'Aniversário da Ana', true),
+      ],
+      tasks: 0,
+      overdue: 0,
+      now: NOW,
+      timeZone: TZ,
+    });
+    expect(l.events).toEqual([
+      { title: 'Aniversário da Ana', time: null, status: 'upcoming' },
+      { title: 'Café', time: '08:00', status: 'past' },
+      { title: 'Aula', time: '09:30', status: 'now' },
+      { title: 'Dentista', time: '14:00', status: 'upcoming' },
+    ]);
+  });
+
+  it('sem compromisso não manda lista', () => {
+    const l = dayLine({ events: [], tasks: 2, overdue: 0, now: NOW, timeZone: TZ });
+    expect(l.events).toBeUndefined();
+  });
+});
+
 describe('freeWindow', () => {
   it('acha o maior buraco até as 20h', () => {
     const l = freeWindow(

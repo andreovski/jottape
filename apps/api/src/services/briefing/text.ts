@@ -1,5 +1,6 @@
 import { addDays, diffInDays, wallTimeToInstant } from '@jottape/finance-engine';
 import type {
+  BriefingEvent,
   BriefingItem,
   BriefingPluginId,
   StockPeriod,
@@ -96,7 +97,28 @@ export function dayLine({ events, tasks, overdue, now, timeZone }: DayInput): Li
       text += ` (${overdue === tasks ? (tasks === 1 ? 'atrasada' : 'todas atrasadas') : `${overdue} ${overdue === 1 ? 'atrasada' : 'atrasadas'}`})`;
     parts.push(text);
   }
-  return line(`Hoje: ${parts.join(' e ')}.`, { href: events.length ? '/agenda' : '/tarefas' });
+  return line(`Hoje: ${parts.join(' e ')}.`, {
+    href: events.length ? '/agenda' : '/tarefas',
+    ...(events.length > 0 && { events: dayEvents(events, now, timeZone) }),
+  });
+}
+
+/** Os compromissos do dia para a lista do resumo: dia todo primeiro, depois por horário. */
+export function dayEvents(
+  events: DayInput['events'],
+  now: Date,
+  timeZone: string
+): BriefingEvent[] {
+  return [...events]
+    .sort((a, b) =>
+      a.allDay === b.allDay ? a.startAt.localeCompare(b.startAt) : a.allDay ? -1 : 1
+    )
+    .map((e) => {
+      if (e.allDay) return { title: e.title, time: null, status: 'upcoming' as const };
+      const status =
+        new Date(e.endAt) <= now ? 'past' : new Date(e.startAt) <= now ? 'now' : 'upcoming';
+      return { title: e.title, time: formatTime(new Date(e.startAt), timeZone), status };
+    });
 }
 
 /**
