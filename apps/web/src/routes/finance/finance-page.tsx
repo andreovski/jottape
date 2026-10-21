@@ -1,6 +1,6 @@
 import type { TransactionResponse } from '@jottape/schemas';
-import { useNavigate, useSearch } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { Inbox, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { AccountChip, AddAccountChip } from '@/components/finance/account-card';
@@ -16,6 +16,7 @@ import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { useSheetState } from '@/components/finance/use-sheet-state';
 import { Segmented, Skeleton } from '@/components/ios/controls';
 import { BarButton } from '@/components/ios/page';
+import { useBankStatus } from '@/features/bank';
 import { useAccounts, useForecast } from '@/features/finance';
 import { money, todayKey } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -85,6 +86,7 @@ export function FinancePage() {
           </div>
           <Hero />
           <Wallet onAddAccount={() => accountSheet.show(undefined)} />
+          <ReviewBanner />
           <Segmented
             value={tab}
             onChange={(value) => setSearch({ tab: value })}
@@ -126,6 +128,21 @@ export function FinancePage() {
       />
       <AccountSheet open={accountSheet.open} onOpenChange={accountSheet.onOpenChange} />
     </div>
+  );
+}
+
+/** Lançamentos do banco esperando revisão (Meu Pluggy). Some quando não há nenhum. */
+function ReviewBanner() {
+  const pending = useBankStatus().data?.pendingCount ?? 0;
+  if (!pending) return null;
+  return (
+    <Link
+      to='/financas/revisar'
+      className='bg-green/15 text-green text-subhead mb-3 flex items-center gap-2 rounded-[12px] px-3 py-2 font-semibold active:opacity-60'
+    >
+      <Inbox className='size-[18px]' />
+      {pending === 1 ? '1 lançamento do banco' : `${pending} lançamentos do banco`} para revisar
+    </Link>
   );
 }
 

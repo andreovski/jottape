@@ -2,6 +2,7 @@ import cron from 'node-cron';
 
 import { prisma } from '@/lib/prisma';
 import { pruneAssistantMessages } from '@/services/assistant';
+import { syncAllBanks } from '@/services/bank';
 import { pruneExternalCache } from '@/services/briefing/external';
 import { runInsights } from '@/services/briefing/insights';
 import { extendRecurrences } from '@/services/finance';
@@ -57,6 +58,11 @@ export function startJobs() {
   cron.schedule(
     '7 * * * *',
     guarded('insights', () => runInsights())
+  );
+  // O Meu Pluggy atualiza cada banco uma vez por dia; ler a cada 6 h pega a atualização cedo.
+  cron.schedule(
+    '23 */6 * * *',
+    guarded('bank', () => syncAllBanks())
   );
   cron.schedule(
     '17 3 * * *',

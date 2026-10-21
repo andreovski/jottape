@@ -6,7 +6,7 @@ import { type ReactNode, useEffect } from 'react';
 // criptografia em apps/api/src/lib/crypto.ts): mudou o uso dos dados, mude aqui também.
 
 const CONTACT = 'andre14luiz21@gmail.com';
-const UPDATED_AT = '20 de outubro de 2026';
+const UPDATED_AT = '21 de outubro de 2026';
 
 function LegalLayout({ title, children }: { title: string; children: ReactNode }) {
   useEffect(() => {
@@ -140,6 +140,22 @@ export function PrivacyPage() {
         modelos de inteligência artificial.
       </p>
 
+      <H2>Dados dos bancos (Open Finance)</H2>
+      <p>
+        Se você ligar seus bancos em Ajustes › Bancos, o Jottape usa a Pluggy (instituição
+        autorizada pelo Banco Central) com as chaves da sua própria aplicação na Pluggy, que lê os
+        bancos que você conectou no Meu Pluggy pelo Open Finance. O consentimento é dado por você,
+        no seu banco e no Meu Pluggy, e pode ser revogado lá a qualquer momento. O Jottape só lê:
+        não faz pagamentos nem transferências.
+      </p>
+      <p>
+        Guardamos o Client ID e o Client Secret da sua aplicação (o secret criptografado com
+        AES-256-GCM), o nome dos bancos, nome, número e saldo das contas e cartões, e os lançamentos
+        das contas que você escolheu importar, a partir da data escolhida. Esses dados só servem
+        para montar suas finanças no Jottape, não são vendidos, repassados nem usados para treinar
+        modelos de inteligência artificial.
+      </p>
+
       <H2>Onde os dados ficam</H2>
       <p>
         O Jottape roda na Railway (Railway Corp.), que hospeda o servidor e o banco de dados
@@ -210,6 +226,11 @@ export function PrivacyPage() {
           </a>{' '}
           (conta pessoal) ou em myapps.microsoft.com (conta de trabalho ou escola).
         </li>
+        <li>
+          Desligar os bancos: em Ajustes › Bancos, toque em Desconectar a Pluggy. O Jottape apaga as
+          chaves, os bancos e os lançamentos que ainda esperavam revisão; os que você já lançou
+          continuam. Para revogar o acesso ao banco, use o Meu Pluggy (meu.pluggy.ai).
+        </li>
         <li>Exportar: em Ajustes, baixe todos os seus dados em JSON ou os lançamentos em CSV.</li>
         <li>
           Apagar a conta: peça por e-mail para <Contact />. A conta e todos os dados ligados a ela
@@ -219,8 +240,9 @@ export function PrivacyPage() {
 
       <H2>Retenção</H2>
       <p>
-        Os dados ficam guardados enquanto sua conta existir. Os dados do Google e da Microsoft ficam
-        enquanto a conexão estiver ligada e são apagados quando você desconecta ou apaga a conta.
+        Os dados ficam guardados enquanto sua conta existir. Os dados do Google, da Microsoft e da
+        Pluggy ficam enquanto a conexão estiver ligada e são apagados quando você desconecta ou
+        apaga a conta.
       </p>
 
       <H2>Alterações e contato</H2>
@@ -247,7 +269,8 @@ export function TermsPage() {
         </li>
         <li>
           Ele organiza compromissos, tarefas e finanças pessoais e, se você quiser, sincroniza com o
-          Google Agenda, o Google Tasks e o calendário do Outlook.
+          Google Agenda, o Google Tasks e o calendário do Outlook, e lê seus bancos pelo Open
+          Finance (Meu Pluggy).
         </li>
         <li>
           Os números de finanças e de previsão de saldo são só organização pessoal, não

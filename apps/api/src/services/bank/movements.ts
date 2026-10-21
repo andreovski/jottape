@@ -1,0 +1,189 @@
+import { addDays, addMonthsClamped, dateStringInZone, diffInDays } from '@jottape/finance-engine';
+
+import type { PluggyTransaction } from './client';
+
+// Regras puras da importação: como um lançamento da Pluggy vira movimento, com qual lançamento do
+// Jottape ele casa e que categoria sugerir. Sem banco de dados, com teste (movements.spec.ts).
+
+export type MovementKind = 'INCOME' | 'EXPENSE';
+
+export interface ParsedMovement {
+  externalId: string;
+  kind: MovementKind;
+  amountCents: number;
+  date: string;
+  description: string;
+  installmentNumber: number | null;
+  installmentTotal: number | null;
+  /** Pagamento da fatura visto pelo cartão: não é receita, a fatura já é paga pela conta. */
+  isCardPayment: boolean;
+}
+
+/** Dias de folga entre a data do banco e a do lançamento feito à mão. */
+export const MATCH_WINDOW_DAYS = 4;
+/** Parcela 2 em diante: o banco pode datar pela compra ou pela fatura. */
+const INSTALLMENT_WINDOW_DAYS = 45;
+
+const CARD_PAYMENT = /\b(pagamento|pagto|pgto)\b/;
+
+/**
+ * Lê um lançamento da Pluggy. Na conta, o PENDING é agendamento futuro e fica de fora (volta
+ * quando for POSTED); no cartão, PENDING é compra ainda na fatura aberta e entra.
+ */
+export function parseMovement(
+  tx: PluggyTransaction,
+  accountType: 'BANK' | 'CREDIT',
+  timeZone: string
+): ParsedMovement | null {
+  if (accountType === 'BANK' && tx.status === 'PENDING') return null;
+  const amount = tx.amountInAccountCurrency ?? tx.amount;
+  const amountCents = Math.abs(Math.round(amount * 100));
+  if (amountCents === 0) return null;
+
+  const kind: MovementKind =
+    (tx.type ?? (amount < 0 ? 'DEBIT' : 'CREDIT')) === 'DEBIT' ? 'EXPENSE' : 'INCOME';
+  const meta = tx.creditCardMetadata;
+  const installmentTotal =
+    meta?.totalInstallments && meta.totalInstallments > 1 ? meta.totalInstallments : null;
+  const installmentNumber = installmentTotal ? (meta?.installmentNumber ?? null) : null;
+
+  let date = dateStringInZone(new Date(tx.date), timeZone);
+  // Alguns bancos datam todas as parcelas pela compra: a parcela N cai N-1 meses depois, senão
+  // todas iriam para a mesma fatura.
+  if (installmentNumber && installmentNumber > 1 && meta?.purchaseDate) {
+    const purchase = dateStringInZone(new Date(meta.purchaseDate), timeZone);
+    if (Math.abs(diffInDays(purchase, date)) <= 20) {
+      date = addMonthsClamped(purchase, installmentNumber - 1);
+    }
+  }
+
+  const description = (tx.description || tx.descriptionRaw || 'Lançamento do banco')
+    .trim()
+    .slice(0, 120);
+  return {
+    externalId: tx.id,
+    kind,
+    amountCents,
+    date,
+    description,
+    installmentNumber,
+    installmentTotal,
+    isCardPayment:
+      accountType === 'CREDIT' && kind === 'INCOME' && CARD_PAYMENT.test(plain(description)),
+  };
+}
+
+export interface MatchCandidate {
+  id: string;
+  kind: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  amountCents: number;
+  date: string;
+  accountId: string;
+  toAccountId: string | null;
+  installmentNumber: number | null;
+  installmentTotal: number | null;
+}
+
+/** O lançamento do Jottape movimenta a conta no mesmo sentido do movimento do banco? */
+function sameDirection(movement: ParsedMovement, tx: MatchCandidate, accountId: string) {
+  if (movement.kind === 'EXPENSE') {
+    return tx.accountId === accountId && (tx.kind === 'EXPENSE' || tx.kind === 'TRANSFER');
+  }
+  if (tx.kind === 'TRANSFER') return tx.toAccountId === accountId;
+  return tx.kind === 'INCOME' && tx.accountId === accountId;
+}
+
+/**
+ * O lançamento do Jottape que já é este movimento: mesmo sentido e valor, data perto (parcela:
+ * mesmo número de parcela, com mais folga). `taken` são os já casados com outro movimento desta
+ * conta. O mais próximo na data ganha.
+ */
+export function findMatch(
+  movement: ParsedMovement,
+  accountId: string,
+  candidates: MatchCandidate[],
+  taken: Set<string>
+): MatchCandidate | null {
+  let best: { tx: MatchCandidate; distance: number } | null = null;
+  for (const tx of candidates) {
+    if (taken.has(tx.id) || !sameDirection(movement, tx, accountId)) continue;
+    const distance = Math.abs(diffInDays(movement.date, tx.date));
+    let ok: boolean;
+    if (movement.installmentTotal && tx.installmentTotal) {
+      // Parcelas: o Jottape divide o total com o resto na primeira, então o valor pode diferir
+      // em alguns centavos.
+      ok =
+        tx.installmentNumber === movement.installmentNumber &&
+        tx.installmentTotal === movement.installmentTotal &&
+        Math.abs(tx.amountCents - movement.amountCents) <= movement.installmentTotal &&
+        distance <= INSTALLMENT_WINDOW_DAYS;
+    } else {
+      ok = tx.amountCents === movement.amountCents && distance <= MATCH_WINDOW_DAYS;
+    }
+    if (ok && (!best || distance < best.distance)) best = { tx, distance };
+  }
+  return best?.tx ?? null;
+}
+
+/** Datas em que procurar candidatos para um conjunto de movimentos. */
+export function candidateRange(movements: ParsedMovement[]): { from: string; to: string } | null {
+  if (movements.length === 0) return null;
+  const dates = movements.map((m) => m.date).sort();
+  const longest = movements.some((m) => m.installmentTotal)
+    ? INSTALLMENT_WINDOW_DAYS
+    : MATCH_WINDOW_DAYS;
+  return { from: addDays(dates[0]!, -longest), to: addDays(dates.at(-1)!, longest) };
+}
+
+function plain(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/** Descrição comparável: sem acento, número e pontuação, só as três primeiras palavras. */
+export function normalize(description: string): string {
+  return plain(description)
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 1)
+    .slice(0, 3)
+    .join(' ');
+}
+
+/**
+ * Categoria aprendida do histórico: a do lançamento mais recente com a mesma descrição e o mesmo
+ * tipo. `history` vem do mais novo para o mais antigo.
+ */
+export function categoryMemory(
+  history: { description: string; kind: string; categoryId: string | null }[]
+): Map<string, string> {
+  const memory = new Map<string, string>();
+  for (const tx of history) {
+    if (!tx.categoryId || tx.kind === 'TRANSFER') continue;
+    const key = `${tx.kind}:${normalize(tx.description)}`;
+    if (!memory.has(key)) memory.set(key, tx.categoryId);
+  }
+  return memory;
+}
+
+export function suggestCategory(
+  memory: Map<string, string>,
+  movement: Pick<ParsedMovement, 'kind' | 'description'>
+): string | null {
+  const key = normalize(movement.description);
+  if (!key) return null;
+  return memory.get(`${movement.kind}:${key}`) ?? null;
+}
+
+/** Descrição do lançamento importado: a parcela vai no fim, como "Loja (2/10)". */
+export function importedDescription(movement: {
+  description: string;
+  installmentNumber: number | null;
+  installmentTotal: number | null;
+}): string {
+  if (!movement.installmentTotal || !movement.installmentNumber) return movement.description;
+  const suffix = ` (${movement.installmentNumber}/${movement.installmentTotal})`;
+  return movement.description.slice(0, 120 - suffix.length) + suffix;
+}

@@ -53,6 +53,16 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   (`graphFetch`, refresh token trocado a cada renovação). O delta traz ocorrências já expandidas,
   então evento da Microsoft não tem `rrule` local; série criada no Jottape vai como `recurrence` e
   volta como ocorrências.
+- **Bancos** (Meu Pluggy, `services/bank`): grátis e aberto a todos, sem chave no servidor. Cada
+  usuário cria a própria aplicação na Pluggy e salva Client ID/Secret (`PluggyCredential`, secret
+  cifrado); o banco entra pelo widget Pluggy Connect (conector MeuPluggy) ou pelo ID do item. Só a
+  `BankAccount` ligada a uma `Account` traz lançamentos, a partir de `importFrom`. Cada lançamento
+  do banco vira um `BankMovement` (único por conta + id externo, nunca apagado: é o que impede
+  importar duas vezes): casa com um lançamento existente do mesmo valor e sentido em até 4 dias
+  (parcela pelo número, até 45 dias; previsto vira efetivado) → MATCHED; pagamento de fatura visto
+  no cartão → IGNORED; o resto fica PENDING em "A revisar" com a categoria do lançamento mais
+  recente de descrição igual (`movements.ts`, puro, com teste). Aceitar usa `createTransactions`
+  (a fatura sai sozinha). Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e
   descarta o que atrasou mais de 1 h. Tarefa só com data é lembrada às 09:00 locais.
 - **Briefing** (tela Hoje): cada plugin é uma função em `services/briefing/index.ts` que devolve
