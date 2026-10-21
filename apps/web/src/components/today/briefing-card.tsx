@@ -362,7 +362,11 @@ export function BriefingCard({ format }: { format: (cents: number) => string }) 
   if (briefing.isError) return null;
   if (briefing.isPending) return <Skeleton className='mb-7 h-[132px] rounded-[22px]' />;
 
-  const data = briefing.data;
+  // Plugin que este app ainda não conhece (a API foi atualizada antes do app no aparelho) fica de fora.
+  const data = {
+    ...briefing.data,
+    items: briefing.data.items.filter((item) => item.plugin in briefingCatalog),
+  };
   if (data.items.length === 0) {
     return (
       <Link
