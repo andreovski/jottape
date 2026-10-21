@@ -336,8 +336,11 @@ export function BriefingSettingsPage() {
     );
   }
 
-  // Os insights de IA só aparecem para quem tem o Assistente.
-  const visible = data.plugins.filter((p) => p.id !== 'insights' || insights.data?.available);
+  // Os insights de IA só aparecem para quem tem o Assistente. Plugin que este app ainda não
+  // conhece (a API foi atualizada antes do app no aparelho) fica de fora, sem quebrar a tela.
+  const visible = data.plugins.filter(
+    (p) => p.id in briefingCatalog && (p.id !== 'insights' || insights.data?.available)
+  );
   const enabled = visible.filter((p) => p.enabled);
   const disabled = visible.filter((p) => !p.enabled);
   const status = insights.data;
@@ -364,7 +367,8 @@ export function BriefingSettingsPage() {
       ids.indexOf(active.id as BriefingPluginId),
       ids.indexOf(over.id as BriefingPluginId)
     );
-    update({ plugins: [...moved.map((id) => ({ id, enabled: true })), ...disabled] });
+    const hidden = data!.plugins.filter((p) => !visible.includes(p));
+    update({ plugins: [...moved.map((id) => ({ id, enabled: true })), ...disabled, ...hidden] });
   }
 
   const uses = (id: BriefingPluginId) => enabled.some((p) => p.id === id);
