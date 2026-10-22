@@ -23,6 +23,7 @@ import { useBriefing } from '@/features/briefing';
 import { longDay, monthName, shortDay, time, todayKey } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
+import { AmbientCanvas, isAmbient } from './ambient-canvas';
 import { briefingCatalog } from './briefing-catalog';
 import { RainCanvas } from './rain-canvas';
 import {
@@ -120,7 +121,7 @@ function SkyBackdrop({
 }: {
   theme: SkyTheme;
   className?: string;
-  /** Tela cheia: gotas paradas no vidro. */
+  /** Tela cheia: gotas paradas no vidro e estrelas cadentes maiores. */
   glass?: boolean;
 }) {
   return (
@@ -139,6 +140,7 @@ function SkyBackdrop({
       )}
       <div className='absolute -bottom-32 -left-24 size-80 rounded-full bg-white/10 blur-3xl' />
       {theme.intensity && <RainCanvas intensity={theme.intensity} glass={glass} />}
+      {isAmbient(theme.kind) && <AmbientCanvas kind={theme.kind} big={glass} />}
     </div>
   );
 }

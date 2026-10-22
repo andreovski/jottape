@@ -1,7 +1,9 @@
+/* eslint-disable no-param-reassign -- desenhar no canvas é mudar o contexto recebido (cor, alpha). */
 import { useEffect, useRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { rand, runScene } from './canvas-loop';
 import type { RainIntensity } from './sky';
 
 // Chuva desenhada gota a gota num canvas. Cada gota nasce num lugar e numa velocidade sorteados e
@@ -88,7 +90,6 @@ interface Bead {
   age: number;
 }
 
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
 const DEG = Math.PI / 180;
 
 export function RainCanvas({
@@ -105,23 +106,16 @@ export function RainCanvas({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const parent = canvas?.parentElement;
-    const ctx = canvas?.getContext('2d');
-    if (!canvas || !parent || !ctx) return;
+    if (!canvas) return;
 
     const profile = PROFILES[intensity];
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
     let width = 0;
     let height = 0;
     let drops: Drop[] = [];
     let beads: Bead[] = [];
-    let frame = 0;
-    let last = 0;
     let time = rand(0, 100);
-    let visible = true;
     let flash = 0;
     let nextFlash = rand(3, 9);
-
     const spawnDrop = (anywhere: boolean): Drop => {
       const r = Math.random();
       const layer = r < LAYERS[0].share ? 0 : r < LAYERS[0].share + LAYERS[1].share ? 1 : 2;
@@ -147,19 +141,6 @@ export function RainCanvas({
       life: rand(4, 14),
       age: 0,
     });
-
-    function resize() {
-      const rect = parent!.getBoundingClientRect();
-      width = rect.width;
-      height = rect.height;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas!.width = Math.round(width * dpr);
-      canvas!.height = Math.round(height * dpr);
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const count = Math.min(420, Math.round(((width * height) / 10_000) * profile.density));
-      drops = Array.from({ length: count }, () => spawnDrop(true));
-      beads = glass ? Array.from({ length: profile.glass }, spawnBead) : [];
-    }
 
     /** Vento com rajadas: soma de senos de períodos sem múltiplo comum, então não "volta". */
     const windAngle = () =>
@@ -191,28 +172,28 @@ export function RainCanvas({
       }
     }
 
-    function draw() {
-      ctx!.clearRect(0, 0, width, height);
+    function draw(ctx: CanvasRenderingContext2D) {
+      ctx.clearRect(0, 0, width, height);
       const wind = windAngle();
 
       // Uma passada por camada: o rastro mais apagado e a "cabeça" da gota mais clara.
       LAYERS.forEach((layer, index) => {
         const alpha = profile.alpha * layer.alpha;
-        ctx!.lineWidth = layer.width;
-        ctx!.lineCap = 'round';
+        ctx.lineWidth = layer.width;
+        ctx.lineCap = 'round';
         for (const [from, to, a] of [
           [1, 0.45, alpha * 0.35],
           [0.45, 0, alpha],
         ] as const) {
-          ctx!.strokeStyle = `rgba(235, 242, 255, ${a})`;
-          ctx!.beginPath();
+          ctx.strokeStyle = `rgba(235, 242, 255, ${a})`;
+          ctx.beginPath();
           for (const drop of drops) {
             if (drop.layer !== index) continue;
             const dx = Math.tan(wind + drop.tilt) * drop.length;
-            ctx!.moveTo(drop.x + dx * from, drop.y - drop.length * from);
-            ctx!.lineTo(drop.x + dx * to, drop.y - drop.length * to);
+            ctx.moveTo(drop.x + dx * from, drop.y - drop.length * from);
+            ctx.lineTo(drop.x + dx * to, drop.y - drop.length * to);
           }
-          ctx!.stroke();
+          ctx.stroke();
         }
       });
 
@@ -220,7 +201,7 @@ export function RainCanvas({
       for (const bead of beads) {
         const fade = Math.min(1, bead.age / 0.6, (bead.life - bead.age) / 1.2);
         if (fade <= 0) continue;
-        const gradient = ctx!.createRadialGradient(
+        const gradient = ctx.createRadialGradient(
           bead.x - bead.r * 0.35,
           bead.y - bead.r * 0.4,
           0,
@@ -231,65 +212,31 @@ export function RainCanvas({
         gradient.addColorStop(0, `rgba(255, 255, 255, ${0.55 * fade})`);
         gradient.addColorStop(0.55, `rgba(255, 255, 255, ${0.12 * fade})`);
         gradient.addColorStop(1, `rgba(0, 10, 30, ${0.22 * fade})`);
-        ctx!.fillStyle = gradient;
-        ctx!.beginPath();
-        ctx!.arc(bead.x, bead.y, bead.r, 0, Math.PI * 2);
-        ctx!.fill();
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(bead.x, bead.y, bead.r, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       // Relâmpago: dois clarões rápidos, o segundo mais fraco.
       if (flash > 0) {
         const pulse = flash > 0.6 ? flash : flash * (0.6 + 0.4 * Math.sin(flash * 40));
-        ctx!.fillStyle = `rgba(225, 230, 255, ${0.32 * pulse})`;
-        ctx!.fillRect(0, 0, width, height);
+        ctx.fillStyle = `rgba(225, 230, 255, ${0.32 * pulse})`;
+        ctx.fillRect(0, 0, width, height);
       }
     }
 
-    function loop(now: number) {
-      const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
-      last = now;
-      step(dt);
-      draw();
-      frame = requestAnimationFrame(loop);
-    }
-
-    function start() {
-      if (frame || reduced || !visible || document.hidden) return;
-      last = 0;
-      frame = requestAnimationFrame(loop);
-    }
-
-    function stop() {
-      cancelAnimationFrame(frame);
-      frame = 0;
-    }
-
-    resize();
-    draw();
-
-    const resizeObserver = new ResizeObserver(() => {
-      resize();
-      draw();
+    return runScene(canvas, {
+      resize(w, h) {
+        width = w;
+        height = h;
+        const count = Math.min(420, Math.round(((width * height) / 10_000) * profile.density));
+        drops = Array.from({ length: count }, () => spawnDrop(true));
+        beads = glass ? Array.from({ length: profile.glass }, spawnBead) : [];
+      },
+      step,
+      draw,
     });
-    resizeObserver.observe(parent);
-
-    // Fora da tela ou com o app em segundo plano, a chuva para (e não gasta bateria).
-    const intersection = new IntersectionObserver(([entry]) => {
-      visible = entry.isIntersecting;
-      if (visible) start();
-      else stop();
-    });
-    intersection.observe(canvas);
-    const onVisibility = () => (document.hidden ? stop() : start());
-    document.addEventListener('visibilitychange', onVisibility);
-    start();
-
-    return () => {
-      stop();
-      resizeObserver.disconnect();
-      intersection.disconnect();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
   }, [intensity, glass]);
 
   return (
