@@ -210,6 +210,15 @@ export function TaskRow({
 }
 
 /** Cartão de linhas; o último separador fica escondido sob a borda. */
+/** Rótulo de grupo dentro do cartão de tarefas (Hoje, Em breve, Sem data). */
+export function TaskGroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className='text-footnote text-label-2 bg-fill/50 px-4 pt-2.5 pb-1 font-semibold uppercase'>
+      {children}
+    </div>
+  );
+}
+
 export function TaskCard({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className={cn('bg-surface overflow-hidden rounded-[var(--radius)]', className)}>

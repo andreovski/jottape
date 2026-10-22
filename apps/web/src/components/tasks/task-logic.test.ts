@@ -11,6 +11,7 @@ import {
   dueInfo,
   findTask,
   formFromTask,
+  groupBySchedule,
   groupTasks,
   listColor,
   moveId,
@@ -214,6 +215,33 @@ describe('ordem', () => {
     expect(groups.map((g) => [g.title, g.color])).toEqual([
       ['Entrada', 'var(--blue)'],
       ['Casa', '#34c759'],
+    ]);
+  });
+
+  it('divide "Todas" como a tela Hoje: hoje (atrasadas na frente), em breve e sem data', () => {
+    const groups = groupBySchedule(
+      [
+        task({ id: 'semana', dueAt: '2026-10-21T03:00:00Z' }),
+        task({ id: 'sem-a' }),
+        task({ id: 'hoje', dueAt: '2026-10-18T15:00:00Z', hasTime: true }),
+        task({ id: 'sem-b', priority: 'HIGH' }),
+        task({ id: 'ontem', dueAt: '2026-10-17T03:00:00Z' }),
+        task({ id: 'amanha', dueAt: '2026-10-19T03:00:00Z' }),
+      ],
+      { today: '2026-10-18', timeZone: TZ }
+    );
+    expect(groups.map((g) => [g.title, g.tasks.map((t) => t.id)])).toEqual([
+      ['Hoje', ['ontem', 'hoje']],
+      ['Em breve', ['amanha', 'semana']],
+      ['Sem data', ['sem-b', 'sem-a']],
+    ]);
+  });
+
+  it('mantém Hoje mesmo vazio e tira os outros grupos vazios', () => {
+    const groups = groupBySchedule([task({ id: 'x' })], { today: '2026-10-18', timeZone: TZ });
+    expect(groups.map((g) => [g.id, g.tasks.length])).toEqual([
+      ['hoje', 0],
+      ['sem-data', 1],
     ]);
   });
 
