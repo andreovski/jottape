@@ -1,12 +1,11 @@
 import type { CategoryKind, CategoryResponse } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { CategoryIcon, categoryIconOf } from '@/components/finance/category-icon';
-import { CategoryPicker } from '@/components/finance/category-picker';
+import { CATEGORY_ICONS, CategoryIcon } from '@/components/finance/category-icon';
 import { Button, EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
-import { ColorPicker, FieldError, FieldRow, SWATCHES } from '@/components/ios/fields';
+import { ColorPicker, FieldError, SWATCHES } from '@/components/ios/fields';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
@@ -18,22 +17,6 @@ import {
 } from '@/features/finance';
 import { useFormErrors } from '@/lib/use-form-errors';
 import { cn } from '@/lib/utils';
-
-/** Ícones oferecidos (os nomes que o `CategoryIcon` conhece). */
-const ICON_NAMES = [
-  'shopping-cart',
-  'utensils',
-  'home',
-  'car',
-  'heart-pulse',
-  'graduation-cap',
-  'party-popper',
-  'repeat',
-  'briefcase',
-  'plus-circle',
-  'circle-ellipsis',
-  'tag',
-];
 
 type Editing = { category?: CategoryResponse; parentId?: string | null } | null;
 
@@ -49,6 +32,108 @@ export function groupCategories(categories: CategoryResponse[], kind: CategoryKi
       parent,
       children: ofKind.filter((c) => c.parentId === parent.id).sort(byName),
     }));
+}
+
+/** Ícones por página no seletor: 3 linhas de 6. */
+const ICONS_PER_PAGE = 18;
+
+export function iconPages<T>(icons: T[], perPage = ICONS_PER_PAGE): T[][] {
+  const pages: T[][] = [];
+  for (let i = 0; i < icons.length; i += perPage) pages.push(icons.slice(i, i + perPage));
+  return pages;
+}
+
+/** Grade de ícones em páginas que deslizam para o lado, com bolinhas de página embaixo. */
+function IconPicker({
+  value,
+  onChange,
+  startAtValue,
+}: {
+  value: string | null;
+  onChange: (icon: string) => void;
+  /** Ao editar, abre na página do ícone escolhido; numa categoria nova, na primeira. */
+  startAtValue: boolean;
+}) {
+  const pages = iconPages(CATEGORY_ICONS);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(() =>
+    startAtValue
+      ? Math.max(
+          0,
+          pages.findIndex((icons) => icons.some((i) => i.name === value))
+        )
+      : 0
+  );
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = page * el.clientWidth;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const goTo = (index: number) => {
+    const el = scroller.current;
+    el?.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+  };
+
+  return (
+    <div>
+      <div
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setPage(Math.round(el.scrollLeft / el.clientWidth));
+        }}
+        className='no-scrollbar flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain'
+      >
+        {pages.map((icons, index) => (
+          <div
+            key={index}
+            role='group'
+            aria-label={`Página ${index + 1} de ${pages.length}`}
+            className='grid w-full shrink-0 snap-start grid-cols-6 content-start gap-3 p-4 pb-3'
+          >
+            {icons.map(({ name: iconName, label, icon: Icon }) => {
+              const selected = value === iconName;
+              return (
+                <button
+                  key={iconName}
+                  type='button'
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={selected}
+                  onClick={() => onChange(iconName)}
+                  className={cn(
+                    'bg-fill text-label-2 mx-auto flex size-10 items-center justify-center rounded-full transition-transform active:scale-90',
+                    selected && 'ring-label-3 text-foreground ring-[3px]'
+                  )}
+                >
+                  <Icon className='size-5' strokeWidth={2.25} />
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {pages.length > 1 && (
+        <div className='flex justify-center gap-2 pb-3'>
+          {pages.map((_, index) => (
+            <button
+              key={index}
+              type='button'
+              aria-label={`Ir para a página ${index + 1}`}
+              aria-current={page === index}
+              onClick={() => goTo(index)}
+              className={cn(
+                'size-[7px] rounded-full transition-colors',
+                page === index ? 'bg-label-2' : 'bg-label-3'
+              )}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CategorySheet({
@@ -68,7 +153,8 @@ function CategorySheet({
     existing?.color ?? (existing ? null : SWATCHES[6])
   );
   const [icon, setIcon] = useState<string | null>(existing?.icon ?? (existing ? null : 'tag'));
-  const [parentId, setParentId] = useState(existing?.parentId ?? editing?.parentId ?? '');
+  // A mãe vem de onde a categoria foi criada (o "+ Subcategoria" da mãe); não se escolhe no formulário.
+  const parentId = existing?.parentId ?? editing?.parentId ?? null;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const create = useCreateCategory();
   const update = useUpdateCategory();
@@ -79,22 +165,18 @@ function CategorySheet({
   });
 
   const hasChildren = existing ? categories.some((c) => c.parentId === existing.id) : false;
-  const parents = categories
-    .filter((c) => c.kind === kind && !c.parentId && c.id !== existing?.id)
-    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  const isSub = Boolean(parentId);
   const preview = {
     id: existing?.id ?? 'novo',
     name,
     kind,
-    parentId: parentId || null,
+    parentId,
     icon,
     color,
   } satisfies CategoryResponse;
 
   async function save() {
     if (pending || !validate()) return;
-    const body = { name: name.trim(), color, icon, parentId: parentId || null };
+    const body = { name: name.trim(), color, icon, parentId };
     if (existing) await update.mutateAsync({ id: existing.id, ...body });
     else await create.mutateAsync({ ...body, kind });
     onClose();
@@ -105,7 +187,15 @@ function CategorySheet({
       <Sheet
         open={editing !== null}
         onOpenChange={(open) => !open && onClose()}
-        title={existing ? 'Editar Categoria' : 'Nova Categoria'}
+        title={
+          existing
+            ? parentId
+              ? 'Editar Subcategoria'
+              : 'Editar Categoria'
+            : parentId
+              ? 'Nova Subcategoria'
+              : 'Nova Categoria'
+        }
         confirmLabel={existing ? 'OK' : 'Adicionar'}
         confirmDisabled={pending}
         onConfirm={save}
@@ -132,58 +222,17 @@ function CategorySheet({
           </div>
         </div>
 
-        <Section header='Pertence a'>
-          <FieldRow label='Categoria-mãe'>
-            <CategoryPicker
-              value={parentId}
-              onChange={setParentId}
-              groups={hasChildren ? [] : parents.map((parent) => ({ parent, children: [] }))}
-              kind={kind}
-              title='Categoria-mãe'
-              placeholder='Nenhuma'
-            />
-          </FieldRow>
-        </Section>
-        {hasChildren && (
-          <p className='text-footnote text-label-2 -mt-5 mb-6 px-4'>
-            Esta categoria tem subcategorias, então não pode virar subcategoria.
-          </p>
-        )}
-
-        <Section
-          header='Cor'
-          footer={isSub ? 'Sem cor própria, a subcategoria usa a da categoria-mãe.' : undefined}
-        >
+        <Section header='Cor'>
           <ColorPicker value={color} onChange={setColor} />
         </Section>
 
         <Section header='Ícone'>
-          <div className='grid grid-cols-6 gap-3 p-4'>
-            {ICON_NAMES.map((iconName) => {
-              const Icon = categoryIconOf(iconName);
-              const selected = icon === iconName;
-              return (
-                <button
-                  key={iconName}
-                  type='button'
-                  aria-label={iconName}
-                  aria-pressed={selected}
-                  onClick={() => setIcon(iconName)}
-                  className={cn(
-                    'bg-fill text-label-2 mx-auto flex size-10 items-center justify-center rounded-full transition-transform active:scale-90',
-                    selected && 'ring-label-3 text-foreground ring-[3px]'
-                  )}
-                >
-                  <Icon className='size-5' strokeWidth={2.25} />
-                </button>
-              );
-            })}
-          </div>
+          <IconPicker value={icon} onChange={setIcon} startAtValue={Boolean(existing)} />
         </Section>
 
         {existing && (
           <Button variant='destructive' className='w-full' onClick={() => setConfirmDelete(true)}>
-            Apagar Categoria
+            {parentId ? 'Apagar Subcategoria' : 'Apagar Categoria'}
           </Button>
         )}
       </Sheet>
