@@ -1,12 +1,23 @@
-import type { AssistantBenchmarkCase, AssistantBenchmarkResponse } from '@jottape/schemas';
+import {
+  type AssistantBenchmarkCase,
+  type AssistantBenchmarkResponse,
+  type AssistantTestCase,
+  type AssistantTestContext,
+  assistantTestContextSchema,
+  type AssistantTestExpect,
+  assistantTestExpectSchema,
+} from '@jottape/schemas';
+import type { Prisma, AssistantTestCase as TestCaseRow } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
 import { extractItems } from './haiku';
 import { askJev } from './jev';
+import { phraseOf } from './memory';
 import {
   type AccountOption,
   type CategoryOption,
+  type Hints,
   type Intent,
   isActionIntent,
   resolveAction,
@@ -15,7 +26,8 @@ import {
 
 // Teste de acerto do Assistente: 50 pedidos com a resposta certa, rodados pelo Haiku e pelo Jev de
 // verdade (o dono roda no painel do beta). Usa contas, categorias e listas de mentira, num dia
-// fixo, e não grava nada além do custo.
+// fixo, e não grava nada além do custo. Junto vão os casos reais (relatos que viraram caso), cada
+// um com o dia e os nomes da pessoa naquele momento.
 
 /** Quarta-feira: "ontem" é 13, "amanhã" 15, "sexta" 16, "segunda" 19. */
 const TODAY = '2026-10-14';
@@ -51,18 +63,63 @@ const LISTS: TaskListOption[] = [
 ];
 
 /** O que o primeiro item precisa ter. Campo fora daqui não é conferido. */
-interface Expect {
-  intents: Intent[];
-  amountCents?: number;
-  date?: string | null;
-  account?: string;
-  toAccount?: string;
-  category?: string;
-  installments?: number;
-  time?: string | null;
-  endTime?: string;
-  allDay?: boolean;
-  list?: string;
+type Expect = AssistantTestExpect & { intents: Intent[] };
+
+interface Options {
+  today: string;
+  timezone: string;
+  accounts: AccountOption[];
+  categories: CategoryOption[];
+  lists: TaskListOption[];
+  /** A memória da pessoa no dia do caso (só nos casos reais). */
+  memory?: NonNullable<AssistantTestContext['memory']>;
+  preferences?: { label: string; account?: string; category?: string }[];
+}
+
+/** A memória do caso como dicas para o item, pelos nomes das opções do caso. */
+function hintsOf(options: Options, description: string): Hints | undefined {
+  const phrase = phraseOf(description);
+  const hints: Hints = {};
+  for (const m of options.memory ?? []) {
+    if (phraseOf(m.label) !== phrase) continue;
+    const rows: { id: string; name: string }[] =
+      m.field === 'account' ? options.accounts : options.categories;
+    const found = rows.find((r) => r.name === m.value);
+    if (found) hints[m.field] = { id: found.id, source: 'memory' };
+  }
+  return hints.account || hints.category ? hints : undefined;
+}
+
+const FIXED: Options = {
+  today: TODAY,
+  timezone: TIMEZONE,
+  accounts: ACCOUNTS,
+  categories: CATEGORIES,
+  lists: LISTS,
+};
+
+/** Os nomes do caso real viram opções com ids de mentira, na ordem em que estavam. */
+export function optionsFromContext(
+  today: string,
+  timezone: string,
+  context: AssistantTestContext
+): Options {
+  const memory = context.memory ?? [];
+  const preferences = new Map<string, { label: string; account?: string; category?: string }>();
+  for (const m of memory) {
+    const entry = preferences.get(phraseOf(m.label)) ?? { label: m.label };
+    entry[m.field] = m.value;
+    preferences.set(phraseOf(m.label), entry);
+  }
+  return {
+    today,
+    timezone,
+    accounts: context.accounts.map((a, i) => ({ id: `a-${i}`, ...a })),
+    categories: context.categories.map((c, i) => ({ id: `c-${i}`, ...c })),
+    lists: context.lists.map((l, i) => ({ id: `l-${i}`, ...l })),
+    memory,
+    preferences: [...preferences.values()],
+  };
 }
 
 export const BENCHMARK_CASES: { text: string; expect: Expect }[] = [
@@ -290,47 +347,40 @@ function describe(fields: Record<string, unknown>): string {
     .map(([k, v]) => {
       if (k === 'intents') return (v as string[]).join(' + ');
       if (k === 'amountCents' && typeof v === 'number') return MONEY(v);
+      if (typeof v === 'boolean') return `${k}: ${v ? 'sim' : 'não'}`;
       return `${k}: ${v === null ? '—' : String(v)}`;
     })
     .join(' · ');
 }
 
-async function runCase(text: string, expect: Expect) {
-  const extracted = await extractItems(text, {
-    today: TODAY,
-    timezone: TIMEZONE,
-    accounts: ACCOUNTS,
-    categories: CATEGORIES,
-    lists: LISTS,
-  });
+async function runCase(text: string, expect: Expect, options: Options) {
+  const { today, accounts, categories, lists } = options;
+  const extracted = await extractItems(text, options);
   let jevInput = 0;
   const got: Record<string, unknown> = { intents: extracted.items.map((i) => i.intent) };
   let autoSave = false;
   const first = extracted.items[0];
   if (first && isActionIntent(first.intent)) {
-    const jev = await askJev(first, {
-      accounts: ACCOUNTS,
-      categories: CATEGORIES,
-      lists: LISTS,
-    }).catch(() => null);
+    const jev = await askJev(first, { accounts, categories, lists }).catch(() => null);
     jevInput = jev?.inputTokens ?? 0;
     const { draft, ...resolution } = resolveAction({
       item: first,
-      accounts: ACCOUNTS,
-      categories: CATEGORIES,
-      lists: LISTS,
+      accounts,
+      categories,
+      lists,
       jev: jev?.answers ?? null,
-      today: TODAY,
+      today,
       usualAccountId: null,
+      hints: hintsOf(options, first.description),
     });
     autoSave = resolution.autoSave && extracted.items.every((i) => isActionIntent(i.intent));
     if (draft.type === 'transaction') {
       Object.assign(got, {
         amountCents: draft.amountCents,
         date: draft.date,
-        account: nameOf(ACCOUNTS, draft.accountId),
-        toAccount: nameOf(ACCOUNTS, draft.toAccountId),
-        category: nameOf(CATEGORIES, draft.categoryId),
+        account: nameOf(accounts, draft.accountId),
+        toAccount: nameOf(accounts, draft.toAccountId),
+        category: nameOf(categories, draft.categoryId),
         installments: draft.installments,
       });
     } else if (draft.type === 'event') {
@@ -339,12 +389,14 @@ async function runCase(text: string, expect: Expect) {
         time: draft.startTime,
         endTime: draft.endTime,
         allDay: draft.allDay,
+        notes: Boolean(draft.notes),
       });
     } else if (draft.type === 'task') {
       Object.assign(got, {
         date: draft.date,
         time: draft.time,
-        list: draft.listId ? nameOf(LISTS, draft.listId) : 'Entrada',
+        list: draft.listId ? nameOf(lists, draft.listId) : (lists[0]?.name ?? 'Entrada'),
+        notes: Boolean(draft.notes),
       });
     }
   }
@@ -365,6 +417,8 @@ async function runCase(text: string, expect: Expect) {
     got: describe(shown),
     problems,
     autoSave,
+    source: 'fixed',
+    caseId: null,
   };
   return {
     result,
@@ -378,23 +432,88 @@ async function runCase(text: string, expect: Expect) {
 
 const CONCURRENCY = 5;
 
-/** Roda os 50 pedidos e registra o custo (não conta no limite do mês). */
-export async function runBenchmark(
-  userId: string,
-  prices: { haikuInput: number; haikuOutput: number; jevInput: number }
-): Promise<AssistantBenchmarkResponse> {
+export function toTestCase(row: TestCaseRow): AssistantTestCase | null {
+  const context = assistantTestContextSchema.safeParse(row.context);
+  const expect = assistantTestExpectSchema.safeParse(row.expect);
+  if (!context.success || !expect.success) return null;
+  return {
+    id: row.id,
+    feedbackId: row.feedbackId,
+    text: row.text,
+    today: row.today,
+    timezone: row.timezone,
+    context: context.data,
+    expect: expect.data,
+    active: row.active,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export interface Planned {
+  text: string;
+  expect: Expect;
+  options: Options;
+  source: AssistantBenchmarkCase['source'];
+  caseId: string | null;
+}
+
+/** Chave do caso para comparar rodadas: o id do caso real, ou o texto do exemplo. */
+export const caseKey = (c: { caseId: string | null; text: string }) => c.caseId ?? c.text;
+
+/** Os 50 fixos e os casos reais dados (os ativos). */
+export function plannedFrom(testCases: AssistantTestCase[]): Planned[] {
+  return [
+    ...BENCHMARK_CASES.map(
+      (c): Planned => ({ ...c, options: FIXED, source: 'fixed', caseId: null })
+    ),
+    ...testCases
+      .filter((c) => c.active)
+      .map(
+        (c): Planned => ({
+          text: c.text,
+          expect: c.expect as Expect,
+          options: optionsFromContext(c.today, c.timezone, c.context),
+          source: 'real',
+          caseId: c.id,
+        })
+      ),
+  ];
+}
+
+export async function activeTestCases(): Promise<AssistantTestCase[]> {
+  const rows = await prisma.assistantTestCase.findMany({
+    where: { active: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  return rows.flatMap((row) => toTestCase(row) ?? []);
+}
+
+export interface Prices {
+  haikuInput: number;
+  haikuOutput: number;
+  jevInput: number;
+}
+
+export interface BenchmarkUsage {
+  modelInput: number;
+  modelOutput: number;
+  jevInput: number;
+}
+
+/** Roda os casos (5 de cada vez), sem tocar no banco. */
+export async function runCases(planned: Planned[]) {
   const started = Date.now();
-  const cases: AssistantBenchmarkCase[] = new Array(BENCHMARK_CASES.length);
-  const usage = { modelInput: 0, modelOutput: 0, jevInput: 0 };
+  const cases: AssistantBenchmarkCase[] = new Array(planned.length);
+  const usage: BenchmarkUsage = { modelInput: 0, modelOutput: 0, jevInput: 0 };
   let next = 0;
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
-      while (next < BENCHMARK_CASES.length) {
+      while (next < planned.length) {
         const index = next++;
-        const { text, expect } = BENCHMARK_CASES[index];
+        const { text, expect, options, source, caseId } = planned[index];
         try {
-          const run = await runCase(text, expect);
-          cases[index] = run.result;
+          const run = await runCase(text, expect, options);
+          cases[index] = { ...run.result, source, caseId };
           usage.modelInput += run.usage.modelInput;
           usage.modelOutput += run.usage.modelOutput;
           usage.jevInput += run.usage.jevInput;
@@ -406,17 +525,52 @@ export async function runBenchmark(
             got: 'o Haiku falhou',
             problems: ['haiku'],
             autoSave: false,
+            source,
+            caseId,
           };
         }
       }
     })
   );
+  return { cases, usage, ms: Date.now() - started };
+}
 
-  const costMicros = Math.round(
+export const costOf = (usage: BenchmarkUsage, prices: Prices) =>
+  Math.round(
     usage.modelInput * prices.haikuInput +
       usage.modelOutput * prices.haikuOutput +
       usage.jevInput * prices.jevInput
   );
+
+export function summarize(
+  cases: AssistantBenchmarkCase[],
+  ms: number,
+  costMicros: number
+): AssistantBenchmarkResponse {
+  return {
+    ranAt: new Date().toISOString(),
+    total: cases.length,
+    passed: cases.filter((c) => c.passed).length,
+    autoSavedRight: cases.filter((c) => c.autoSave && c.passed).length,
+    autoSavedWrong: cases.filter((c) => c.autoSave && !c.passed).length,
+    ms,
+    costMicros,
+    cases,
+  };
+}
+
+/** Guarda a rodada no histórico e o custo (fora do limite do mês), no nome do dono. */
+export async function recordRun(
+  userId: string,
+  result: AssistantBenchmarkResponse,
+  usage: BenchmarkUsage,
+  meta: {
+    source: 'PANEL' | 'CI';
+    commit?: string | null;
+    label?: string | null;
+    regressions?: number;
+  }
+) {
   await prisma.assistantUsage.create({
     data: {
       userId,
@@ -424,17 +578,32 @@ export async function runBenchmark(
       jevInputTokens: usage.jevInput,
       modelInputTokens: usage.modelInput,
       modelOutputTokens: usage.modelOutput,
-      costMicros,
+      costMicros: result.costMicros,
     },
   });
-  return {
-    ranAt: new Date().toISOString(),
-    total: cases.length,
-    passed: cases.filter((c) => c.passed).length,
-    autoSavedRight: cases.filter((c) => c.autoSave && c.passed).length,
-    autoSavedWrong: cases.filter((c) => c.autoSave && !c.passed).length,
-    ms: Date.now() - started,
-    costMicros,
-    cases,
-  };
+  await prisma.assistantBenchmarkRun.create({
+    data: {
+      source: meta.source,
+      commit: meta.commit ?? null,
+      label: meta.label ?? null,
+      total: result.total,
+      passed: result.passed,
+      autoSavedWrong: result.autoSavedWrong,
+      regressions: meta.regressions ?? 0,
+      costMicros: result.costMicros,
+      ms: result.ms,
+      cases: result.cases as unknown as Prisma.InputJsonValue,
+    },
+  });
+}
+
+/** Roda os 50 pedidos e os casos reais pelo painel, e guarda a rodada. */
+export async function runBenchmark(
+  userId: string,
+  prices: Prices
+): Promise<AssistantBenchmarkResponse> {
+  const { cases, usage, ms } = await runCases(plannedFrom(await activeTestCases()));
+  const result = summarize(cases, ms, costOf(usage, prices));
+  await recordRun(userId, result, usage, { source: 'PANEL' });
+  return result;
 }

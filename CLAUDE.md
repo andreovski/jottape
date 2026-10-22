@@ -90,13 +90,27 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   Score ≥ 0,85 sem nada faltando salva sozinho, com Desfazer no cartão; sem o Jev nunca
   salva sozinho. Cada pedido grava `AssistantUsage` com o custo estimado (limite mensal por
   usuário, o dono sem limite). Só o dono, os e-mails de `ASSISTANT_EMAILS` e os convidados do painel veem o Assistente.
-  A conversa some em 30 dias. Pedido ditado grava `voiceSeconds` (a linha do tempo mostra "voz · 3 s").
+  A conversa some em 30 dias.
+  Memória por pessoa (`memory.ts`, `AssistantMemory`): conta ou categoria trocada (ou escolhida)
+  no cartão vira preferência pela descrição normalizada; o histórico de lançamentos com a mesma
+  descrição também sugere (`historyHints`, só quando um valor domina). Memória vence histórico;
+  conta dita no pedido vence as duas. Concordando com o Jev, sobe a confiança; discordando, vale a
+  memória e o cartão pede conferência. As 20 mais usadas vão nas instruções do Haiku; a pessoa vê
+  e apaga em Ajustes › O que o Jotta aprendeu. Pedido ditado grava `voiceSeconds` (a linha do tempo mostra "voz · 3 s").
   Beta: o dono convida pelo painel (Ajustes › Beta do Assistente, `assistant/admin.ts`), que liga
   `User.assistantAccess` e muda `assistantLimit`; vê pedidos e custo do mês (`AssistantUsage`) e os
-  números de 30 dias dos cartões (`autoSaved`, `edited`) e dos `trace`. "Isso está errado" copia o
-  pedido, a resposta e os passos em `AssistantFeedback`, que não some com a conversa. O teste de
-  acerto (`benchmark.ts`, 50 pedidos num dia fixo) roda o Haiku e o Jev de verdade e grava o custo
-  como `BENCHMARK`, fora do limite.
+  números de 30 dias dos cartões (`autoSaved`, `edited`, e em `corrections` os campos trocados
+  antes de salvar, comparados por `corrections.ts`) e dos `trace` (passo com falha leva `error`).
+  "Isso está errado" copia o pedido, a resposta, os passos e o contexto do dia (nomes das contas,
+  categorias e listas) em `AssistantFeedback`, que não some com a conversa; o dono transforma o
+  relato em `AssistantTestCase` (resposta certa por nome). O teste de acerto (`benchmark.ts`, 50
+  pedidos num dia fixo mais os casos ativos, cada um no seu dia e com os seus nomes) roda o Haiku
+  e o Jev de verdade e grava o custo como `BENCHMARK`, fora do limite. Cada rodada vai para
+  `AssistantBenchmarkRun`. Na CI, o job "Teste de acerto do Jotta" roda em PR que mexe no
+  Assistente (`scripts/benchmark-ci.ts`): busca os casos em `/ci/assistant/cases` (`BENCH_TOKEN`),
+  roda a base (em cache pelo commit) e o PR, repete o caso que quebrou e fica vermelho se ele
+  falhar de novo. Evento e tarefa levam
+  `notes` (descrição do evento, notas da tarefa).
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.
 

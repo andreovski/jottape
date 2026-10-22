@@ -44,6 +44,8 @@ export const assistantEventDraftSchema = z.object({
   endTime: timeSchema.nullable(),
   allDay: z.boolean(),
   location: z.string().max(300).nullable(),
+  /** O que o pedido mandou anotar ("nas notas coloque..."); vai na descrição do evento. */
+  notes: z.string().max(2000).nullable().default(null),
 });
 export type AssistantEventDraft = z.infer<typeof assistantEventDraftSchema>;
 
@@ -54,6 +56,7 @@ export const assistantTaskDraftSchema = z.object({
   date: isoDateSchema.nullable(),
   time: timeSchema.nullable(),
   listId: idSchema.nullable(),
+  notes: z.string().max(2000).nullable().default(null),
 });
 export type AssistantTaskDraft = z.infer<typeof assistantTaskDraftSchema>;
 
@@ -157,6 +160,8 @@ export const assistantTraceStepSchema = z.object({
   costMicros: z.number().int(),
   /** O que saiu do passo, em poucas palavras ("despesa 97%", "lancamentos, contas"). */
   detail: z.string().nullable(),
+  /** Por que falhou, em poucas palavras (o erro do serviço). */
+  error: z.string().nullable().optional(),
 });
 export type AssistantTraceStep = z.infer<typeof assistantTraceStepSchema>;
 
@@ -275,8 +280,94 @@ export const assistantAdminUserSchema = z.object({
     answerFailed: z.number().int(),
     reports: z.number().int(),
   }),
+  /** Campos trocados antes de salvar, com quantas vezes ("account": 3). Só a contagem. */
+  corrections: z.record(z.number().int()),
+  /** As últimas falhas, com o erro (sem o pedido). */
+  failures: z.array(
+    z.object({
+      engine: z.enum(['haiku', 'jev', 'answer', 'change']),
+      error: z.string().nullable(),
+      at: isoDateTimeSchema,
+    })
+  ),
 });
 export type AssistantAdminUser = z.infer<typeof assistantAdminUserSchema>;
+
+export const assistantIntentSchema = z.enum([
+  'expense',
+  'income',
+  'transfer',
+  'event',
+  'task',
+  'question',
+  'change',
+  'other',
+]);
+export type AssistantIntent = z.infer<typeof assistantIntentSchema>;
+
+/**
+ * O que o primeiro item do pedido precisa ter, por nome (conta, categoria, lista). Campo ausente
+ * não é conferido; `notes` diz se o item deve vir com notas.
+ */
+export const assistantTestExpectSchema = z.object({
+  intents: z.array(assistantIntentSchema).min(1).max(10),
+  amountCents: z.number().int().positive().optional(),
+  date: isoDateSchema.nullable().optional(),
+  account: z.string().max(120).optional(),
+  toAccount: z.string().max(120).optional(),
+  category: z.string().max(120).optional(),
+  installments: z.number().int().min(2).max(72).optional(),
+  time: timeSchema.nullable().optional(),
+  endTime: timeSchema.optional(),
+  allDay: z.boolean().optional(),
+  list: z.string().max(120).optional(),
+  notes: z.boolean().optional(),
+});
+export type AssistantTestExpect = z.infer<typeof assistantTestExpectSchema>;
+
+/** Contas, categorias e listas do usuário naquele dia (só nome e tipo). */
+export const assistantTestContextSchema = z.object({
+  accounts: z.array(
+    z.object({
+      name: z.string(),
+      type: z.enum(['WALLET', 'CHECKING', 'SAVINGS', 'CREDIT_CARD']),
+    })
+  ),
+  categories: z.array(z.object({ name: z.string(), kind: z.enum(['INCOME', 'EXPENSE']) })),
+  lists: z.array(z.object({ name: z.string() })),
+  /** O que o Jotta tinha aprendido da pessoa naquele dia (descrição → conta ou categoria). */
+  memory: z
+    .array(
+      z.object({ label: z.string(), field: z.enum(['account', 'category']), value: z.string() })
+    )
+    .optional(),
+});
+export type AssistantTestContext = z.infer<typeof assistantTestContextSchema>;
+
+export const createAssistantTestCaseBodySchema = z.object({
+  feedbackId: idSchema.nullable().optional(),
+  text: z.string().trim().min(1).max(1000),
+  today: isoDateSchema,
+  timezone: z.string().min(1).max(64),
+  context: assistantTestContextSchema,
+  expect: assistantTestExpectSchema,
+});
+export type CreateAssistantTestCaseBody = z.infer<typeof createAssistantTestCaseBodySchema>;
+
+export const updateAssistantTestCaseBodySchema = z.object({
+  active: z.boolean().optional(),
+  text: z.string().trim().min(1).max(1000).optional(),
+  expect: assistantTestExpectSchema.optional(),
+});
+export type UpdateAssistantTestCaseBody = z.infer<typeof updateAssistantTestCaseBodySchema>;
+
+export const assistantTestCaseSchema = createAssistantTestCaseBodySchema.extend({
+  id: z.string(),
+  feedbackId: z.string().nullable(),
+  active: z.boolean(),
+  createdAt: isoDateTimeSchema,
+});
+export type AssistantTestCase = z.infer<typeof assistantTestCaseSchema>;
 
 export const assistantFeedbackItemSchema = z.object({
   id: z.string(),
@@ -290,6 +381,10 @@ export const assistantFeedbackItemSchema = z.object({
   note: z.string().nullable(),
   createdAt: isoDateTimeSchema,
   resolvedAt: isoDateTimeSchema.nullable(),
+  /** O caso de teste que saiu deste relato. */
+  testCaseId: z.string().nullable(),
+  /** O caso já preenchido com o que o cartão virou, para o dono conferir e salvar. */
+  suggestedCase: createAssistantTestCaseBodySchema,
 });
 export type AssistantFeedbackItem = z.infer<typeof assistantFeedbackItemSchema>;
 
@@ -300,6 +395,9 @@ export const assistantAdminResponseSchema = z.object({
   users: z.array(assistantAdminUserSchema),
   /** Relatos em aberto primeiro, os mais novos. */
   feedback: z.array(assistantFeedbackItemSchema),
+  testCases: z.array(assistantTestCaseSchema),
+  /** As últimas rodadas do teste de acerto (painel e CI), a mais nova primeiro. */
+  runs: z.array(z.lazy(() => assistantBenchmarkRunSchema)),
 });
 export type AssistantAdminResponse = z.infer<typeof assistantAdminResponseSchema>;
 
@@ -319,6 +417,9 @@ export const assistantBenchmarkCaseSchema = z.object({
   problems: z.array(z.string()),
   /** Salvaria sozinho (score alto e nada faltando). */
   autoSave: z.boolean(),
+  /** fixed: um dos 50 de exemplo; real: caso que veio de um relato. */
+  source: z.enum(['fixed', 'real']),
+  caseId: z.string().nullable(),
 });
 export type AssistantBenchmarkCase = z.infer<typeof assistantBenchmarkCaseSchema>;
 
@@ -334,3 +435,45 @@ export const assistantBenchmarkResponseSchema = z.object({
   cases: z.array(assistantBenchmarkCaseSchema),
 });
 export type AssistantBenchmarkResponse = z.infer<typeof assistantBenchmarkResponseSchema>;
+
+/** Uma rodada guardada: pelo painel, ou pela CI num PR (com o commit e os casos que quebraram). */
+export const assistantBenchmarkRunSchema = assistantBenchmarkResponseSchema.extend({
+  id: z.string(),
+  source: z.enum(['PANEL', 'CI']),
+  commit: z.string().nullable(),
+  label: z.string().nullable(),
+  regressions: z.number().int(),
+});
+export type AssistantBenchmarkRun = z.infer<typeof assistantBenchmarkRunSchema>;
+
+/** O que o job da CI manda ao terminar (POST /ci/assistant/runs, com o BENCH_TOKEN). */
+export const ciBenchmarkRunBodySchema = z.object({
+  commit: z.string().max(64),
+  label: z.string().max(200).nullable(),
+  regressions: z.number().int().min(0),
+  result: assistantBenchmarkResponseSchema,
+  usage: z.object({
+    modelInput: z.number().int().min(0),
+    modelOutput: z.number().int().min(0),
+    jevInput: z.number().int().min(0),
+  }),
+});
+export type CiBenchmarkRunBody = z.infer<typeof ciBenchmarkRunBodySchema>;
+
+/** Uma preferência que o Jotta aprendeu: "iFood" vai no Cartão Nubank. */
+export const assistantMemoryItemSchema = z.object({
+  id: z.string(),
+  /** A descrição como estava no cartão. */
+  label: z.string(),
+  field: z.enum(['account', 'category']),
+  /** O nome da conta ou da categoria. */
+  value: z.string(),
+  uses: z.number().int(),
+  updatedAt: isoDateTimeSchema,
+});
+export type AssistantMemoryItem = z.infer<typeof assistantMemoryItemSchema>;
+
+export const assistantMemoryResponseSchema = z.object({
+  items: z.array(assistantMemoryItemSchema),
+});
+export type AssistantMemoryResponse = z.infer<typeof assistantMemoryResponseSchema>;

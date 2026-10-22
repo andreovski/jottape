@@ -28,6 +28,7 @@ const ITEM_SCHEMA = {
     'all_day',
     'list',
     'location',
+    'notes',
     'confidence',
   ],
   properties: {
@@ -48,6 +49,7 @@ const ITEM_SCHEMA = {
     all_day: { type: 'boolean' },
     list: { type: ['string', 'null'] },
     location: { type: ['string', 'null'] },
+    notes: { type: ['string', 'null'] },
     confidence: { type: 'number' },
   },
 } as const;
@@ -87,6 +89,7 @@ const outputSchema = z.object({
         all_day: z.boolean(),
         list: z.string().nullable(),
         location: z.string().nullable(),
+        notes: z.string().nullable(),
         confidence: z.number(),
       })
     )
@@ -101,6 +104,8 @@ export interface ExtractContext {
   accounts: AccountOption[];
   categories: CategoryOption[];
   lists: TaskListOption[];
+  /** O que a pessoa costuma usar (aprendido com as correções dela). */
+  preferences?: { label: string; account?: string; category?: string }[];
 }
 
 export function systemPrompt({
@@ -109,6 +114,7 @@ export function systemPrompt({
   accounts,
   categories,
   lists,
+  preferences = [],
 }: ExtractContext): string {
   const weekday = WEEKDAYS[new Date(`${today}T12:00:00Z`).getUTCDay()];
   const accountList = accounts.map((a) => `- ${a.name} (${a.type})`).join('\n') || '- (nenhuma)';
@@ -124,7 +130,19 @@ ${accountList}
 Categorias de despesa: ${expense.join(', ') || '(nenhuma)'}
 Categorias de receita: ${income.join(', ') || '(nenhuma)'}
 Listas de tarefas: ${lists.map((l) => l.name).join(', ') || '(nenhuma)'}
-
+${
+  preferences.length
+    ? `
+Como este usuário costuma lançar (aprendido com as correções dele; vale quando o pedido não disser outra coisa):
+${preferences
+  .map(
+    (p) =>
+      `- ${p.label}: ${[p.account && `conta ${p.account}`, p.category && `categoria ${p.category}`].filter(Boolean).join(', ')}`
+  )
+  .join('\n')}
+`
+    : ''
+}
 Regras:
 - Um item por coisa pedida ("30 no uber e 50 no mercado" são dois; "marca dentista amanhã e me lembra de comprar pão" também). Texto sem pedido vira um item só com o intent certo.
 - intent: expense (gasto, compra, conta paga), income (dinheiro recebido), transfer (entre contas do próprio usuário, guardar na poupança, pagar a fatura do cartão), event (compromisso com dia e hora para a agenda: consulta, reunião, aula, viagem, aniversário), task (algo a fazer ou lembrar, sem ser um compromisso marcado: "me lembra de", "preciso", "anota para"), question (pergunta sobre os dados: saldo, gastos, fatura, orçamento, agenda, tarefas: "quanto gastei ontem?", "o que tenho amanhã?"; vira um item só, mesmo com várias perguntas), change (mudar, apagar ou concluir algo que JÁ existe: "apaga o último lançamento", "o uber de ontem foi 35", "muda o dentista para as 16h", "marca a tarefa do IPVA como feita"; um item por coisa a mudar, com o excerpt do pedido), other (o resto).
@@ -136,6 +154,7 @@ Regras:
 - time e end_time: HH:MM em 24 h ("15h" = 15:00, "3 da tarde" = 15:00, "meio-dia" = 12:00), de início e de fim; sem horário: null. Em tarefa, time é o horário do prazo.
 - all_day: true só em evento que o pedido diz ser o dia todo, ou que é de dia inteiro por natureza (aniversário, feriado, viagem de vários dias). Senão false.
 - location: o local do evento quando o pedido disser, senão null.
+- notes: em evento e tarefa, o que o pedido manda anotar ou os detalhes que não cabem no título ("nas notas coloque que...", "levar os exames", "o link é tal"), escrito como uma nota curta e completa, sem "nas notas coloque". Sem nada assim, ou em finanças: null. Detalhe que foi para as notas não é motivo para baixar a confidence.
 - list: o nome EXATO de uma lista de tarefas quando o pedido apontar para ela ("na lista do mercado", "no trabalho"), senão null.
 - account e to_account: o nome EXATO de uma conta da lista quando o pedido apontar para ela ("no nubank", "no crédito", "no cartão"), senão null. Não invente.
 - category: o nome EXATO de uma categoria da lista do tipo certo que combine com o gasto (uber = Transporte, ifood = Alimentação), ou null se nenhuma servir.
@@ -191,6 +210,7 @@ export async function extractItems(text: string, context: ExtractContext): Promi
       allDay: item.all_day,
       list: item.list,
       location: item.location,
+      notes: item.notes,
       confidence: item.confidence,
     })),
     ...usage,

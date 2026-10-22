@@ -185,11 +185,21 @@ export function PrivacyPage() {
       </p>
 
       <p>
+        Quando você troca a conta ou a categoria num cartão do Jotta, ele guarda essa preferência
+        (por exemplo, &quot;iFood&quot; no cartão de crédito) e olha os seus lançamentos com a mesma
+        descrição para sugerir as próximas. As preferências mais usadas vão junto com o pedido para
+        a Anthropic. Você vê e apaga tudo em Ajustes, em &quot;O que o Jotta aprendeu&quot;.
+      </p>
+
+      <p>
         O dono do app vê, para cada pessoa, quantos pedidos ela fez ao Jotta, o custo estimado e
-        quantos itens foram salvos, desfeitos ou descartados, sem o texto dos pedidos. Se você tocar
-        em &quot;Isso está errado&quot; numa resposta, o pedido, a resposta, o que o Jotta montou e
-        o seu comentário vão para o dono do app, para melhorar o Jotta, e ficam guardados mesmo
-        depois que a conversa some.
+        quantos itens foram salvos, desfeitos ou descartados, quais campos foram corrigidos antes de
+        salvar (só a contagem, como &quot;conta&quot; ou &quot;categoria&quot;) e o erro técnico das
+        falhas, sem o texto dos pedidos. Se você tocar em &quot;Isso está errado&quot; numa
+        resposta, o pedido, a resposta, o que o Jotta montou, o seu comentário e os nomes das suas
+        contas, categorias e listas naquele dia vão para o dono do app, para melhorar o Jotta, e
+        ficam guardados mesmo depois que a conversa some. O dono pode transformar esse relato num
+        caso de teste do Jotta.
       </p>
 
       <p>

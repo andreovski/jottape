@@ -6,6 +6,7 @@ import {
   type AssistantMessageResponse,
   type AssistantMissing,
   type AssistantStateResponse,
+  type AssistantTestContext,
   assistantTraceSchema,
   type AssistantTraceStep,
   type AssistantUncertain,
@@ -30,6 +31,7 @@ import { toTransaction } from '@/services/serializers';
 
 import { answerQuestion } from './answer';
 import { planChanges, revertChange } from './change';
+import { correctionsOf } from './corrections';
 import {
   type Created,
   createFromDraft,
@@ -40,6 +42,14 @@ import {
 } from './create';
 import { extractItems } from './haiku';
 import { askJev } from './jev';
+import {
+  hintsFor,
+  learnFromSave,
+  listMemory,
+  phraseOf,
+  promptPreferences,
+  reinforce,
+} from './memory';
 import {
   type AccountOption,
   type CategoryOption,
@@ -84,12 +94,17 @@ const INTENT_LABELS: Record<Intent, string> = {
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
+/** O erro do serviço em poucas palavras, para o painel (sem o pedido). */
+export const errorText = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 200);
+
 function haikuStep(
   engine: 'haiku' | 'answer' | 'change',
   status: 'ok' | 'failed',
   started: number,
   usage: { inputTokens: number; outputTokens: number } | null,
-  detail: string | null
+  detail: string | null,
+  error: string | null = null
 ): AssistantTraceStep {
   const inputTokens = usage?.inputTokens ?? 0;
   const outputTokens = usage?.outputTokens ?? 0;
@@ -101,6 +116,7 @@ function haikuStep(
     outputTokens,
     costMicros: Math.round(inputTokens * HAIKU_INPUT + outputTokens * HAIKU_OUTPUT),
     detail,
+    ...(error ? { error } : {}),
   };
 }
 
@@ -268,23 +284,9 @@ async function usualAccount(userId: string, accounts: AccountOption[]): Promise<
   return rows[0]?.accountId ?? null;
 }
 
-interface PlannedCard {
-  resolution: Resolution;
-  created: Created;
-}
-
-export async function sendMessage(
-  userId: string,
-  text: string,
-  log: Logger,
-  options: { voiceSeconds?: number } = {}
-): Promise<{ messages: AssistantMessageResponse[]; usage: AssistantUsageResponse }> {
-  await assertEnabled(userId);
-  const timezone = await userTimezone(userId);
-  await assertWithinLimit(userId, timezone);
-
-  const today = todayIn(timezone);
-  const [accountRows, categoryRows, listRows] = await Promise.all([
+/** Contas, categorias e listas do usuário, na ordem que o Haiku e o Jev recebem. */
+export async function optionsOf(userId: string) {
+  const [accounts, categories, lists] = await Promise.all([
     prisma.account.findMany({
       where: { userId, archivedAt: null },
       orderBy: [{ type: 'asc' }, { createdAt: 'asc' }],
@@ -301,9 +303,31 @@ export async function sendMessage(
       select: { id: true, name: true, isInbox: true },
     }),
   ]);
-  const accounts: AccountOption[] = accountRows;
-  const categories: CategoryOption[] = categoryRows;
-  const lists: TaskListOption[] = listRows;
+  return {
+    accounts: accounts as AccountOption[],
+    categories: categories as CategoryOption[],
+    lists: lists as (TaskListOption & { isInbox: boolean })[],
+  };
+}
+
+interface PlannedCard {
+  resolution: Resolution;
+  created: Created;
+}
+
+export async function sendMessage(
+  userId: string,
+  text: string,
+  log: Logger,
+  options: { voiceSeconds?: number } = {}
+): Promise<{ messages: AssistantMessageResponse[]; usage: AssistantUsageResponse }> {
+  await assertEnabled(userId);
+  const timezone = await userTimezone(userId);
+  await assertWithinLimit(userId, timezone);
+
+  const today = todayIn(timezone);
+  const { accounts, categories, lists } = await optionsOf(userId);
+  const preferences = await promptPreferences(userId, accounts, categories);
 
   const userMessage = await prisma.assistantMessage.create({
     data: {
@@ -319,7 +343,14 @@ export async function sendMessage(
   const trace: AssistantTraceStep[] = [];
   let started = Date.now();
   try {
-    const extracted = await extractItems(text, { today, timezone, accounts, categories, lists });
+    const extracted = await extractItems(text, {
+      today,
+      timezone,
+      accounts,
+      categories,
+      lists,
+      preferences,
+    });
     items = extracted.items;
     cost.modelInput = extracted.inputTokens;
     cost.modelOutput = extracted.outputTokens;
@@ -334,7 +365,7 @@ export async function sendMessage(
     );
   } catch (error) {
     log.warn(error, 'assistente: leitura do pedido falhou');
-    trace.push(haikuStep('haiku', 'failed', started, null, null));
+    trace.push(haikuStep('haiku', 'failed', started, null, null, errorText(error)));
   }
 
   const planned: PlannedCard[] = [];
@@ -347,17 +378,24 @@ export async function sendMessage(
       ? await usualAccount(userId, accounts)
       : null;
     const jevOn = getJevConfig() !== null;
+    const hints = await hintsFor(
+      userId,
+      actions.filter((item) => isFinanceIntent(item.intent)).map((item) => item.description)
+    );
     const resolved = await Promise.all(
       actions.map(async (item) => {
         const jevStarted = Date.now();
-        let failed = false;
+        let failed: string | null = null;
         const jev = await askJev(item, { accounts, categories, lists }).catch((error) => {
           log.warn(error, 'assistente: Jev falhou');
-          failed = true;
+          failed = errorText(error);
           return null;
         });
         cost.jevInput += jev?.inputTokens ?? 0;
         const answers = jev?.answers ?? null;
+        const itemHints = isFinanceIntent(item.intent)
+          ? hints.get(phraseOf(item.description))
+          : undefined;
         const resolution = resolveAction({
           item,
           accounts,
@@ -366,7 +404,9 @@ export async function sendMessage(
           jev: answers,
           today,
           usualAccountId,
+          hints: itemHints,
         });
+        const learned = [itemHints?.account, itemHints?.category].filter(Boolean);
         const kind = answers?.kind;
         const step: AssistantTraceStep = {
           engine: 'jev',
@@ -379,11 +419,17 @@ export async function sendMessage(
             kind
               ? `${INTENT_LABELS[kind.choice as Intent] ?? kind.choice} ${percent(kind.probabilities[kind.choice] ?? 0)}`
               : null,
+            learned.length
+              ? learned.some((h) => h!.source === 'memory')
+                ? 'memória'
+                : 'histórico'
+              : null,
             `score ${resolution.score.toFixed(2).replace('.', ',')}`,
             resolution.autoSave ? 'salva sozinho' : 'rascunho',
           ]
             .filter(Boolean)
             .join(' · '),
+          ...(jevOn && (failed || !jev) ? { error: failed ?? 'sem resposta' } : {}),
         };
         return { resolution, step };
       })
@@ -452,12 +498,13 @@ export async function sendMessage(
           [
             result.tools.filter((t) => t !== 'propor_mudanca').join(', ') || 'sem consultas',
             `${result.drafts.length} ${result.drafts.length === 1 ? 'mudança' : 'mudanças'}`,
-          ].join(' · ')
+          ].join(' · '),
+          result.drafts.length ? null : 'nada para mudar foi proposto'
         )
       );
     } catch (error) {
       log.warn(error, 'assistente: mudança falhou');
-      trace.push(haikuStep('change', 'failed', started, null, null));
+      trace.push(haikuStep('change', 'failed', started, null, null, errorText(error)));
     }
   }
 
@@ -475,12 +522,13 @@ export async function sendMessage(
           result.text ? 'ok' : 'failed',
           started,
           result,
-          result.tools.length ? result.tools.join(', ') : 'sem consultas'
+          result.tools.length ? result.tools.join(', ') : 'sem consultas',
+          result.text ? null : 'resposta vazia'
         )
       );
     } catch (error) {
       log.warn(error, 'assistente: resposta da pergunta falhou');
-      trace.push(haikuStep('answer', 'failed', started, null, null));
+      trace.push(haikuStep('answer', 'failed', started, null, null, errorText(error)));
     }
   }
   const answer = answerParts.length ? extractMoney(answerParts.join(' ')) : null;
@@ -582,7 +630,8 @@ export async function saveCard(
   // As escolhas do cartão (conta, valor) só valem para lançamento.
   const draft =
     current.type === 'transaction' && body.draft ? { ...current, ...body.draft } : current;
-  const created = await createFromDraft(userId, draft, await userTimezone(userId), body);
+  const timezone = await userTimezone(userId);
+  const created = await createFromDraft(userId, draft, timezone, body);
   if (!created) {
     await prisma.assistantCard.update({
       where: { id },
@@ -591,11 +640,22 @@ export async function saveCard(
     throw new AppError(400, 'Complete o pedido antes de salvar.');
   }
 
+  const edited = Boolean(body.draft || body.transaction || body.event || body.task);
+  // O que a pessoa escolheu vira memória; salvo como veio, reforça a que já existe.
+  await (edited ? learnFromSave(userId, current, body) : reinforce(userId, current)).catch(
+    () => undefined
+  );
+  const inbox = edited
+    ? await prisma.taskList.findFirst({ where: { userId, isInbox: true }, select: { id: true } })
+    : null;
   await prisma.assistantCard.update({
     where: { id },
     data: {
       status: 'SAVED',
-      edited: Boolean(body.draft || body.transaction || body.event || body.task),
+      edited,
+      // O que mudou, comparado com o que o Assistente montou.
+      corrections: edited ? correctionsOf(current, body, timezone, inbox?.id ?? null) : [],
+      ...(edited ? { saved: body as unknown as Prisma.InputJsonValue } : {}),
       draft: draft as unknown as Prisma.InputJsonValue,
       missing: [],
       uncertain: [],
@@ -646,8 +706,11 @@ export async function reportMessage(
   const request = await prisma.assistantMessage.findFirst({
     where: { userId, role: 'USER', createdAt: { lte: reply.createdAt } },
     orderBy: { createdAt: 'desc' },
-    select: { text: true },
+    select: { text: true, createdAt: true },
   });
+  const timezone = await userTimezone(userId);
+  const options = await optionsOf(userId);
+  const memory = await listMemory(userId);
   await prisma.assistantFeedback.create({
     data: {
       userId,
@@ -660,8 +723,27 @@ export async function reportMessage(
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
         .map((c) => c.draft) as Prisma.InputJsonValue,
       note: body.note || null,
+      today: todayIn(timezone, request?.createdAt ?? reply.createdAt),
+      timezone,
+      context: {
+        ...testContextOf(options),
+        memory: memory.map(({ label, field, value }) => ({ label, field, value })),
+      } as unknown as Prisma.InputJsonValue,
     },
   });
+}
+
+/** Só os nomes e tipos: o que o caso de teste precisa para rodar igual depois. */
+export function testContextOf(options: {
+  accounts: AccountOption[];
+  categories: CategoryOption[];
+  lists: TaskListOption[];
+}): AssistantTestContext {
+  return {
+    accounts: options.accounts.map((a) => ({ name: a.name, type: a.type })),
+    categories: options.categories.map((c) => ({ name: c.name, kind: c.kind })),
+    lists: options.lists.map((l) => ({ name: l.name })),
+  };
 }
 
 /** "Nova conversa": apaga as mensagens. O que foi salvo fica. */

@@ -6,6 +6,7 @@ import { assistantRoutes } from './routes/assistant';
 import { authRoutes } from './routes/auth';
 import { bankRoutes } from './routes/bank';
 import { briefingRoutes } from './routes/briefing';
+import { ciRoutes } from './routes/ci';
 import { exportRoutes } from './routes/export';
 import { financeRoutes } from './routes/finance';
 import { googleRoutes } from './routes/google';
@@ -29,4 +30,5 @@ export async function appRoutes(app: FastifyInstance) {
   app.register(briefingRoutes);
   app.register(exportRoutes);
   app.register(assistantRoutes);
+  app.register(ciRoutes);
 }

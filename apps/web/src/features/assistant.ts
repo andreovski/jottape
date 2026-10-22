@@ -2,11 +2,14 @@ import type {
   AssistantAdminResponse,
   AssistantBenchmarkResponse,
   AssistantCardResponse,
+  AssistantMemoryResponse,
   AssistantMessageBody,
   AssistantReplyResponse,
   AssistantStateResponse,
+  CreateAssistantTestCaseBody,
   SaveAssistantCardBody,
   TranscriptionResponse,
+  UpdateAssistantTestCaseBody,
   UpdateAssistantUserBody,
 } from '@jottape/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -31,7 +34,11 @@ const FINANCE_KEYS = [
 function useInvalidateFinance() {
   const client = useQueryClient();
   return () =>
-    Promise.all(FINANCE_KEYS.map((key) => client.invalidateQueries({ queryKey: [key] })));
+    Promise.all([
+      ...FINANCE_KEYS.map((key) => client.invalidateQueries({ queryKey: [key] })),
+      // Salvar com uma correção ensina o Jotta.
+      client.invalidateQueries({ queryKey: ['assistant', 'memory'] }),
+    ]);
 }
 
 export function useAssistant() {
@@ -144,6 +151,30 @@ export function useReportMessage() {
   });
 }
 
+// ---------------------------------------------------------------- memória
+
+const MEMORY_KEY = ['assistant', 'memory'];
+
+/** O que o Jotta aprendeu com as correções da pessoa. */
+export function useAssistantMemory() {
+  return useQuery({
+    queryKey: MEMORY_KEY,
+    queryFn: () => api.get('assistant/memory').json<AssistantMemoryResponse>(),
+  });
+}
+
+/** Esquece uma preferência (com id) ou todas. */
+export function useForgetMemory() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string | null) =>
+      api
+        .delete(id ? `assistant/memory/${id}` : 'assistant/memory')
+        .json<AssistantMemoryResponse>(),
+    onSuccess: (data) => client.setQueryData(MEMORY_KEY, data),
+  });
+}
+
 // ---------------------------------------------------------------- painel do beta
 
 const ADMIN_KEY = ['assistant', 'admin'];
@@ -175,7 +206,41 @@ export const useResolveFeedback = () =>
       .json<AssistantAdminResponse>()
   );
 
-/** Os 50 pedidos levam perto de um minuto. */
+/** Relato vira caso de teste (o relato fica resolvido). */
+export const useCreateTestCase = () =>
+  useAdminMutation((body: CreateAssistantTestCaseBody) =>
+    api.post('assistant/admin/cases', { json: body }).json<AssistantAdminResponse>()
+  );
+
+export const useUpdateTestCase = () =>
+  useAdminMutation(({ id, body }: { id: string; body: UpdateAssistantTestCaseBody }) =>
+    api.patch(`assistant/admin/cases/${id}`, { json: body }).json<AssistantAdminResponse>()
+  );
+
+export const useDeleteTestCase = () =>
+  useAdminMutation((id: string) =>
+    api.delete(`assistant/admin/cases/${id}`).json<AssistantAdminResponse>()
+  );
+
+/** Baixa relatos, casos e números num JSON. */
+export function useExportAdmin() {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await api.get('assistant/admin/export');
+      const name =
+        response.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] ??
+        'jotta-relatos.json';
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+  });
+}
+
+/** Os 50 pedidos (e os casos reais) levam perto de um minuto. */
 export function useRunBenchmark() {
   const client = useQueryClient();
   return useMutation({

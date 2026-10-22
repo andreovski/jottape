@@ -87,6 +87,7 @@ async function eventBody(
   return {
     title: draft.title,
     location: draft.location,
+    description: draft.notes,
     allDay: draft.allDay,
     ...times,
     calendarId: user.defaultCalendarId,
@@ -103,6 +104,7 @@ function taskBody(draft: AssistantDraft, timeZone: string): CreateTaskBody | nul
   return {
     title: draft.title,
     ...(draft.listId ? { listId: draft.listId } : {}),
+    ...(draft.notes ? { notes: draft.notes } : {}),
     dueAt,
     hasTime: Boolean(dueAt && draft.time),
   };

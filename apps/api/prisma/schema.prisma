@@ -55,6 +55,7 @@ model User {
   assistantCards    AssistantCard[]
   assistantUsage    AssistantUsage[]
   assistantFeedback AssistantFeedback[]
+  assistantMemory   AssistantMemory[]
   financeInsight    FinanceInsight?
   pluggyCredential  PluggyCredential?
   pluggyItems       PluggyItem[]
@@ -669,6 +670,10 @@ model AssistantCard {
   autoSaved      Boolean             @default(false) @map("auto_saved")
   /// Salvo pela folha de edição ou com o que o usuário trocou no cartão.
   edited         Boolean             @default(false)
+  /// Campos que o usuário trocou antes de salvar ("account", "category"...).
+  corrections    String[]            @default([])
+  /// O que foi salvo pela folha, quando diferente do rascunho (para ver e aprender a correção).
+  saved          Json?
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
 
@@ -720,13 +725,40 @@ model AssistantFeedback {
   /// Os rascunhos dos cartões da resposta, como estavam no relato.
   cards      Json      @default("[]")
   note       String?
+  /// O dia (AAAA-MM-DD) e o fuso do pedido, e os nomes das contas, categorias e listas daquele
+  /// momento: o que o caso de teste precisa para rodar igual depois.
+  today      String?
+  timezone   String?
+  context    Json?
   resolvedAt DateTime? @map("resolved_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testCase AssistantTestCase?
 
   @@index([createdAt])
   @@map("assistant_feedback")
+}
+
+/// Caso de teste vindo de um relato: o pedido, o contexto do dia e a resposta certa. O teste de
+/// acerto roda os ativos junto com os fixos.
+model AssistantTestCase {
+  id         String   @id @default(uuid())
+  feedbackId String?  @unique @map("feedback_id")
+  text       String
+  today      String
+  timezone   String
+  /// Nomes das contas (com tipo), categorias (com tipo) e listas.
+  context    Json
+  /// O que o primeiro item precisa ter (nomes, não ids).
+  expect     Json
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  feedback AssistantFeedback? @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+
+  @@map("assistant_test_cases")
 }
 
 /// Insights de IA do briefing: a última análise de cada usuário, guardada até a próxima. Datas
@@ -757,4 +789,50 @@ model FinanceInsight {
 
   @@index([viewedAt])
   @@map("finance_insights")
+}
+
+/// Cada rodada do teste de acerto: pelo painel ou pela CI (num PR, com o commit).
+model AssistantBenchmarkRun {
+  id             String   @id @default(uuid())
+  /// PANEL: botão do painel; CI: job do GitHub.
+  source         String
+  commit         String?
+  /// Título ou número do PR, para o painel.
+  label          String?
+  total          Int
+  passed         Int
+  autoSavedWrong Int      @map("auto_saved_wrong")
+  /// Casos que passavam na base e quebraram (só CI).
+  regressions    Int      @default(0)
+  costMicros     Int      @map("cost_micros")
+  ms             Int
+  /// AssistantBenchmarkCase[]
+  cases          Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("assistant_benchmark_runs")
+}
+
+/// O que o Jotta aprendeu de cada pessoa: quando ela troca a conta ou a categoria no cartão,
+/// "iFood" passa a apontar para o que ela escolheu. A pessoa vê e apaga em Ajustes.
+model AssistantMemory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  /// A descrição normalizada ("ifood"), como `normalize` do resolve.
+  phrase    String
+  /// A descrição como estava no cartão ("iFood"), para mostrar.
+  label     String
+  /// account ou category.
+  field     String
+  valueId   String   @map("value_id")
+  /// Vezes que a pessoa escolheu este valor (volta a 1 quando muda).
+  uses      Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phrase, field])
+  @@map("assistant_memory")
 }

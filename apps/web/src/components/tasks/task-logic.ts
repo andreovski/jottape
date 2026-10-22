@@ -361,6 +361,7 @@ export function formFromTask(
     date?: string;
     time?: string;
     title?: string;
+    notes?: string;
     tags?: string[];
   },
   timeZone?: string
@@ -368,7 +369,7 @@ export function formFromTask(
   if (!task) {
     return {
       title: defaults.title ?? '',
-      notes: '',
+      notes: defaults.notes ?? '',
       hasDate: Boolean(defaults.date),
       date: defaults.date ?? defaults.today,
       hasTime: Boolean(defaults.date && defaults.time),

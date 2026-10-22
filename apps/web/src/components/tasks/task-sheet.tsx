@@ -47,6 +47,7 @@ export interface TaskSheetDefaults {
   /** "HH:MM": com data, já começa com o horário ligado. */
   time?: string;
   title?: string;
+  notes?: string;
   tags?: string[];
 }
 
