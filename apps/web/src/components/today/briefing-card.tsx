@@ -24,6 +24,7 @@ import { longDay, monthName, shortDay, time, todayKey } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 import { briefingCatalog } from './briefing-catalog';
+import { RainCanvas } from './rain-canvas';
 import {
   groupMoments,
   highlights,
@@ -112,7 +113,16 @@ const SKY_ICONS: Record<SkyKind, ReactNode> = {
 };
 
 /** Gradiente do céu, com o brilho do sol ou da lua e chuva caindo quando chove. */
-function SkyBackdrop({ theme, className }: { theme: SkyTheme; className?: string }) {
+function SkyBackdrop({
+  theme,
+  className,
+  glass,
+}: {
+  theme: SkyTheme;
+  className?: string;
+  /** Tela cheia: gotas paradas no vidro. */
+  glass?: boolean;
+}) {
   return (
     <div
       aria-hidden
@@ -128,7 +138,7 @@ function SkyBackdrop({ theme, className }: { theme: SkyTheme; className?: string
         />
       )}
       <div className='absolute -bottom-32 -left-24 size-80 rounded-full bg-white/10 blur-3xl' />
-      {theme.rain && <div className='sky-rain absolute inset-0 opacity-40' />}
+      {theme.intensity && <RainCanvas intensity={theme.intensity} glass={glass} />}
     </div>
   );
 }
@@ -296,7 +306,7 @@ function BriefingStory({
       onScroll={onScroll}
       className='absolute inset-0 overflow-y-auto overscroll-contain'
     >
-      <SkyBackdrop theme={theme} className='fixed inset-0' />
+      <SkyBackdrop theme={theme} className='fixed inset-0' glass />
 
       <div className='pt-safe sticky top-0 z-10 flex justify-end px-4 pb-2'>
         {/* Vidro que some para baixo: o texto que passa por trás do "fechar" desfoca. */}

@@ -1,7 +1,7 @@
 import type { BriefingItem } from '@jottape/schemas';
 import { describe, expect, it } from 'vitest';
 
-import { groupMoments, highlights, skyKind } from './sky';
+import { groupMoments, highlights, rainIntensity, skyKind, skyTheme } from './sky';
 
 const item = (plugin: BriefingItem['plugin']): BriefingItem => ({
   plugin,
@@ -75,5 +75,19 @@ describe('linha do tempo', () => {
 
   it('sem destaque, fica a primeira frase', () => {
     expect(highlights([item('weather'), item('quote')]).map((i) => i.plugin)).toEqual(['weather']);
+  });
+});
+
+describe('chuva', () => {
+  it('lê a intensidade pelo código WMO', () => {
+    expect(rainIntensity(53)).toBe('drizzle');
+    expect(rainIntensity(61)).toBe('rain');
+    expect(rainIntensity(80)).toBe('rain');
+    expect(rainIntensity(65)).toBe('heavy');
+    expect(rainIntensity(82)).toBe('heavy');
+    expect(rainIntensity(96)).toBe('storm');
+    expect(rainIntensity(3)).toBeNull();
+    expect(skyTheme({ code: 53, temperature: 17, isDay: true }, 17).intensity).toBe('drizzle');
+    expect(skyTheme({ code: 0, temperature: 17, isDay: true }, 12).intensity).toBeNull();
   });
 });
