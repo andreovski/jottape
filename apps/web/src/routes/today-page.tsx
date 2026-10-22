@@ -25,6 +25,7 @@ import { CheckCircle, EmptyState, Skeleton } from '@/components/ios/controls';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { TaskGroupLabel } from '@/components/tasks/task-row';
 import { BriefingCard } from '@/components/today/briefing-card';
 import { useAgenda } from '@/features/agenda';
 import { useAssistant } from '@/features/assistant';
@@ -321,15 +322,6 @@ function TasksWidget({ open }: { open: TaskResponse[] | undefined }) {
         <Ring value={progress} color='var(--orange)' size={68} />
       </div>
     </Widget>
-  );
-}
-
-/** Rótulo de grupo dentro da seção de tarefas. */
-function TaskGroupLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className='text-footnote text-label-2 bg-fill/50 px-4 pt-2.5 pb-1 font-semibold uppercase'>
-      {children}
-    </div>
   );
 }
 
