@@ -43,6 +43,9 @@ function useBankMutation<T, R>(run: (input: T) => Promise<R>) {
   return useMutation({ mutationFn: run, onSuccess: () => invalidate() });
 }
 
+export const useAcceptBankNotice = () =>
+  useBankMutation(() => api.post('bank/notice').json<BankStatusResponse>());
+
 export const useSaveBankCredentials = () =>
   useBankMutation((body: SaveBankCredentialsBody) =>
     api.put('bank/credentials', { json: body }).json<BankStatusResponse>()

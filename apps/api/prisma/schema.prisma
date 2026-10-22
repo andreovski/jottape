@@ -32,6 +32,8 @@ model User {
   assistantAccess      Boolean  @default(false) @map("assistant_access")
   /// Pedidos por mês deste usuário; null usa ASSISTANT_MONTHLY_LIMIT.
   assistantLimit       Int?     @map("assistant_limit")
+  /// Quando a pessoa leu o aviso de privacidade de Bancos (null = mostrar na primeira entrada).
+  bankNoticeAt         DateTime? @map("bank_notice_at")
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 

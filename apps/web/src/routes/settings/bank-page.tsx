@@ -3,14 +3,18 @@ import type { AccountResponse, BankAccountResponse, BankItemResponse } from '@jo
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ChevronLeft,
+  ArrowDownToLine,
   CreditCard,
   Hash,
   Inbox,
   KeyRound,
   Landmark,
+  LockKeyhole,
   Plus,
   RefreshCw,
+  ShieldCheck,
   TriangleAlert,
+  Unplug,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useState } from 'react';
@@ -30,6 +34,7 @@ import {
   useRemoveBankCredentials,
   useRemoveBankItem,
   useSaveBankCredentials,
+  useAcceptBankNotice,
   useSyncBank,
 } from '@/features/bank';
 import { useAccounts } from '@/features/finance';
@@ -55,6 +60,7 @@ export function BankPage() {
   const status = useBankStatus();
   const sync = useSyncBank();
   const data = status.data;
+  const [noticeOpen, setNoticeOpen] = useState(false);
 
   const back = (
     <button
@@ -92,9 +98,111 @@ export function BankPage() {
       ) : (
         <Connected />
       )}
+      {data && (
+        <button
+          type='button'
+          onClick={() => setNoticeOpen(true)}
+          className='text-tint text-footnote mx-auto mb-6 flex items-center gap-1.5 active:opacity-40'
+        >
+          <ShieldCheck className='size-4' /> Como seus dados de banco chegam aqui
+        </button>
+      )}
+      {data && (
+        <PrivacyNotice
+          open={!data.noticeAcceptedAt || noticeOpen}
+          firstTime={!data.noticeAcceptedAt}
+          onClose={() => setNoticeOpen(false)}
+        />
+      )}
     </Page>
   );
 }
+
+// ---------------------------------------------------------------- aviso
+
+/**
+ * Aviso de privacidade: aparece na primeira entrada (e não fecha sem "Entendi") e pode ser relido.
+ * Promete só o que o código faz: o secret é cifrado; contas e lançamentos ficam ligados ao usuário.
+ */
+function PrivacyNotice({
+  open,
+  firstTime,
+  onClose,
+}: {
+  open: boolean;
+  firstTime: boolean;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const accept = useAcceptBankNotice();
+
+  async function confirm() {
+    if (firstTime) await accept.mutateAsync();
+    onClose();
+  }
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(value) => {
+        if (value) return;
+        // Na primeira vez, fechar sem ler volta para Ajustes.
+        if (firstTime) navigate({ to: '/ajustes' });
+        else onClose();
+      }}
+      title='Privacidade'
+      confirmLabel='Entendi'
+      confirmDisabled={accept.isPending}
+      onConfirm={confirm}
+      cancelLabel={firstTime ? 'Agora não' : 'Fechar'}
+    >
+      <div className='flex flex-col items-center px-2 pb-2 pt-3 text-center'>
+        <span className='bg-green/15 text-green mb-4 flex size-14 items-center justify-center rounded-[16px]'>
+          <ShieldCheck className='size-7' />
+        </span>
+        <h2 className='text-title-3'>Como seus dados de banco chegam aqui</h2>
+      </div>
+      <Section>
+        {NOTICE.map((item) => (
+          <Row
+            key={item.title}
+            leading={<IconChip color={item.color}>{item.icon}</IconChip>}
+            title={item.title}
+            subtitle={item.text}
+            wrapSubtitle
+          />
+        ))}
+      </Section>
+    </Sheet>
+  );
+}
+
+const NOTICE = [
+  {
+    title: 'O Jottape não se conecta ao seu banco',
+    text: 'E nunca vê sua senha. A conexão é feita por você no Meu Pluggy, pelo Open Finance, com a autorização dada no app do próprio banco.',
+    icon: <Landmark />,
+    color: 'var(--blue)',
+  },
+  {
+    title: 'O Meu Pluggy só repassa',
+    text: 'Em modo de leitura, as contas, os saldos e os lançamentos que você autorizou, pela aplicação que você criou na Pluggy. Nada de pagamentos ou transferências.',
+    icon: <ArrowDownToLine />,
+    color: 'var(--green)',
+  },
+  {
+    title: 'Tudo fica salvo de forma sigilosa',
+    text: 'No banco de dados do Jottape, ligado só à sua conta. Suas chaves da Pluggy ficam cifradas e nunca voltam para o app.',
+    icon: <LockKeyhole />,
+    color: 'var(--orange)',
+  },
+  {
+    title: 'Você decide quando parar',
+    text: 'Remova um banco ou as chaves quando quiser, e revogue o acesso no Meu Pluggy ou no app do banco.',
+    icon: <Unplug />,
+    color: 'var(--red)',
+  },
+];
 
 // ---------------------------------------------------------------- configurar
 

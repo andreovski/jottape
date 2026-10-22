@@ -75,7 +75,8 @@ function itemError(item: PluggyItem): string | null {
 // ---------------------------------------------------------------- estado
 
 export async function bankStatus(userId: string): Promise<BankStatusResponse> {
-  const [credential, items, pendingCount] = await Promise.all([
+  const [user, credential, items, pendingCount] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { bankNoticeAt: true } }),
     prisma.pluggyCredential.findUnique({ where: { userId } }),
     prisma.pluggyItem.findMany({
       where: { userId },
@@ -92,6 +93,7 @@ export async function bankStatus(userId: string): Promise<BankStatusResponse> {
     syncedAt: credential?.syncedAt?.toISOString() ?? null,
     lastError: credential?.lastError ?? null,
     pendingCount,
+    noticeAcceptedAt: user.bankNoticeAt?.toISOString() ?? null,
     items: items.map((item) => ({
       id: item.id,
       itemId: item.itemId,
@@ -112,6 +114,12 @@ export async function bankStatus(userId: string): Promise<BankStatusResponse> {
       })),
     })),
   };
+}
+
+/** A pessoa leu o aviso de privacidade; vale em todos os aparelhos. */
+export async function acceptNotice(userId: string) {
+  await prisma.user.update({ where: { id: userId }, data: { bankNoticeAt: new Date() } });
+  return bankStatus(userId);
 }
 
 // ---------------------------------------------------------------- chaves e bancos

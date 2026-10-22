@@ -66,6 +66,13 @@ describe('bancos (Meu Pluggy)', () => {
     return { checkingBank: accountId('Conta Corrente'), cardBank: accountId('Cartão Platinum') };
   }
 
+  it('o aviso de privacidade aparece até a pessoa ler, e fica lido', async () => {
+    expect((await status()).noticeAcceptedAt).toBeNull();
+    const accepted = (await api.post('/bank/notice')).json() as BankStatusResponse;
+    expect(accepted.noticeAcceptedAt).not.toBeNull();
+    expect((await status()).noticeAcceptedAt).toBe(accepted.noticeAcceptedAt);
+  });
+
   it('recusa chaves erradas e guarda o secret cifrado', async () => {
     const wrong = await api.put('/bank/credentials', { clientId: 'x', clientSecret: 'y' });
     expect(wrong.statusCode).toBe(400);

@@ -70,6 +70,8 @@ export const bankStatusResponseSchema = z.object({
   items: z.array(bankItemResponseSchema),
   /** Lançamentos do banco esperando revisão. */
   pendingCount: z.number().int(),
+  /** Quando leu o aviso de privacidade (null = mostrar antes de tudo). */
+  noticeAcceptedAt: z.string().nullable(),
 });
 export type BankStatusResponse = z.infer<typeof bankStatusResponseSchema>;
 

@@ -11,6 +11,7 @@ import { z } from 'zod';
 import {
   acceptAll,
   acceptMovement,
+  acceptNotice,
   addItem,
   bankStatus,
   connectToken,
@@ -32,6 +33,8 @@ export async function bankRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
 
   app.get('/bank', async (request) => bankStatus(request.userId));
+
+  app.post('/bank/notice', async (request) => acceptNotice(request.userId));
 
   app.put('/bank/credentials', async (request) => {
     const body = saveBankCredentialsBodySchema.parse(request.body);
