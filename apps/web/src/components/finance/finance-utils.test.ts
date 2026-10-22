@@ -17,16 +17,19 @@ import {
   defaultStatus,
   filterTransactions,
   forecastAt,
-  groupByDay,
   futureInvoiceIds,
+  groupByDay,
   groupInvoices,
+  hasCardsAndAccounts,
   installmentLabel,
   installmentPreview,
   invoiceTitle,
   lastDayOfMonth,
   repetitionFields,
   resolveMonth,
+  scopeAccountIds,
   shiftMonth,
+  signedAmount,
   styledCategory,
   totalsOf,
   zeroCrossingOffset,
@@ -176,6 +179,70 @@ describe('filtros do extrato', () => {
   it('busca sem diferenciar maiúsculas nem acentos', () => {
     expect(ids(filterTransactions(list, 'all', 'acougue'))).toEqual(['out']);
     expect(ids(filterTransactions(list, 'all', '  SAL '))).toEqual(['in']);
+  });
+});
+
+describe('contas e cartões no extrato', () => {
+  const accounts = [
+    { id: 'cc', type: 'CHECKING' as const },
+    { id: 'poup', type: 'SAVINGS' as const },
+    { id: 'card', type: 'CREDIT_CARD' as const },
+  ];
+  const list = [
+    tx({ id: 'salario', kind: 'INCOME', accountId: 'cc', amountCents: 500000 }),
+    tx({ id: 'pix', accountId: 'cc', amountCents: 3000 }),
+    tx({ id: 'compra', accountId: 'card', amountCents: 12000 }),
+    tx({
+      id: 'fatura',
+      kind: 'TRANSFER',
+      accountId: 'cc',
+      toAccountId: 'card',
+      amountCents: 80000,
+    }),
+    tx({
+      id: 'guardar',
+      kind: 'TRANSFER',
+      accountId: 'cc',
+      toAccountId: 'poup',
+      amountCents: 1000,
+    }),
+  ];
+  const ids = (result: TransactionResponse[]) => result.map((t) => t.id);
+  const contas = scopeAccountIds(accounts, 'accounts')!;
+  const cartoes = scopeAccountIds(accounts, 'cards')!;
+
+  it('separa as contas dos cartões', () => {
+    expect(scopeAccountIds(accounts, 'all')).toBeUndefined();
+    expect([...contas]).toEqual(['cc', 'poup']);
+    expect([...cartoes]).toEqual(['card']);
+  });
+
+  it('o pagamento da fatura aparece nos dois lados', () => {
+    expect(ids(filterTransactions(list, 'all', '', contas))).toEqual([
+      'salario',
+      'pix',
+      'fatura',
+      'guardar',
+    ]);
+    expect(ids(filterTransactions(list, 'all', '', cartoes))).toEqual(['compra', 'fatura']);
+  });
+
+  it('a fatura sai das contas e entra no cartão; transferência entre contas fica neutra', () => {
+    const fatura = list[3];
+    expect(signedAmount(fatura, contas)).toBe(-80000);
+    expect(signedAmount(fatura, cartoes)).toBe(80000);
+    expect(signedAmount(list[4], contas)).toBe(0);
+    expect(totalsOf(filterTransactions(list, 'all', '', contas), contas)).toMatchObject({
+      incomeCents: 500000,
+      expenseCents: 83000,
+    });
+    expect(ids(filterTransactions(list, 'expense', '', cartoes))).toEqual(['compra']);
+  });
+
+  it('só oferece o recorte quando há cartão e conta', () => {
+    expect(hasCardsAndAccounts(accounts)).toBe(true);
+    expect(hasCardsAndAccounts(accounts.slice(0, 2))).toBe(false);
+    expect(hasCardsAndAccounts(accounts.slice(2))).toBe(false);
   });
 });
 

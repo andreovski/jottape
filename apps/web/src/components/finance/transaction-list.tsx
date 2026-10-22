@@ -7,14 +7,20 @@ import { money, relativeDay, signedMoney } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 import { CategoryIcon } from './category-icon';
-import { groupByDay, installmentLabel, signedAmount, type Totals } from './finance-utils';
+import {
+  type AccountScope,
+  groupByDay,
+  installmentLabel,
+  signedAmount,
+  type Totals,
+} from './finance-utils';
 
 interface ListProps {
   transactions: TransactionResponse[];
   accounts: AccountResponse[];
   categories: CategoryResponse[];
-  /** Extrato de uma conta: transferências ganham sinal. */
-  accountId?: string;
+  /** Extrato de uma conta (ou de um grupo delas): transferências ganham sinal. */
+  accountId?: AccountScope;
   onSelect: (transaction: TransactionResponse) => void;
 }
 
@@ -69,7 +75,7 @@ export function TransactionRow({
   transaction: TransactionResponse;
   accounts: AccountResponse[];
   categories: CategoryResponse[];
-  accountId?: string;
+  accountId?: AccountScope;
   onClick: () => void;
   /** Mostra o dia no subtítulo (listas que não são agrupadas por dia). */
   showDate?: boolean;
@@ -91,7 +97,7 @@ export function TransactionRow({
 
   const signed = signedAmount(tx, accountId);
   const amountText =
-    tx.kind === 'TRANSFER' && !accountId
+    tx.kind === 'TRANSFER' && signed === 0
       ? money(tx.amountCents)
       : signed > 0
         ? `+ ${money(signed)}`
