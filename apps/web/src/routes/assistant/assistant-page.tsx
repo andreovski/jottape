@@ -112,10 +112,29 @@ export function AssistantPage() {
     },
   });
 
-  // Pedido novo (ou "processando"): rola até o fim, como no Mensagens.
+  // Pedido novo (ou "processando"): rola até o fim, como no Mensagens. Ao abrir a tela com a
+  // conversa, vai direto para o fim, sem animar, e de novo depois que o router restaura a rolagem
+  // (que levaria para o topo).
   const pending: AssistantMessageBody | null = send.isPending ? send.variables : null;
+  const opened = useRef(false);
   useEffect(() => {
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    if (!messages.length) return;
+    const bottom = (behavior: ScrollBehavior) =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior });
+    if (opened.current) {
+      bottom('smooth');
+      return;
+    }
+    bottom('instant');
+    const frame = requestAnimationFrame(() => bottom('instant'));
+    const timer = window.setTimeout(() => {
+      bottom('instant');
+      opened.current = true;
+    }, 120);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, [messages.length, pending, transcribe.isPending]);
 
   // O campo cresce até 5 linhas.
