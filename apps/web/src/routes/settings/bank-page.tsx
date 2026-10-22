@@ -1,5 +1,10 @@
 import { addDays } from '@jottape/finance-engine';
-import type { AccountResponse, BankAccountResponse, BankItemResponse } from '@jottape/schemas';
+import type {
+  AccountResponse,
+  BankAccountResponse,
+  BankItemResponse,
+  BankStatusResponse,
+} from '@jottape/schemas';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ChevronLeft,
@@ -240,6 +245,7 @@ function Connected() {
   const data = useBankStatus().data!;
   const accounts = useAccounts().data ?? [];
   const add = useAddBankItem();
+  const sync = useSyncBank();
   const remove = useRemoveBankCredentials();
   const removeItem = useRemoveBankItem();
   const { resolvedTheme } = useTheme();
@@ -248,17 +254,28 @@ function Connected() {
   const [sheet, setSheet] = useState<'item' | 'keys' | 'remove' | null>(null);
   const [removingItem, setRemovingItem] = useState<BankItemResponse | null>(null);
 
+  const accountCount = (status: BankStatusResponse) =>
+    status.items.reduce((total, item) => total + item.accounts.length, 0);
+
   async function connect() {
     setConnecting(true);
     try {
+      // O Meu Pluggy é um item só e a Pluggy não deixa o widget mexer nele: banco novo vinculado
+      // no meu.pluggy.ai aparece no mesmo item, e basta ler as contas de novo.
+      if (data.items.length) {
+        const before = accountCount(data);
+        const added = accountCount(await sync.mutateAsync()) - before;
+        if (added > 0) toast.success(`${added} conta(s) nova(s). Escolha onde cada uma entra.`);
+        else
+          toast(
+            'Nenhuma conta nova ainda. O Meu Pluggy pode levar até um dia para trazer o banco.'
+          );
+        return;
+      }
       const itemId = await openPluggyConnect(resolvedTheme === 'dark' ? 'dark' : 'light');
       if (itemId) {
         await add.mutateAsync(itemId);
-        toast.success(
-          data.items.length
-            ? 'Bancos atualizados. Escolha onde as contas novas entram.'
-            : 'Banco conectado. Agora escolha onde cada conta entra.'
-        );
+        toast.success('Banco conectado. Agora escolha onde cada conta entra.');
       }
     } catch (error) {
       toast.error(
@@ -347,7 +364,7 @@ function Connected() {
       <Section
         footer={
           data.items.length
-            ? 'Para trazer outro banco, vincule ele no meu.pluggy.ai e habilite no dashboard.pluggy.ai. Depois toque em Adicionar bancos e marque todas as contas na autorização, as antigas e as novas.'
+            ? 'Para trazer outro banco, vincule ele no meu.pluggy.ai e habilite no dashboard.pluggy.ai. Ele entra junto com os outros: toque em Buscar bancos novos (o Meu Pluggy pode levar até um dia para trazer).'
             : 'Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'
         }
       >
@@ -358,7 +375,7 @@ function Connected() {
           title={
             <span className='flex items-center gap-2'>
               {connecting ? <Spinner /> : <Plus className='size-5' />}{' '}
-              {data.items.length ? 'Adicionar bancos' : 'Conectar banco'}
+              {data.items.length ? 'Buscar bancos novos' : 'Conectar banco'}
             </span>
           }
         />

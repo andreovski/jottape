@@ -142,26 +142,14 @@ export async function removeCredentials(userId: string) {
 }
 
 /**
- * Com um banco já conectado, o widget abre nele: os bancos novos do Meu Pluggy entram no mesmo item.
- * Se a Pluggy não achar mais o item, abre para criar um.
+ * Token do widget, sempre para criar. O Meu Pluggy é um item só com todos os bancos e não aceita
+ * atualização pelo widget: banco novo vinculado lá aparece no item na próxima sincronização.
  */
 export async function connectToken(userId: string): Promise<BankConnectTokenResponse> {
-  const existing = await prisma.pluggyItem.findFirst({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-  });
-  return friendly(async () => {
-    const connectorIds = await meuPluggyConnectorIds(userId);
-    if (existing) {
-      try {
-        const accessToken = await createConnectToken(userId, existing.itemId);
-        return { accessToken, connectorIds, updateItemId: existing.itemId };
-      } catch (error) {
-        if (!(error instanceof PluggyApiError && [400, 404].includes(error.status))) throw error;
-      }
-    }
-    return { accessToken: await createConnectToken(userId), connectorIds, updateItemId: null };
-  });
+  return friendly(async () => ({
+    accessToken: await createConnectToken(userId),
+    connectorIds: await meuPluggyConnectorIds(userId),
+  }));
 }
 
 const BUSY = new Set(['UPDATING', 'LOGIN_IN_PROGRESS', 'WAITING_USER_INPUT', 'CREATED']);
