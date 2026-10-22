@@ -100,16 +100,6 @@ export function BankPage() {
 
 const STEPS = [
   {
-    title: 'Conecte no Meu Pluggy',
-    text: (
-      <>
-        Crie sua conta em <ExternalLink href={PLUGGY_LINKS.meuPluggy}>meu.pluggy.ai</ExternalLink> e
-        conecte seus bancos pelo Open Finance. É de graça para as suas próprias contas, até 5
-        bancos.
-      </>
-    ),
-  },
-  {
     title: 'Crie uma aplicação na Pluggy',
     text: (
       <>
@@ -124,8 +114,28 @@ const STEPS = [
     text: 'Na página da aplicação, copie o Client ID e o Client Secret e cole aqui embaixo.',
   },
   {
+    title: 'Vincule os bancos no Meu Pluggy',
+    text: (
+      <>
+        Crie sua conta em <ExternalLink href={PLUGGY_LINKS.meuPluggy}>meu.pluggy.ai</ExternalLink> e
+        conecte seus bancos pelo Open Finance. É de graça para as suas próprias contas, até 5
+        bancos.
+      </>
+    ),
+  },
+  {
+    title: 'Habilite os bancos no dashboard',
+    text: (
+      <>
+        Volte ao <ExternalLink href={PLUGGY_LINKS.dashboard}>dashboard.pluggy.ai</ExternalLink> e
+        habilite na sua aplicação os bancos que você vinculou no Meu Pluggy. Sem isso, a lista de
+        contas chega vazia.
+      </>
+    ),
+  },
+  {
     title: 'Ligue os bancos às suas contas',
-    text: 'Toque em Conectar banco, entre com o Meu Pluggy e escolha em que conta do Jottape cada conta do banco entra.',
+    text: 'Toque em Conectar banco, entre com o Meu Pluggy, marque as contas e escolha em que conta do Jottape cada uma entra.',
   },
 ];
 
@@ -337,7 +347,7 @@ function Connected() {
       <Section
         footer={
           data.items.length
-            ? 'Para trazer outro banco, conecte ele primeiro no meu.pluggy.ai. Depois toque em Adicionar bancos e marque todas as contas na autorização, as antigas e as novas.'
+            ? 'Para trazer outro banco, vincule ele no meu.pluggy.ai e habilite no dashboard.pluggy.ai. Depois toque em Adicionar bancos e marque todas as contas na autorização, as antigas e as novas.'
             : 'Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'
         }
       >
