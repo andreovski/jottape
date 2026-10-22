@@ -295,7 +295,7 @@ describe('bancos (Meu Pluggy)', () => {
       payments: [{ paymentDate: '2026-10-07T03:00:00.000Z', amount: 200 }],
     };
 
-    function addMovements(withBill: boolean) {
+    function addMovements(withBill: boolean, withDebit = true) {
       pluggy.add(CARD_ID, {
         id: 'k1',
         description: 'Farmácia',
@@ -311,6 +311,10 @@ describe('bancos (Meu Pluggy)', () => {
         status: 'PENDING',
         creditCardMetadata: { installmentNumber: 2, totalInstallments: 3 },
       });
+      if (withDebit) addDebit();
+    }
+
+    function addDebit() {
       pluggy.add(CHECKING_ID, {
         id: 'p1',
         description: 'Pagamento de fatura',
@@ -318,6 +322,8 @@ describe('bancos (Meu Pluggy)', () => {
         date: '2026-10-07T03:00:00.000Z',
       });
     }
+
+    const payments = () => prisma.transaction.findMany({ where: { paysInvoiceId: { not: null } } });
 
     async function linkBoth() {
       const { checkingBank, cardBank } = await connect();
@@ -371,6 +377,40 @@ describe('bancos (Meu Pluggy)', () => {
       pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
       await syncAllBanks();
       await expectRepaired(cardId);
+    });
+
+    it('paga por uma conta fora do Jottape: fica paga sem tirar da conta ligada', async () => {
+      pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
+      addMovements(true, false);
+      const cardId = await linkBoth();
+      await api.post('/bank/movements/accept-all');
+      await syncAllBanks();
+      expect((await invoicesOf(cardId))[0]!.slice(0, 3)).toEqual(['2026-09', 200_00, 'PAID']);
+      expect(await payments()).toEqual([]);
+
+      // O débito aparece depois na conta ligada: vira o pagamento.
+      addDebit();
+      await syncAllBanks();
+      await expectRepaired(cardId);
+    });
+
+    it('tira o pagamento que saiu de uma conta ligada sem o débito no banco', async () => {
+      pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
+      addMovements(true, false);
+      const cardId = await linkBoth();
+      await api.post('/bank/movements/accept-all');
+      const september = (
+        (await api.get(`/accounts/${cardId}/invoices`)).json() as InvoiceResponse[]
+      ).find((i) => i.referenceMonth === '2026-09')!;
+      await api.post(`/invoices/${september.id}/pay`, {
+        fromAccountId: checking.id,
+        date: '2026-10-07',
+      });
+      expect(await payments()).toHaveLength(1);
+
+      await syncAllBanks();
+      expect(await payments()).toEqual([]);
+      expect((await invoicesOf(cardId))[0]!.slice(0, 3)).toEqual(['2026-09', 200_00, 'PAID']);
     });
   });
 

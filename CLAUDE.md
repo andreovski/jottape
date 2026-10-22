@@ -67,8 +67,10 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   (a fatura sai sozinha). No cartão, a fatura do banco vale mais que a data: o `billId` (só depois
   que a fatura fecha) dá vencimento e fechamento (`billDueDate`/`billClosingDate` no movimento), e
   parcela 2+ datada pela fatura cai na que vence no mês da data; a cada sincronização o lançamento
-  é movido para essa fatura. Fatura que o banco diz paga é paga pela conta de pagamento do cartão,
-  e o débito "pagamento de fatura" da conta vira essa transferência (aceito ou já lançado). Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
+  é movido para essa fatura. Fatura que o banco diz paga vira transferência da conta ligada onde o
+  débito aparece (aceito, pendente ou já lançado como despesa); sem débito em conta ligada, foi
+  paga por fora e fica paga sem tirar de conta nenhuma (e um pagamento sem débito numa conta
+  ligada sai). Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e
   descarta o que atrasou mais de 1 h. Tarefa só com data é lembrada às 09:00 locais.
 - **Briefing** (tela Hoje): cada plugin é uma função em `services/briefing/index.ts` que devolve

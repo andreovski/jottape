@@ -461,6 +461,25 @@ async function importMovements(
   if (card) {
     await alignInvoices(userId, bankAccount.id, card);
     await payBills(userId, card, pluggyBills, timeZone);
+  } else {
+    // O cartão já deu a fatura como paga e o débito chegou depois: ele vira o pagamento.
+    for (const row of rows) {
+      if (row.status !== 'PENDING') continue;
+      const payment = await payInvoiceWith(
+        userId,
+        { ...row, date: row.date as Date },
+        accountId,
+        true
+      );
+      if (payment) {
+        await prisma.bankMovement.update({
+          where: {
+            bankAccountId_externalId: { bankAccountId: bankAccount.id, externalId: row.externalId },
+          },
+          data: { status: 'MATCHED', transactionId: payment },
+        });
+      }
+    }
   }
   return rows.length;
 }
@@ -530,11 +549,12 @@ async function alignInvoices(userId: string, bankAccountId: string, card: Accoun
 }
 
 /**
- * Fatura que o banco diz paga e que o Jottape ainda tem aberta: paga pela conta de pagamento do
- * cartão, na data e no valor do banco. O débito do pagamento na conta casa com essa transferência.
+ * Fatura que o banco diz paga. Se o débito do pagamento aparece numa conta ligada, a fatura é
+ * paga por essa conta (transferência, no valor e na data do banco) e o débito casa com ela; se
+ * não aparece, foi paga por fora (conta que não está no Jottape): fica paga sem tirar de conta
+ * nenhuma. Pagamento que o Jottape criou numa conta ligada sem o débito correspondente sai.
  */
 async function payBills(userId: string, card: Account, bills: PluggyBill[], timeZone: string) {
-  if (!card.paymentAccountId) return;
   for (const bill of bills) {
     const paid = billPayment(bill, timeZone);
     if (!paid) continue;
@@ -542,29 +562,19 @@ async function payBills(userId: string, card: Account, bills: PluggyBill[], time
       where: {
         accountId: card.id,
         referenceMonth: billReferenceMonth(card, billDates(bill, timeZone)),
-        paidAt: null,
-        payment: null,
         items: { some: {} },
       },
+      include: { payment: true },
     });
     if (!invoice) continue;
 
-    // O débito na conta já virou despesa na revisão: pagar de novo tiraria duas vezes.
-    const window = {
-      gte: toDbDate(addDays(paid.date, -MATCH_WINDOW_DAYS)),
-      lte: toDbDate(addDays(paid.date, MATCH_WINDOW_DAYS)),
-    };
-    const debit = await prisma.bankMovement.findFirst({
-      where: {
-        userId,
-        kind: 'EXPENSE',
-        amountCents: paid.amountCents,
-        date: window,
-        bankAccount: { accountId: card.paymentAccountId },
-      },
-      include: { transaction: { select: { kind: true } } },
-      orderBy: { date: 'asc' },
-    });
+    if (invoice.payment) {
+      await dropPaymentWithoutDebit(userId, invoice.payment);
+      continue;
+    }
+    if (invoice.paidAt) continue;
+
+    const debit = await findDebit(userId, paid.amountCents, paid.date);
     if (debit?.status === 'MATCHED') continue;
     // Já lançado da revisão como despesa: a despesa vira o pagamento (senão sairia duas vezes).
     if (debit?.status === 'IMPORTED') {
@@ -573,23 +583,88 @@ async function payBills(userId: string, card: Account, bills: PluggyBill[], time
       }
       continue;
     }
-
-    try {
-      const result = await payInvoice(userId, invoice.id, {
-        fromAccountId: card.paymentAccountId,
-        date: paid.date,
-        amountCents: paid.amountCents,
-      });
-      if (debit?.status === 'PENDING' && result.paymentTransactionId) {
-        await prisma.bankMovement.update({
-          where: { id: debit.id },
-          data: { status: 'MATCHED', transactionId: result.paymentTransactionId },
+    if (debit?.status === 'PENDING' && debit.bankAccount.accountId) {
+      try {
+        const result = await payInvoice(userId, invoice.id, {
+          fromAccountId: debit.bankAccount.accountId,
+          date: paid.date,
+          amountCents: paid.amountCents,
         });
+        if (result.paymentTransactionId) {
+          await prisma.bankMovement.update({
+            where: { id: debit.id },
+            data: { status: 'MATCHED', transactionId: result.paymentTransactionId },
+          });
+        }
+        continue;
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
       }
-    } catch (error) {
-      if (!(error instanceof AppError)) throw error;
     }
+    await prisma.creditCardInvoice.update({
+      where: { id: invoice.id },
+      data: { paidAt: new Date() },
+    });
   }
+}
+
+/** O débito desse valor perto da data numa conta (não cartão) ligada do usuário. */
+function findDebit(userId: string, amountCents: number, date: string) {
+  return prisma.bankMovement.findFirst({
+    where: {
+      userId,
+      kind: 'EXPENSE',
+      amountCents,
+      date: {
+        gte: toDbDate(addDays(date, -MATCH_WINDOW_DAYS)),
+        lte: toDbDate(addDays(date, MATCH_WINDOW_DAYS)),
+      },
+      bankAccount: { type: 'BANK', accountId: { not: null } },
+    },
+    include: {
+      transaction: { select: { kind: true } },
+      bankAccount: { select: { accountId: true } },
+    },
+    orderBy: { date: 'asc' },
+  });
+}
+
+/**
+ * O pagamento saiu de uma conta ligada ao banco, mas o banco não mostra o débito: a fatura foi paga
+ * por outra conta. Tira a transferência (a fatura continua paga).
+ */
+async function dropPaymentWithoutDebit(
+  userId: string,
+  payment: { id: string; accountId: string; amountCents: number; date: Date }
+) {
+  const date = fromDbDate(payment.date);
+  const watched = await prisma.bankAccount.findFirst({
+    where: {
+      userId,
+      type: 'BANK',
+      accountId: payment.accountId,
+      importFrom: { lte: payment.date },
+    },
+  });
+  if (!watched) return;
+  const seen = await prisma.bankMovement.findFirst({
+    where: {
+      OR: [
+        { transactionId: payment.id },
+        {
+          bankAccountId: watched.id,
+          kind: 'EXPENSE',
+          amountCents: payment.amountCents,
+          date: {
+            gte: toDbDate(addDays(date, -MATCH_WINDOW_DAYS)),
+            lte: toDbDate(addDays(date, MATCH_WINDOW_DAYS)),
+          },
+        },
+      ],
+    },
+  });
+  if (seen) return;
+  await prisma.transaction.delete({ where: { id: payment.id } });
 }
 
 /** Atualiza um banco: estado, contas e saldos, e os lançamentos das contas ligadas. */
@@ -792,15 +867,22 @@ export async function acceptMovement(
  * vencimento: paga essa fatura (transferência para o cartão) em vez de virar despesa. Devolve o id
  * do pagamento, ou null para seguir como lançamento comum.
  */
-async function payInvoiceWith(userId: string, movement: BankMovement, accountId: string) {
+async function payInvoiceWith(
+  userId: string,
+  movement: Pick<BankMovement, 'kind' | 'description' | 'date' | 'amountCents'>,
+  accountId: string,
+  /** Só as que o banco deu como pagas sem o débito (na sincronização, sem a pessoa conferir). */
+  onlyPaidElsewhere = false
+) {
   if (movement.kind !== 'EXPENSE' || !looksLikeInvoicePayment(movement.description)) return null;
+  // Também a que o banco deu como paga por fora: o débito mostra que saiu desta conta.
   const invoices = await prisma.creditCardInvoice.findMany({
     where: {
       userId,
-      paidAt: null,
       payment: null,
+      ...(onlyPaidElsewhere ? { paidAt: { not: null } } : {}),
       items: { some: {} },
-      account: { paymentAccountId: accountId, archivedAt: null },
+      account: { type: 'CREDIT_CARD', archivedAt: null },
     },
   });
   const date = fromDbDate(movement.date);
@@ -809,6 +891,10 @@ async function payInvoiceWith(userId: string, movement: BankMovement, accountId:
     invoices.map((i) => ({ id: i.id, dueDate: fromDbDate(i.dueDate) }))
   );
   if (!invoice) return null;
+  const paidAt = invoices.find((i) => i.id === invoice.id)!.paidAt;
+  if (paidAt) {
+    await prisma.creditCardInvoice.update({ where: { id: invoice.id }, data: { paidAt: null } });
+  }
   try {
     const paid = await payInvoice(userId, invoice.id, {
       fromAccountId: accountId,
@@ -817,6 +903,8 @@ async function payInvoiceWith(userId: string, movement: BankMovement, accountId:
     });
     return paid.paymentTransactionId;
   } catch (error) {
+    if (paidAt)
+      await prisma.creditCardInvoice.update({ where: { id: invoice.id }, data: { paidAt } });
     if (!(error instanceof AppError)) throw error;
     return null;
   }
