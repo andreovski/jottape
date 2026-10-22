@@ -18,6 +18,7 @@ import {
   accountColor,
   axisTicks,
   compactMoney,
+  futureInvoiceIds,
   zeroCrossingOffset,
 } from '@/components/finance/finance-utils';
 import { invoiceName, InvoicePill } from '@/components/finance/invoice-sheet';
@@ -266,6 +267,7 @@ function UnpaidInvoices({ accounts }: { accounts: AccountResponse[] }) {
   const navigate = useNavigate();
   const { invoices } = useUnpaidCardInvoices(accounts);
   if (!invoices.length) return null;
+  const future = futureInvoiceIds(invoices.map((i) => i.invoice));
 
   return (
     <Section header='Faturas a pagar'>
@@ -280,7 +282,8 @@ function UnpaidInvoices({ accounts }: { accounts: AccountResponse[] }) {
           title={`${invoiceName(invoice)} · ${account.name}`}
           subtitle={
             <span className='flex items-center gap-1.5'>
-              Vence em {shortDay(invoice.dueDate)} <InvoicePill status={invoice.status} />
+              Vence em {shortDay(invoice.dueDate)}{' '}
+              <InvoicePill status={invoice.status} future={future.has(invoice.id)} />
             </span>
           }
           detail={<span className='font-rounded text-foreground'>{money(invoice.totalCents)}</span>}

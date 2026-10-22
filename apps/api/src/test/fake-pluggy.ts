@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { vi } from 'vitest';
 
-import type { PluggyAccount, PluggyTransaction } from '@/services/bank/client';
+import type { PluggyAccount, PluggyBill, PluggyTransaction } from '@/services/bank/client';
 
 /**
  * Pluggy de mentira: troca o fetch global e responde às rotas que a API usa, com um banco (item),
@@ -37,6 +37,8 @@ export class FakePluggy {
   ];
   /** Lançamentos por conta (id da conta na Pluggy). */
   transactions = new Map<string, PluggyTransaction[]>();
+  /** Faturas fechadas por conta de cartão. */
+  bills = new Map<string, PluggyBill[]>();
 
   install() {
     vi.stubGlobal(
@@ -108,6 +110,10 @@ export class FakePluggy {
     if (match) {
       const account = this.accounts.find((a) => a.id === match![1]);
       return account ? this.json(200, account) : this.json(404, { code: 404 });
+    }
+    if (url.pathname === '/bills') {
+      const all = this.bills.get(url.searchParams.get('accountId')!) ?? [];
+      return this.json(200, { results: all, total: all.length, page: 1, totalPages: 1 });
     }
     if (url.pathname === '/v2/transactions') {
       const from = url.searchParams.get('dateFrom') ?? '0000-00-00';

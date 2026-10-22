@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { AccountCard } from '@/components/finance/account-card';
 import { AccountSheet } from '@/components/finance/account-sheet';
 import { accountColor, monthOfDay } from '@/components/finance/finance-utils';
-import { groupInvoices } from '@/components/finance/finance-utils';
+import { futureInvoiceIds, groupInvoices } from '@/components/finance/finance-utils';
 import { invoiceName, InvoicePill, InvoiceSheet } from '@/components/finance/invoice-sheet';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { useSheetState } from '@/components/finance/use-sheet-state';
@@ -209,6 +209,7 @@ function Invoices({
   const current = sheet.value
     ? (invoices?.find((i) => i.id === sheet.value?.id) ?? sheet.value)
     : null;
+  const future = futureInvoiceIds(invoices ?? []);
 
   return (
     <>
@@ -236,7 +237,7 @@ function Invoices({
                     <span className='font-rounded numeric text-body'>
                       {money(invoice.totalCents)}
                     </span>
-                    <InvoicePill status={invoice.status} />
+                    <InvoicePill status={invoice.status} future={future.has(invoice.id)} />
                   </span>
                 }
                 chevron
@@ -258,6 +259,7 @@ function Invoices({
       <InvoiceSheet
         open={sheet.open}
         invoice={current}
+        future={current ? future.has(current.id) : false}
         paymentAccountId={account.paymentAccountId}
         onOpenChange={sheet.onOpenChange}
         onSelectTransaction={(tx) => {

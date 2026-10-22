@@ -18,6 +18,7 @@ import {
   filterTransactions,
   forecastAt,
   groupByDay,
+  futureInvoiceIds,
   groupInvoices,
   installmentLabel,
   installmentPreview,
@@ -354,5 +355,18 @@ describe('faturas do cartão', () => {
       ['A pagar', ['nov', 'dez']],
       ['Pagas', ['set', 'ago']],
     ]);
+  });
+
+  it('só a primeira aberta de cada cartão está correndo; as outras são futuras', () => {
+    const invoice = (id: string, accountId: string, closingDate: string, status = 'OPEN') =>
+      ({ id, accountId, closingDate, status }) as InvoiceResponse;
+    const future = futureInvoiceIds([
+      invoice('mp-dez', 'mp', '2026-12-01'),
+      invoice('mp-out', 'mp', '2026-10-01', 'CLOSED'),
+      invoice('mp-nov', 'mp', '2026-11-01'),
+      invoice('c6-nov', 'c6', '2026-11-10'),
+      invoice('mp-jan', 'mp', '2027-01-01'),
+    ]);
+    expect([...future].sort()).toEqual(['mp-dez', 'mp-jan']);
   });
 });

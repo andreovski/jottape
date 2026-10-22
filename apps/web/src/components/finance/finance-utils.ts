@@ -373,6 +373,25 @@ export function invoiceTitle(referenceMonth: string, monthName: string, today: s
  * Faturas do cartão como na Wallet: as que faltam pagar da mais próxima para a mais distante (as
  * parcelas futuras ficam no fim) e as pagas da mais recente para a mais antiga.
  */
+/**
+ * Faturas abertas depois da atual (parcelas que ainda vão cair): só a primeira aberta de cada
+ * cartão está correndo; as outras ainda não começaram.
+ */
+export function futureInvoiceIds(
+  invoices: Pick<InvoiceResponse, 'id' | 'accountId' | 'status' | 'closingDate'>[]
+): Set<string> {
+  const open = invoices
+    .filter((i) => i.status === 'OPEN')
+    .sort((a, b) => a.closingDate.localeCompare(b.closingDate));
+  const current = new Set<string>();
+  const future = new Set<string>();
+  for (const invoice of open) {
+    if (current.has(invoice.accountId)) future.add(invoice.id);
+    else current.add(invoice.accountId);
+  }
+  return future;
+}
+
 export function groupInvoices(invoices: InvoiceResponse[]) {
   const unpaid = invoices
     .filter((i) => i.status !== 'PAID')

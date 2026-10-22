@@ -64,7 +64,11 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   (parcela pelo número, até 45 dias; previsto vira efetivado) → MATCHED; pagamento de fatura visto
   no cartão → IGNORED; o resto fica PENDING em "A revisar" com a categoria do lançamento mais
   recente de descrição igual (`movements.ts`, puro, com teste). Aceitar usa `createTransactions`
-  (a fatura sai sozinha). Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
+  (a fatura sai sozinha). No cartão, a fatura do banco vale mais que a data: o `billId` (só depois
+  que a fatura fecha) dá vencimento e fechamento (`billDueDate`/`billClosingDate` no movimento), e
+  parcela 2+ datada pela fatura cai na que vence no mês da data; a cada sincronização o lançamento
+  é movido para essa fatura. Fatura que o banco diz paga é paga pela conta de pagamento do cartão,
+  e o débito "pagamento de fatura" da conta vira essa transferência (aceito ou já lançado). Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e
   descarta o que atrasou mais de 1 h. Tarefa só com data é lembrada às 09:00 locais.
 - **Briefing** (tela Hoje): cada plugin é uma função em `services/briefing/index.ts` que devolve

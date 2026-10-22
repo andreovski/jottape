@@ -53,7 +53,17 @@ export interface PluggyTransaction {
     installmentNumber?: number | null;
     totalInstallments?: number | null;
     purchaseDate?: string | null;
+    /** A fatura do lançamento; só vem depois que ela fecha. */
+    billId?: string | null;
   } | null;
+}
+
+export interface PluggyBill {
+  id: string;
+  dueDate: string;
+  billClosingDate?: string | null;
+  totalAmount: number;
+  payments?: { paymentDate?: string | null; amount: number }[] | null;
 }
 
 /** A chave da API vale 2 h; guardamos por usuário um pouco menos que isso. */
@@ -144,6 +154,20 @@ export async function fetchTransactions(
     );
     all.push(...result.results);
     query = result.next;
+  }
+  return all;
+}
+
+/** As faturas fechadas do cartão, seguindo as páginas. */
+export async function fetchBills(userId: string, accountId: string): Promise<PluggyBill[]> {
+  const all: PluggyBill[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const result: { results: PluggyBill[]; totalPages?: number } = await pluggyFetch(
+      userId,
+      `/bills?accountId=${encodeURIComponent(accountId)}&page=${page}`
+    );
+    all.push(...result.results);
+    if (!result.totalPages || page >= result.totalPages) break;
   }
   return all;
 }

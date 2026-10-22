@@ -30,7 +30,9 @@ export const INVOICE_STATUS_COLORS: Record<InvoiceStatus, string> = {
   PAID: 'var(--green)',
 };
 
-export function InvoicePill({ status }: { status: InvoiceStatus }) {
+/** `future`: aberta, mas depois da atual (ainda não começou a correr). */
+export function InvoicePill({ status, future }: { status: InvoiceStatus; future?: boolean }) {
+  if (future) return <Pill>Futura</Pill>;
   return <Pill color={INVOICE_STATUS_COLORS[status]}>{INVOICE_STATUS_LABELS[status]}</Pill>;
 }
 
@@ -41,6 +43,8 @@ interface InvoiceSheetProps {
   open: boolean;
   /** Continua preenchida depois de fechar, para a folha descer com o conteúdo. */
   invoice: InvoiceResponse | null;
+  /** Aberta depois da atual: parcelas que ainda vão cair. */
+  future?: boolean;
   paymentAccountId: string | null;
   onOpenChange: (open: boolean) => void;
   onSelectTransaction: (transaction: TransactionResponse) => void;
@@ -54,6 +58,7 @@ export function InvoiceSheet(props: InvoiceSheetProps) {
 function InvoiceSheetContent({
   open,
   invoice,
+  future,
   paymentAccountId,
   onOpenChange,
   onSelectTransaction,
@@ -93,7 +98,7 @@ function InvoiceSheetContent({
       {invoice && (
         <>
           <div className='flex flex-col items-center pt-2 pb-6 text-center'>
-            <InvoicePill status={invoice.status} />
+            <InvoicePill status={invoice.status} future={future} />
             <div className='font-rounded numeric mt-2 text-[44px] leading-none font-semibold tracking-tight'>
               {money(invoice.totalCents)}
             </div>

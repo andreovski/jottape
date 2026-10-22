@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { invoiceCycleFor } from './invoice';
+import { invoiceCycleFor, referenceMonthForDue } from './invoice';
 
 describe('invoiceCycleFor', () => {
   it('compra antes do fechamento entra na fatura do mês', () => {
@@ -28,5 +28,15 @@ describe('invoiceCycleFor', () => {
       closingDate: '2026-02-28',
       dueDate: '2026-03-10',
     });
+  });
+});
+
+describe('referenceMonthForDue', () => {
+  it('vence no mês do fechamento', () => {
+    expect(referenceMonthForDue('2026-11-18', 11, 18)).toBe('2026-11');
+  });
+
+  it('vence no mês seguinte ao fechamento', () => {
+    expect(referenceMonthForDue('2027-01-05', 25, 5)).toBe('2026-12');
   });
 });

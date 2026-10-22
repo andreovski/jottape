@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import type { PluggyTransaction } from './client';
 import {
+  billPayment,
   categoryMemory,
   findMatch,
   importedDescription,
   type MatchCandidate,
+  movementBill,
   normalize,
   parseMovement,
   suggestCategory,
@@ -90,7 +92,54 @@ describe('parseMovement', () => {
       date: '2026-10-07T03:00:00.000Z',
       creditCardMetadata: { installmentNumber: 3, totalInstallments: 10 },
     });
-    expect(parseMovement(third, 'CREDIT', TZ)?.date).toBe('2026-10-07');
+    expect(parseMovement(third, 'CREDIT', TZ)).toMatchObject({
+      date: '2026-10-07',
+      datedByBill: true,
+    });
+  });
+});
+
+describe('faturas do cartão', () => {
+  const card = { closingDay: 1, dueDay: 18 };
+  const bills = new Map([['b-out', { dueDate: '2026-10-18', closingDate: '2026-10-08' }]]);
+
+  it('a fatura do banco vale mais que a data', () => {
+    const movement = { billId: 'b-out', datedByBill: false, date: '2026-10-09' };
+    expect(movementBill(movement, bills, card)).toEqual(bills.get('b-out'));
+  });
+
+  it('parcela datada pela fatura vai para a que vence no mês da data', () => {
+    expect(
+      movementBill({ billId: null, datedByBill: true, date: '2026-12-01' }, bills, card)
+    ).toEqual({ dueDate: '2026-12-18', closingDate: null });
+    // Cartão que vence no mês seguinte ao fechamento.
+    expect(
+      movementBill({ billId: null, datedByBill: true, date: '2027-01-03' }, bills, {
+        closingDay: 25,
+        dueDay: 5,
+      })
+    ).toEqual({ dueDate: '2027-01-05', closingDate: null });
+  });
+
+  it('sem fatura nem parcela datada pela fatura, vale a data', () => {
+    expect(
+      movementBill({ billId: 'outra', datedByBill: false, date: '2026-10-09' }, bills, card)
+    ).toBeNull();
+  });
+
+  it('paga só quando os pagamentos cobrem o total', () => {
+    const bill = {
+      id: 'b',
+      dueDate: '2026-10-18T03:00:00.000Z',
+      totalAmount: 590.7,
+      payments: [
+        { paymentDate: '2026-10-10T03:00:00.000Z', amount: 90.7 },
+        { paymentDate: '2026-10-17T03:00:00.000Z', amount: 500 },
+      ],
+    };
+    expect(billPayment(bill, TZ)).toEqual({ amountCents: 590_70, date: '2026-10-17' });
+    expect(billPayment({ ...bill, payments: bill.payments.slice(1) }, TZ)).toBeNull();
+    expect(billPayment({ ...bill, payments: undefined }, TZ)).toBeNull();
   });
 });
 
