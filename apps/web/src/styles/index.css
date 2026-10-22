@@ -202,6 +202,47 @@
   }
 }
 
+/*
+ * Jotta gravando dentro do campo: a onda se desenrola a partir do microfone (direita), os botões
+ * surgem com um pulo curto e, ao voltar, o texto aparece de leve.
+ */
+@keyframes voice-wave-in {
+  from {
+    clip-path: inset(0 0 0 100% round 12px);
+    opacity: 0.2;
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 12px);
+    opacity: 1;
+  }
+}
+
+@keyframes voice-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@keyframes composer-in {
+  from {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+}
+
+.voice-wave-in {
+  animation: voice-wave-in 0.42s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.voice-pop {
+  animation: voice-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.composer-in {
+  animation: composer-in 0.22s ease-out both;
+}
+
 /* Fundo do briefing: o brilho do sol/lua passeia devagar e a chuva cai em diagonal. */
 @keyframes sky-drift {
   from {
@@ -254,7 +295,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sky-rain,
-  .field-shake {
+  .field-shake,
+  .voice-wave-in,
+  .voice-pop,
+  .composer-in {
     animation: none;
   }
 }

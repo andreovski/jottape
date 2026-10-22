@@ -9,9 +9,12 @@ import { cn } from '@/lib/utils';
  */
 export function Waveform({
   stream,
+  grid = true,
   className,
 }: {
   stream: MediaStream | null;
+  /** Grade de instrumento atrás da onda; dentro do campo fica sem. */
+  grid?: boolean;
   className?: string;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -37,7 +40,7 @@ export function Waveform({
     const samples = new Uint8Array(analyser?.fftSize ?? 0);
     // A cor vem do `text-tint` do próprio canvas.
     const color = getComputedStyle(element).color;
-    const grid =
+    const gridColor =
       getComputedStyle(element).getPropertyValue('--separator') || 'rgb(128 128 128 / .2)';
 
     let frame = 0;
@@ -53,18 +56,20 @@ export function Waveform({
       context.clearRect(0, 0, width, height);
 
       // Grade fina, como a tela de um instrumento.
-      context.strokeStyle = grid;
-      context.lineWidth = 0.5;
-      context.beginPath();
-      for (let x = 24; x < width; x += 24) {
-        context.moveTo(x, 0);
-        context.lineTo(x, height);
+      if (grid) {
+        context.strokeStyle = gridColor;
+        context.lineWidth = 0.5;
+        context.beginPath();
+        for (let x = 24; x < width; x += 24) {
+          context.moveTo(x, 0);
+          context.lineTo(x, height);
+        }
+        for (let y = height / 4; y < height; y += height / 4) {
+          context.moveTo(0, y);
+          context.lineTo(width, y);
+        }
+        context.stroke();
       }
-      for (let y = height / 4; y < height; y += height / 4) {
-        context.moveTo(0, y);
-        context.lineTo(width, y);
-      }
-      context.stroke();
 
       const mid = height / 2;
       const live = analyser && audio?.state === 'running';
@@ -105,7 +110,7 @@ export function Waveform({
       cancelAnimationFrame(frame);
       void audio?.close().catch(() => undefined);
     };
-  }, [stream]);
+  }, [stream, grid]);
 
   return (
     <canvas

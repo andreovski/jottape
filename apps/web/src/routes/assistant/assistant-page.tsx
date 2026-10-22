@@ -7,7 +7,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { ArrowUp, ChevronRight, Flag, Keyboard, Mic, SquarePen, X } from 'lucide-react';
 import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 
-import { Button, EmptyState, Skeleton } from '@/components/ios/controls';
+import { EmptyState, Skeleton } from '@/components/ios/controls';
 import { TextArea } from '@/components/ios/fields';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
@@ -201,72 +201,79 @@ export function AssistantPage() {
       {/* Espaço para o campo fixo embaixo. */}
       <div aria-hidden className='h-28' />
 
-      {voice.listening && (
-        <div
-          aria-hidden
-          className='fixed inset-0 z-20 bg-black/45 backdrop-blur-[2px] transition-opacity'
-        />
-      )}
-
       <div className='fixed inset-x-0 bottom-[calc(50px+env(safe-area-inset-bottom))] z-30 lg:bottom-0 lg:left-64'>
         <div className='bottom-scrim pointer-events-none absolute inset-x-0 -top-6 bottom-0' />
         <div className='relative mx-auto max-w-3xl px-4 pb-3 lg:px-8 lg:pb-6'>
-          {voice.listening ? (
-            <VoicePanel
-              seconds={voice.seconds}
-              stream={voice.stream}
-              liveText={mode === 'browser' ? text : ''}
-              onCancel={voice.cancel}
-              onFinish={voice.finish}
-            />
-          ) : (
-            <form
-              onSubmit={onSubmit}
-              className='bg-surface bar-shadow flex items-end gap-1.5 rounded-[18px] py-1.5 pr-1.5 pl-4'
-            >
-              <span aria-hidden className='text-tint py-[7px] font-mono text-[17px] font-semibold'>
-                ›
-              </span>
-              <textarea
-                ref={input}
-                rows={1}
-                value={text}
-                maxLength={1000}
-                disabled={atLimit}
-                placeholder={atLimit ? 'Limite do mês atingido' : 'Peça algo'}
-                aria-label='Pedido'
-                enterKeyHint='send'
-                className='text-body placeholder:text-label-3 max-h-[120px] min-h-10 flex-1 resize-none bg-transparent py-[7px] outline-none'
-                onChange={(event) => setText(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    submit(text);
-                  }
-                }}
+          <form
+            onSubmit={onSubmit}
+            className={cn(
+              'bg-surface flex items-end gap-1.5 rounded-[18px] py-1.5 pr-1.5 transition-[box-shadow,padding] duration-300',
+              voice.listening
+                ? 'pl-1.5 shadow-[inset_0_0_0_0.5px_color-mix(in_srgb,var(--tint)_60%,transparent),0_0_0_4px_color-mix(in_srgb,var(--tint)_12%,transparent),0_0_28px_color-mix(in_srgb,var(--tint)_22%,transparent)]'
+                : 'bar-shadow pl-4'
+            )}
+          >
+            {voice.listening ? (
+              <VoiceField
+                seconds={voice.seconds}
+                stream={voice.stream}
+                liveText={mode === 'browser' ? text : ''}
+                onCancel={voice.cancel}
+                onFinish={voice.finish}
               />
-              {text.trim() || !mode ? (
-                <button
-                  type='submit'
-                  aria-label='Enviar'
-                  disabled={!text.trim() || thinking || atLimit}
-                  className='bg-tint flex size-10 shrink-0 items-center justify-center rounded-[13px] text-white transition-opacity active:opacity-70 disabled:opacity-30'
+            ) : (
+              <>
+                <span
+                  aria-hidden
+                  className='text-tint composer-in py-[7px] font-mono text-[17px] font-semibold'
                 >
-                  <ArrowUp className='size-5' strokeWidth={2.6} />
-                </button>
-              ) : (
-                <button
-                  type='button'
-                  aria-label='Ditar'
-                  disabled={thinking || atLimit}
-                  className='text-tint bg-tint/15 flex size-10 shrink-0 items-center justify-center rounded-[13px] shadow-[inset_0_0_0_0.5px_color-mix(in_srgb,var(--tint)_45%,transparent)] transition-opacity active:opacity-60 disabled:opacity-30'
-                  onClick={() => void voice.start()}
-                >
-                  <Mic className='size-5' strokeWidth={2.2} />
-                </button>
-              )}
-            </form>
-          )}
+                  ›
+                </span>
+                <textarea
+                  ref={input}
+                  rows={1}
+                  value={text}
+                  maxLength={1000}
+                  disabled={atLimit}
+                  placeholder={atLimit ? 'Limite do mês atingido' : 'Peça algo'}
+                  aria-label='Pedido'
+                  enterKeyHint='send'
+                  className='text-body placeholder:text-label-3 composer-in max-h-[120px] min-h-10 flex-1 resize-none bg-transparent py-[7px] outline-none'
+                  onChange={(event) => setText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      submit(text);
+                    }
+                  }}
+                />
+                {text.trim() || !mode ? (
+                  <button
+                    type='submit'
+                    aria-label='Enviar'
+                    disabled={!text.trim() || thinking || atLimit}
+                    className='bg-tint flex size-10 shrink-0 items-center justify-center rounded-[13px] text-white transition-opacity active:opacity-70 disabled:opacity-30'
+                  >
+                    <ArrowUp className='size-5' strokeWidth={2.6} />
+                  </button>
+                ) : (
+                  <button
+                    type='button'
+                    aria-label='Ditar'
+                    disabled={thinking || atLimit}
+                    className='text-tint bg-tint/15 flex size-10 shrink-0 items-center justify-center rounded-[13px] shadow-[inset_0_0_0_0.5px_color-mix(in_srgb,var(--tint)_45%,transparent)] transition-opacity active:opacity-60 disabled:opacity-30'
+                    onClick={() => void voice.start()}
+                  >
+                    <Mic className='size-5' strokeWidth={2.2} />
+                  </button>
+                )}
+              </>
+            )}
+          </form>
         </div>
       </div>
 
@@ -507,8 +514,11 @@ function Reply({
   );
 }
 
-/** Gravando: onda do microfone, tempo e (no ditado do navegador) o texto ao vivo. */
-function VoicePanel({
+/**
+ * Gravando, dentro do próprio campo: Cancelar, a onda do microfone com o tempo e Enviar no lugar
+ * do microfone. No ditado do navegador, o texto ao vivo aparece acima da onda.
+ */
+function VoiceField({
   seconds,
   stream,
   liveText,
@@ -522,35 +532,49 @@ function VoicePanel({
   onFinish: () => void;
 }) {
   return (
-    <div className='bg-elevated rounded-[22px] p-3.5 shadow-[inset_0_0_0_0.5px_color-mix(in_srgb,var(--tint)_55%,transparent),0_0_0_4px_color-mix(in_srgb,var(--tint)_10%,transparent),0_-20px_60px_rgb(0_0_0/0.35)]'>
-      <div className={cn('text-label-2 flex items-center gap-2', MONO_CAPS)}>
-        <span
-          aria-hidden
-          className='bg-red size-2 animate-pulse rounded-full shadow-[0_0_8px_var(--red)]'
-        />
-        Gravando
-        <span className='text-foreground numeric ml-auto text-[13px]'>
-          {clock(seconds)} / {clock(MAX_SECONDS)}
-        </span>
-      </div>
-      <Waveform stream={stream} className='mt-3 h-[84px] w-full' />
-      <p
-        className={cn(
-          'mt-3 line-clamp-3 min-h-[1.3em]',
-          liveText ? 'text-title-3 font-semibold' : 'text-subhead text-label-2'
-        )}
+    <>
+      <button
+        type='button'
+        aria-label='Cancelar gravação'
+        className='voice-pop bg-fill text-label-2 flex size-10 shrink-0 items-center justify-center rounded-[13px] transition-opacity active:opacity-60'
+        onClick={onCancel}
       >
-        {liveText || 'Fale o pedido. Quando terminar, toque em Enviar.'}
-      </p>
-      <div className='mt-3.5 flex gap-2'>
-        <Button variant='gray' size='lg' className='text-foreground flex-1' onClick={onCancel}>
-          <X className='size-[18px]' /> Cancelar
-        </Button>
-        <Button variant='filled' size='lg' className='flex-[2]' onClick={onFinish}>
-          <ArrowUp className='size-[18px]' strokeWidth={2.6} /> Enviar
-        </Button>
+        <X className='size-5' strokeWidth={2.4} />
+      </button>
+      <div className='min-w-0 flex-1' role='status' aria-label={`Gravando, ${clock(seconds)}`}>
+        {liveText && (
+          <p className='text-body composer-in line-clamp-2 px-1 pt-1.5 pb-1'>{liveText}</p>
+        )}
+        <div className='relative h-10'>
+          <Waveform
+            stream={stream}
+            grid={false}
+            className='voice-wave-in absolute inset-0 size-full bg-transparent'
+          />
+          <span
+            className={cn(
+              'bg-surface/80 text-foreground absolute top-1/2 left-1 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-2 py-0.5 backdrop-blur-sm',
+              'numeric font-mono text-[12px]'
+            )}
+          >
+            <span
+              aria-hidden
+              className='bg-red size-1.5 animate-pulse rounded-full shadow-[0_0_6px_var(--red)]'
+            />
+            {clock(seconds)}
+            <span className='text-label-3'>/ {clock(MAX_SECONDS)}</span>
+          </span>
+        </div>
       </div>
-    </div>
+      <button
+        type='button'
+        aria-label='Enviar gravação'
+        className='voice-pop bg-tint flex size-10 shrink-0 items-center justify-center rounded-[13px] text-white shadow-[0_0_14px_color-mix(in_srgb,var(--tint)_55%,transparent)] transition-opacity [animation-delay:60ms] active:opacity-70'
+        onClick={onFinish}
+      >
+        <ArrowUp className='size-5' strokeWidth={2.6} />
+      </button>
+    </>
   );
 }
 
