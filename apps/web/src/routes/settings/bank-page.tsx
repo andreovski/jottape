@@ -1,10 +1,5 @@
 import { addDays } from '@jottape/finance-engine';
-import type {
-  AccountResponse,
-  BankAccountResponse,
-  BankItemResponse,
-  BankStatusResponse,
-} from '@jottape/schemas';
+import type { AccountResponse, BankAccountResponse, BankItemResponse } from '@jottape/schemas';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ChevronLeft,
@@ -105,20 +100,6 @@ export function BankPage() {
 
 const STEPS = [
   {
-    title: 'Crie uma aplicação na Pluggy',
-    text: (
-      <>
-        Em <ExternalLink href={PLUGGY_LINKS.dashboard}>dashboard.pluggy.ai</ExternalLink>, crie a
-        conta de desenvolvedor e uma aplicação com o conector <b>MeuPluggy</b>. O aviso de teste de
-        15 dias não vale para o Meu Pluggy, que continua grátis.
-      </>
-    ),
-  },
-  {
-    title: 'Copie as chaves',
-    text: 'Na página da aplicação, copie o Client ID e o Client Secret e cole aqui embaixo.',
-  },
-  {
     title: 'Vincule os bancos no Meu Pluggy',
     text: (
       <>
@@ -129,18 +110,23 @@ const STEPS = [
     ),
   },
   {
-    title: 'Habilite os bancos no dashboard',
+    title: 'Crie uma aplicação na Pluggy',
     text: (
       <>
-        Volte ao <ExternalLink href={PLUGGY_LINKS.dashboard}>dashboard.pluggy.ai</ExternalLink> e
-        habilite na sua aplicação os bancos que você vinculou no Meu Pluggy. Sem isso, a lista de
-        contas chega vazia.
+        Em <ExternalLink href={PLUGGY_LINKS.dashboard}>dashboard.pluggy.ai</ExternalLink>, crie a
+        conta de desenvolvedor e uma aplicação. Em Dados Financeiros › Customização, deixe o
+        conector <b>MeuPluggy</b> na lista. O aviso de teste de 15 dias não vale para o Meu Pluggy,
+        que continua grátis.
       </>
     ),
   },
   {
-    title: 'Ligue os bancos às suas contas',
-    text: 'Toque em Conectar banco, entre com o Meu Pluggy, marque as contas e escolha em que conta do Jottape cada uma entra.',
+    title: 'Copie as chaves',
+    text: 'Na página da aplicação, copie o Client ID e o Client Secret e cole aqui embaixo.',
+  },
+  {
+    title: 'Conecte um banco por vez',
+    text: 'Toque em Conectar banco, entre com o Meu Pluggy e autorize as contas de um banco. Repita para cada banco, e escolha em que conta do Jottape cada conta entra.',
   },
 ];
 
@@ -245,7 +231,6 @@ function Connected() {
   const data = useBankStatus().data!;
   const accounts = useAccounts().data ?? [];
   const add = useAddBankItem();
-  const sync = useSyncBank();
   const remove = useRemoveBankCredentials();
   const removeItem = useRemoveBankItem();
   const { resolvedTheme } = useTheme();
@@ -254,24 +239,9 @@ function Connected() {
   const [sheet, setSheet] = useState<'item' | 'keys' | 'remove' | null>(null);
   const [removingItem, setRemovingItem] = useState<BankItemResponse | null>(null);
 
-  const accountCount = (status: BankStatusResponse) =>
-    status.items.reduce((total, item) => total + item.accounts.length, 0);
-
   async function connect() {
     setConnecting(true);
     try {
-      // O Meu Pluggy é um item só e a Pluggy não deixa o widget mexer nele: banco novo vinculado
-      // no meu.pluggy.ai aparece no mesmo item, e basta ler as contas de novo.
-      if (data.items.length) {
-        const before = accountCount(data);
-        const added = accountCount(await sync.mutateAsync()) - before;
-        if (added > 0) toast.success(`${added} conta(s) nova(s). Escolha onde cada uma entra.`);
-        else
-          toast(
-            'Nenhuma conta nova ainda. O Meu Pluggy pode levar até um dia para trazer o banco.'
-          );
-        return;
-      }
       const itemId = await openPluggyConnect(resolvedTheme === 'dark' ? 'dark' : 'light');
       if (itemId) {
         await add.mutateAsync(itemId);
@@ -364,7 +334,7 @@ function Connected() {
       <Section
         footer={
           data.items.length
-            ? 'Para trazer outro banco, vincule ele no meu.pluggy.ai e habilite no dashboard.pluggy.ai. Ele entra junto com os outros: toque em Buscar bancos novos (o Meu Pluggy pode levar até um dia para trazer).'
+            ? 'Para trazer outro banco, vincule ele no meu.pluggy.ai e toque em Conectar outro banco. Cada banco do Meu Pluggy é uma conexão.'
             : 'Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'
         }
       >
@@ -375,7 +345,7 @@ function Connected() {
           title={
             <span className='flex items-center gap-2'>
               {connecting ? <Spinner /> : <Plus className='size-5' />}{' '}
-              {data.items.length ? 'Buscar bancos novos' : 'Conectar banco'}
+              {data.items.length ? 'Conectar outro banco' : 'Conectar banco'}
             </span>
           }
         />

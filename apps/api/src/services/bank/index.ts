@@ -142,8 +142,8 @@ export async function removeCredentials(userId: string) {
 }
 
 /**
- * Token do widget, sempre para criar. O Meu Pluggy é um item só com todos os bancos e não aceita
- * atualização pelo widget: banco novo vinculado lá aparece no item na próxima sincronização.
+ * Token do widget, sempre para criar: cada banco do Meu Pluggy é um item, e item do Meu Pluggy não
+ * aceita atualização pelo widget (ele se atualiza sozinho todo dia).
  */
 export async function connectToken(userId: string): Promise<BankConnectTokenResponse> {
   return friendly(async () => ({
