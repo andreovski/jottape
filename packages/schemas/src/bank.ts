@@ -77,6 +77,8 @@ export const bankConnectTokenResponseSchema = z.object({
   accessToken: z.string(),
   /** Conector do Meu Pluggy, para o widget abrir direto nele (null = a lista toda). */
   connectorIds: z.array(z.number().int()).nullable(),
+  /** Item que o widget atualiza (o Meu Pluggy é um item só; bancos novos entram nele). */
+  updateItemId: z.string().nullable(),
 });
 export type BankConnectTokenResponse = z.infer<typeof bankConnectTokenResponseSchema>;
 

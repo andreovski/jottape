@@ -244,7 +244,11 @@ function Connected() {
       const itemId = await openPluggyConnect(resolvedTheme === 'dark' ? 'dark' : 'light');
       if (itemId) {
         await add.mutateAsync(itemId);
-        toast.success('Banco conectado. Agora escolha onde cada conta entra.');
+        toast.success(
+          data.items.length
+            ? 'Bancos atualizados. Escolha onde as contas novas entram.'
+            : 'Banco conectado. Agora escolha onde cada conta entra.'
+        );
       }
     } catch (error) {
       toast.error(
@@ -330,14 +334,21 @@ function Connected() {
         </Section>
       ))}
 
-      <Section footer='Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'>
+      <Section
+        footer={
+          data.items.length
+            ? 'Para trazer outro banco, conecte ele primeiro no meu.pluggy.ai. Depois toque em Adicionar bancos e marque todas as contas na autorização, as antigas e as novas.'
+            : 'Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'
+        }
+      >
         <Row
           action
           onClick={connect}
           disabled={connecting}
           title={
             <span className='flex items-center gap-2'>
-              {connecting ? <Spinner /> : <Plus className='size-5' />} Conectar banco
+              {connecting ? <Spinner /> : <Plus className='size-5' />}{' '}
+              {data.items.length ? 'Adicionar bancos' : 'Conectar banco'}
             </span>
           }
         />

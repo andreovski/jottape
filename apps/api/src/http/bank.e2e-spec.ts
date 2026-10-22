@@ -103,7 +103,15 @@ describe('bancos (Meu Pluggy)', () => {
     ]);
 
     const token = (await api.post('/bank/connect-token')).json();
-    expect(token).toEqual({ accessToken: 'connect-1', connectorIds: [200] });
+    // Já tem o item do Meu Pluggy: o widget abre nele, em vez de tentar criar outro.
+    expect(token).toEqual({
+      accessToken: 'connect-1',
+      connectorIds: [200],
+      updateItemId: pluggy.itemId,
+    });
+    expect(pluggy.calls.find((c) => c.url.endsWith('/connect_token'))?.body).toMatchObject({
+      itemId: pluggy.itemId,
+    });
   });
 
   it('ligar a conta casa o que já foi lançado, confirma o previsto e põe o resto em revisão', async () => {
