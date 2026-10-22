@@ -79,7 +79,8 @@ export const useIgnoreMovement = () =>
 
 /**
  * Abre o widget da Pluggy (Pluggy Connect) já no conector do Meu Pluggy. O pacote só carrega
- * quando a pessoa toca em "Conectar banco". Resolve com o id do item criado, ou null se fechou.
+ * quando a pessoa toca em "Conectar banco". Resolve com o id do item criado (ou atualizado), ou
+ * null se fechou.
  */
 export async function openPluggyConnect(theme: 'light' | 'dark'): Promise<string | null> {
   const [{ PluggyConnect }, token] = await Promise.all([
@@ -90,9 +91,12 @@ export async function openPluggyConnect(theme: 'light' | 'dark'): Promise<string
     let done = false;
     const widget = new PluggyConnect({
       connectToken: token.accessToken,
-      ...(token.connectorIds
-        ? { connectorIds: token.connectorIds, selectedConnectorId: token.connectorIds[0] }
-        : {}),
+      // Já conectado: atualiza o mesmo item (é por ele que os bancos novos do Meu Pluggy entram).
+      ...(token.updateItemId
+        ? { updateItem: token.updateItemId }
+        : token.connectorIds
+          ? { connectorIds: token.connectorIds, selectedConnectorId: token.connectorIds[0] }
+          : {}),
       language: 'pt',
       theme,
       onSuccess: ({ item }) => {
