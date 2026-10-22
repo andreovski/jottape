@@ -55,7 +55,9 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   volta como ocorrências.
 - **Bancos** (Meu Pluggy, `services/bank`): grátis e aberto a todos, sem chave no servidor. Cada
   usuário cria a própria aplicação na Pluggy e salva Client ID/Secret (`PluggyCredential`, secret
-  cifrado); o banco entra pelo widget Pluggy Connect (conector MeuPluggy) ou pelo ID do item. Só a
+  cifrado); o banco entra pelo widget Pluggy Connect (conector MeuPluggy) ou pelo ID do item. O Meu Pluggy é
+  um item só com todos os bancos e o widget não o atualiza: banco novo vinculado no meu.pluggy.ai
+  aparece no mesmo item na sincronização. Só a
   `BankAccount` ligada a uma `Account` traz lançamentos, a partir de `importFrom`. Cada lançamento
   do banco vira um `BankMovement` (único por conta + id externo, nunca apagado: é o que impede
   importar duas vezes): casa com um lançamento existente do mesmo valor e sentido em até 4 dias

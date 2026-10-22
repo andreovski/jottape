@@ -148,17 +148,10 @@ export async function fetchTransactions(
   return all;
 }
 
-/**
- * Token do widget. Com `itemId`, o widget atualiza esse item em vez de criar outro: o Meu Pluggy é
- * um item só com todos os bancos, e a Pluggy recusa um segundo (ITEM_USER_ALREADY_EXISTS).
- */
-export async function createConnectToken(userId: string, itemId?: string): Promise<string> {
+export async function createConnectToken(userId: string): Promise<string> {
   const result = await pluggyFetch<{ accessToken: string }>(userId, '/connect_token', {
     method: 'POST',
-    body: {
-      ...(itemId ? { itemId } : {}),
-      options: { clientUserId: userId, avoidDuplicates: true },
-    },
+    body: { options: { clientUserId: userId, avoidDuplicates: true } },
   });
   return result.accessToken;
 }
