@@ -229,6 +229,47 @@ export function groupTasks(
   return result;
 }
 
+const PRIORITY_RANK = { HIGH: 0, MEDIUM: 1, LOW: 2 } as const;
+
+/** Sem data: as com prioridade primeiro (alta, média, baixa); o resto mantém a ordem da lista. */
+export function sortUndated<T extends Pick<TaskResponse, 'priority'>>(tasks: T[]) {
+  const rank = (task: T) => (task.priority ? PRIORITY_RANK[task.priority] : 3);
+  return [...tasks].sort((a, b) => rank(a) - rank(b));
+}
+
+export type ScheduleId = 'hoje' | 'em-breve' | 'sem-data';
+
+export interface ScheduleGroup {
+  id: ScheduleId;
+  title: string;
+  tasks: TaskResponse[];
+}
+
+/**
+ * "Todas" dividida como o cartão de tarefas da tela Hoje: Hoje (com as atrasadas na frente, em
+ * vermelho), Em breve e Sem data. As com prazo seguem a data e a hora; as sem data, a prioridade.
+ * Grupos vazios saem, menos Hoje, que a tela mostra como "Nada para hoje".
+ */
+export function groupBySchedule(
+  tasks: TaskResponse[],
+  options: { today: string; timeZone?: string }
+): ScheduleGroup[] {
+  const groups: Record<ScheduleId, ScheduleGroup> = {
+    hoje: { id: 'hoje', title: 'Hoje', tasks: [] },
+    'em-breve': { id: 'em-breve', title: 'Em breve', tasks: [] },
+    'sem-data': { id: 'sem-data', title: 'Sem data', tasks: [] },
+  };
+  const dated = tasks
+    .filter((task) => task.dueAt)
+    .sort((a, b) => new Date(a.dueAt!).getTime() - new Date(b.dueAt!).getTime());
+  for (const task of dated) {
+    const key = dayKey(task.dueAt!, options.timeZone);
+    groups[key <= options.today ? 'hoje' : 'em-breve'].tasks.push(task);
+  }
+  groups['sem-data'].tasks = sortUndated(tasks.filter((task) => !task.dueAt));
+  return Object.values(groups).filter((group) => group.id === 'hoje' || group.tasks.length > 0);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Etiquetas.
 

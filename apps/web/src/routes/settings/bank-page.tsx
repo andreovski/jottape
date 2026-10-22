@@ -100,7 +100,7 @@ export function BankPage() {
 
 const STEPS = [
   {
-    title: 'Conecte no Meu Pluggy',
+    title: 'Vincule os bancos no Meu Pluggy',
     text: (
       <>
         Crie sua conta em <ExternalLink href={PLUGGY_LINKS.meuPluggy}>meu.pluggy.ai</ExternalLink> e
@@ -114,8 +114,9 @@ const STEPS = [
     text: (
       <>
         Em <ExternalLink href={PLUGGY_LINKS.dashboard}>dashboard.pluggy.ai</ExternalLink>, crie a
-        conta de desenvolvedor e uma aplicação com o conector <b>MeuPluggy</b>. O aviso de teste de
-        15 dias não vale para o Meu Pluggy, que continua grátis.
+        conta de desenvolvedor e uma aplicação. Em Dados Financeiros › Customização, deixe o
+        conector <b>MeuPluggy</b> na lista. O aviso de teste de 15 dias não vale para o Meu Pluggy,
+        que continua grátis.
       </>
     ),
   },
@@ -124,8 +125,8 @@ const STEPS = [
     text: 'Na página da aplicação, copie o Client ID e o Client Secret e cole aqui embaixo.',
   },
   {
-    title: 'Ligue os bancos às suas contas',
-    text: 'Toque em Conectar banco, entre com o Meu Pluggy e escolha em que conta do Jottape cada conta do banco entra.',
+    title: 'Conecte um banco por vez',
+    text: 'Toque em Conectar banco, entre com o Meu Pluggy e autorize as contas de um banco. Repita para cada banco, e escolha em que conta do Jottape cada conta entra.',
   },
 ];
 
@@ -330,14 +331,21 @@ function Connected() {
         </Section>
       ))}
 
-      <Section footer='Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'>
+      <Section
+        footer={
+          data.items.length
+            ? 'Para trazer outro banco, vincule ele no meu.pluggy.ai e toque em Conectar outro banco. Cada banco do Meu Pluggy é uma conexão.'
+            : 'Cada banco é conectado uma vez pelo Meu Pluggy. Os lançamentos chegam a cada poucas horas.'
+        }
+      >
         <Row
           action
           onClick={connect}
           disabled={connecting}
           title={
             <span className='flex items-center gap-2'>
-              {connecting ? <Spinner /> : <Plus className='size-5' />} Conectar banco
+              {connecting ? <Spinner /> : <Plus className='size-5' />}{' '}
+              {data.items.length ? 'Conectar outro banco' : 'Conectar banco'}
             </span>
           }
         />

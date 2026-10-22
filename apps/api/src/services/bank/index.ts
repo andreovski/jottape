@@ -1,6 +1,7 @@
 import { addDays } from '@jottape/finance-engine';
 import type {
   AcceptBankMovementBody,
+  BankConnectTokenResponse,
   BankMovementResponse,
   BankStatusResponse,
   LinkBankAccountBody,
@@ -140,17 +141,33 @@ export async function removeCredentials(userId: string) {
   forgetPluggyKey(userId);
 }
 
-export async function connectToken(userId: string) {
+/**
+ * Token do widget, sempre para criar: cada banco do Meu Pluggy é um item, e item do Meu Pluggy não
+ * aceita atualização pelo widget (ele se atualiza sozinho todo dia).
+ */
+export async function connectToken(userId: string): Promise<BankConnectTokenResponse> {
   return friendly(async () => ({
     accessToken: await createConnectToken(userId),
     connectorIds: await meuPluggyConnectorIds(userId),
   }));
 }
 
+const BUSY = new Set(['UPDATING', 'LOGIN_IN_PROGRESS', 'WAITING_USER_INPUT', 'CREATED']);
+
+/** Logo depois do widget o item ainda pode estar lendo o banco: espera um pouco pelas contas. */
+async function settledItem(userId: string, itemId: string): Promise<PluggyItem> {
+  let remote = await fetchItem(userId, itemId);
+  for (let i = 0; i < 10 && BUSY.has(remote.status); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    remote = await fetchItem(userId, itemId);
+  }
+  return remote;
+}
+
 export async function addItem(userId: string, itemId: string) {
   let remote: PluggyItem;
   try {
-    remote = await fetchItem(userId, itemId);
+    remote = await settledItem(userId, itemId);
   } catch (error) {
     if (error instanceof PluggyApiError && (error.status === 404 || error.status === 400)) {
       throw new AppError(404, 'Esse banco não está na sua aplicação da Pluggy.');

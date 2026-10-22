@@ -1,9 +1,10 @@
 import type { TaskListResponse, TaskResponse } from '@jottape/schemas';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { CircleCheck, Ellipsis, ListX, Plus, Search, SunMedium } from 'lucide-react';
-import { type CSSProperties, useDeferredValue, useEffect, useState } from 'react';
+import { type CSSProperties, Fragment, useDeferredValue, useEffect, useState } from 'react';
 
 import { EmptyState } from '@/components/ios/controls';
+import { Row } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
 import {
@@ -25,11 +26,12 @@ import { SearchField } from '@/components/tasks/search-field';
 import {
   ALL_COLOR_CLASS,
   canQuickAdd,
+  groupBySchedule,
   listColor,
   queryForTarget,
   resolveListParam,
 } from '@/components/tasks/task-logic';
-import { TaskCard, TaskRow, useToggleTask } from '@/components/tasks/task-row';
+import { TaskCard, TaskGroupLabel, TaskRow, useToggleTask } from '@/components/tasks/task-row';
 import { TaskSheet, type TaskSheetDefaults } from '@/components/tasks/task-sheet';
 import { useClearCompleted, useDeleteTaskList, useTaskLists, useTasks } from '@/features/tasks';
 import { todayKey } from '@/lib/format';
@@ -91,6 +93,7 @@ export function TasksPage() {
   }
 
   const isCompletedView = target.kind === 'smart' && target.meta.slug === 'concluidas';
+  const isAllView = target.kind === 'smart' && target.meta.slug === 'todas';
   const notFound = target.kind === 'list' && lists.isSuccess && !list;
 
   const sheetDefaults: TaskSheetDefaults =
@@ -221,6 +224,27 @@ export function TasksPage() {
           <TaskCard className='mb-6'>
             {target.kind === 'list' && !target.tag ? (
               <SortableRows listId={target.id} tasks={data} rowProps={rowProps} />
+            ) : isAllView && data.length > 0 ? (
+              groupBySchedule(data, { today }).map((group) => (
+                <Fragment key={group.id}>
+                  <TaskGroupLabel>{group.title}</TaskGroupLabel>
+                  {group.id === 'hoje' && !group.tasks.length && (
+                    <Row
+                      leading={<CircleCheck className='text-orange size-[22px]' />}
+                      title={<span className='text-label-2'>Nada para hoje</span>}
+                    />
+                  )}
+                  {group.tasks.map((task) => (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      {...rowProps}
+                      color={listColorOf(byId, task.listId, color)}
+                      extra={listLabel(task)}
+                    />
+                  ))}
+                </Fragment>
+              ))
             ) : (
               data.map((task) => (
                 <TaskRow

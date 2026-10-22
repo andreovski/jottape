@@ -151,7 +151,9 @@ export async function fetchTransactions(
 export async function createConnectToken(userId: string): Promise<string> {
   const result = await pluggyFetch<{ accessToken: string }>(userId, '/connect_token', {
     method: 'POST',
-    body: { options: { clientUserId: userId, avoidDuplicates: true } },
+    // Sem avoidDuplicates: cada banco do Meu Pluggy é um item, todos com a mesma autorização, e a
+    // Pluggy recusaria o segundo (ITEM_USER_ALREADY_EXISTS).
+    body: { options: { clientUserId: userId } },
   });
   return result.accessToken;
 }
