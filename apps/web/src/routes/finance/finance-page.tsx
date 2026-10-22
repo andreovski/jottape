@@ -62,63 +62,67 @@ export function FinancePage() {
   const onMonthChange = (value: string) => setSearch({ month: value });
 
   const scroller = useRef<HTMLDivElement>(null);
-  const [scrolled, setScrolled] = useState(false);
+  const summary = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const accountsSheet = useSheetState<undefined>();
-  // Trocar de aba volta a lista para o topo (e o evento de rolagem abre o topo de novo).
+  // Trocar de aba volta a lista para o topo.
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 });
   }, [tab]);
 
+  // O topo grande rola junto com a lista, como o título grande do iOS; a barra pequena aparece
+  // quando as abas encostam nela. Só muda a opacidade da barra: nada muda de tamanho na rolagem,
+  // então não há salto nem vai e volta com listas curtas.
   const onScroll = (element: HTMLDivElement) => {
-    const top = element.scrollTop;
-    setScrolled(top > 0);
-    // Recolher o topo aumenta a área da lista; com pouco conteúdo isso puxaria a rolagem de volta
-    // ao início e o topo abriria de novo, num vai e volta. Só recolhe quando sobra rolagem.
-    const room = element.scrollHeight - element.clientHeight;
-    setCompact((was) => (was ? top > 4 : top > 40 && room > 200));
+    const barBottom = (bar.current?.offsetTop ?? 0) + (bar.current?.offsetHeight ?? 0);
+    const limit = (summary.current?.offsetHeight ?? 0) - barBottom;
+    setCompact(element.scrollTop >= Math.max(limit, 1));
   };
 
+  const openAccounts = () => accountsSheet.show(undefined);
+  const addAccount = () => accountSheet.show(undefined);
+  const addTransaction = () => txSheet.show(undefined);
+
   return (
-    // Saldo, contas e abas ficam presos no topo; só o conteúdo da aba rola. Ao rolar, o topo
-    // encolhe numa barra só com o saldo, o botão das contas e o "+".
-    <div className='flex h-dvh flex-col'>
-      <header
-        className={cn(
-          'pt-safe shrink-0 transition-shadow duration-200',
-          scrolled && 'shadow-[inset_0_-0.5px_0_var(--separator)]'
-        )}
-      >
-        <div className='mx-auto max-w-3xl px-4 lg:px-8'>
-          <Summary
-            compact={compact}
-            onAdd={() => txSheet.show(undefined)}
-            onAccounts={() => accountsSheet.show(undefined)}
-            onAddAccount={() => accountSheet.show(undefined)}
-          />
-          {!compact && <ReviewBanner />}
-          <Segmented
-            value={tab}
-            onChange={(value) => setSearch({ tab: value })}
-            options={TABS}
-            size={compact ? 'sm' : 'md'}
-            className={compact ? 'mb-2' : 'mb-3'}
-          />
-        </div>
-      </header>
+    <div className='relative h-dvh'>
+      <CompactBar
+        ref={bar}
+        visible={compact}
+        onAdd={addTransaction}
+        onAccounts={openAccounts}
+        onAddAccount={addAccount}
+      />
 
       <div
         ref={scroller}
         onScroll={(event) => onScroll(event.currentTarget)}
-        className='min-h-0 flex-1 overflow-y-auto overscroll-contain'
+        className='h-full overflow-y-auto overscroll-contain'
       >
+        <div ref={summary} className='pt-safe mx-auto max-w-3xl px-4 lg:px-8'>
+          <Summary onAdd={addTransaction} onAccounts={openAccounts} onAddAccount={addAccount} />
+          <ReviewBanner />
+        </div>
+
+        {/* As abas ficam presas logo abaixo da barra pequena. */}
+        <div
+          className={cn(
+            'bg-background sticky top-[calc(env(safe-area-inset-top)+52px)] z-10 transition-shadow duration-200',
+            compact && 'shadow-[inset_0_-0.5px_0_var(--separator)]'
+          )}
+        >
+          <div className='mx-auto max-w-3xl px-4 pb-3 lg:px-8'>
+            <Segmented value={tab} onChange={(value) => setSearch({ tab: value })} options={TABS} />
+          </div>
+        </div>
+
         <div className='mx-auto max-w-3xl px-4 pt-2 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
           {tab === 'extrato' && (
             <Statement
               month={month}
               onMonthChange={onMonthChange}
               onSelect={(tx) => txSheet.show(tx)}
-              onCreate={() => txSheet.show(undefined)}
+              onCreate={addTransaction}
             />
           )}
           {tab === 'previsao' && <ForecastTab onSelect={(tx) => txSheet.show(tx)} />}
@@ -191,30 +195,11 @@ function useTotals() {
 
 const signed = (cents: number) => (cents < 0 ? `−${money(-cents)}` : money(cents));
 
-/**
- * Topo das Finanças. Aberto: título, saldo grande com o fim do mês embaixo e, ao lado, o botão das
- * contas (mini cartões empilhados, como o Wallet). Recolhido: uma barra só com o saldo menor, o
- * botão das contas em pílula e o "+".
- */
-function Summary({
-  compact,
-  onAdd,
-  onAccounts,
-  onAddAccount,
-}: {
-  compact: boolean;
-  onAdd: () => void;
-  onAccounts: () => void;
-  onAddAccount: () => void;
-}) {
-  const { isLoading, accounts, balance, endOfMonth } = useTotals();
-  const cards = accounts.filter((a) => a.type === 'CREDIT_CARD').length;
-  const others = accounts.length - cards;
-  const openAccounts = accounts.length ? onAccounts : onAddAccount;
-
-  const value = isLoading ? (
-    <Skeleton className={cn('my-1 w-36', compact ? 'h-5' : 'h-8')} />
-  ) : (
+/** Saldo em destaque; menor na barra recolhida. */
+function Balance({ compact }: { compact?: boolean }) {
+  const { isLoading, balance } = useTotals();
+  if (isLoading) return <Skeleton className={cn('my-1 w-36', compact ? 'h-5' : 'h-8')} />;
+  return (
     <div
       className={cn(
         'font-rounded numeric truncate font-bold tracking-tight',
@@ -225,39 +210,29 @@ function Summary({
       {signed(balance)}
     </div>
   );
+}
 
-  if (compact) {
-    return (
-      <div className='animate-in fade-in flex h-[52px] items-center gap-2.5 duration-200'>
-        <div className='min-w-0 flex-1'>
-          <div className='text-caption-2 text-label-2 font-medium'>Saldo disponível</div>
-          {value}
-        </div>
-        <button
-          type='button'
-          onClick={openAccounts}
-          aria-label='Contas'
-          className='bg-fill text-subhead flex h-8 shrink-0 items-center gap-1.5 rounded-full pr-2 pl-1.5 font-semibold active:opacity-60'
-        >
-          {accounts.length ? (
-            <>
-              <AccountsStackIcon accounts={accounts} size='sm' />
-              {accounts.length}
-            </>
-          ) : (
-            <Plus className='text-tint size-4' strokeWidth={2.5} />
-          )}
-          <ChevronRight className='text-label-3 size-3.5' strokeWidth={3} />
-        </button>
-        <BarButton label='Novo lançamento' onClick={onAdd} className='size-8 [&_svg]:size-[18px]'>
-          <Plus strokeWidth={2.25} />
-        </BarButton>
-      </div>
-    );
-  }
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+/**
+ * Topo das Finanças (rola com a lista): título, saldo grande com o fim do mês embaixo e, ao lado,
+ * o botão das contas com mini cartões empilhados, como o Wallet.
+ */
+function Summary({
+  onAdd,
+  onAccounts,
+  onAddAccount,
+}: {
+  onAdd: () => void;
+  onAccounts: () => void;
+  onAddAccount: () => void;
+}) {
+  const { isLoading, accounts, endOfMonth } = useTotals();
+  const cards = accounts.filter((a) => a.type === 'CREDIT_CARD').length;
+  const others = accounts.length - cards;
 
   return (
-    <div className='animate-in fade-in duration-200'>
+    <div>
       <div className='flex h-12 items-center justify-between'>
         <h1 className='text-title-1 font-bold'>Finanças</h1>
         <BarButton label='Novo lançamento' onClick={onAdd}>
@@ -267,7 +242,7 @@ function Summary({
       <div className='mb-3 flex items-end justify-between gap-3'>
         <div className='min-w-0'>
           <div className='text-footnote text-label-2 font-medium'>Saldo disponível</div>
-          {value}
+          <Balance />
           {endOfMonth !== undefined && (
             <div className='text-footnote text-label-2 truncate'>
               Fim do mês{' '}
@@ -284,7 +259,7 @@ function Summary({
         </div>
         <button
           type='button'
-          onClick={openAccounts}
+          onClick={accounts.length ? onAccounts : onAddAccount}
           className='bg-surface mb-0.5 flex h-11 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.06)] transition-transform duration-150 active:scale-[0.96] dark:shadow-none'
         >
           {isLoading ? (
@@ -300,20 +275,80 @@ function Summary({
             <span className='block font-semibold'>
               {accounts.length
                 ? others
-                  ? `${others} ${others === 1 ? 'conta' : 'contas'}`
-                  : `${cards} ${cards === 1 ? 'cartão' : 'cartões'}`
+                  ? plural(others, 'conta', 'contas')
+                  : plural(cards, 'cartão', 'cartões')
                 : 'Adicionar'}
             </span>
             <span className='text-label-2 block'>
               {accounts.length
                 ? others && cards
-                  ? `${cards} ${cards === 1 ? 'cartão' : 'cartões'}`
+                  ? plural(cards, 'cartão', 'cartões')
                   : 'ver todas'
                 : 'conta'}
             </span>
           </span>
           <ChevronRight className='text-label-3 size-4' strokeWidth={2.75} />
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Barra fixa que aparece quando o topo grande sai da tela: saldo menor, pílula das contas e "+".
+ * A faixa do relógio fica sempre coberta, para a lista não passar por baixo dele.
+ */
+function CompactBar({
+  ref,
+  visible,
+  onAdd,
+  onAccounts,
+  onAddAccount,
+}: {
+  ref: React.Ref<HTMLDivElement>;
+  visible: boolean;
+  onAdd: () => void;
+  onAccounts: () => void;
+  onAddAccount: () => void;
+}) {
+  const { accounts } = useTotals();
+  return (
+    <div className='pointer-events-none absolute inset-x-0 top-0 z-20'>
+      <div className='bg-background h-[env(safe-area-inset-top)]' />
+      <div
+        ref={ref}
+        aria-hidden={!visible}
+        inert={!visible}
+        className={cn(
+          'bg-background transition-[opacity,transform] duration-200 ease-out',
+          visible ? 'pointer-events-auto opacity-100' : '-translate-y-1 opacity-0'
+        )}
+      >
+        <div className='mx-auto flex h-[52px] max-w-3xl items-center gap-2.5 px-4 lg:px-8'>
+          <div className='min-w-0 flex-1'>
+            <div className='text-caption-2 text-label-2 font-medium'>Saldo disponível</div>
+            <Balance compact />
+          </div>
+          <button
+            type='button'
+            onClick={accounts.length ? onAccounts : onAddAccount}
+            aria-label='Contas'
+            className='bg-fill text-subhead flex h-8 shrink-0 items-center gap-1.5 rounded-full pr-2 pl-1.5 font-semibold active:opacity-60'
+          >
+            {accounts.length ? (
+              <>
+                <AccountsStackIcon accounts={accounts} size='sm' />
+                {accounts.length}
+              </>
+            ) : (
+              <Plus className='text-tint size-4' strokeWidth={2.5} />
+            )}
+            <ChevronRight className='text-label-3 size-3.5' strokeWidth={3} />
+          </button>
+          <BarButton label='Novo lançamento' onClick={onAdd} className='size-8 [&_svg]:size-[18px]'>
+            <Plus strokeWidth={2.25} />
+          </BarButton>
+        </div>
       </div>
     </div>
   );
