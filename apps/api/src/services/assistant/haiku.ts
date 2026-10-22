@@ -29,6 +29,8 @@ const ITEM_SCHEMA = {
     'list',
     'location',
     'notes',
+    'repeat',
+    'subtasks',
     'confidence',
   ],
   properties: {
@@ -50,6 +52,8 @@ const ITEM_SCHEMA = {
     list: { type: ['string', 'null'] },
     location: { type: ['string', 'null'] },
     notes: { type: ['string', 'null'] },
+    repeat: { type: ['string', 'null'] },
+    subtasks: { type: 'array', items: { type: 'string' } },
     confidence: { type: 'number' },
   },
 } as const;
@@ -90,6 +94,8 @@ const outputSchema = z.object({
         list: z.string().nullable(),
         location: z.string().nullable(),
         notes: z.string().nullable(),
+        repeat: z.string().nullable(),
+        subtasks: z.array(z.string()),
         confidence: z.number(),
       })
     )
@@ -155,6 +161,8 @@ Regras:
 - all_day: true só em evento que o pedido diz ser o dia todo, ou que é de dia inteiro por natureza (aniversário, feriado, viagem de vários dias). Senão false.
 - location: o local do evento quando o pedido disser, senão null.
 - notes: em evento e tarefa, o que o pedido manda anotar ou os detalhes que não cabem no título ("nas notas coloque que...", "levar os exames", "o link é tal"), escrito como uma nota curta e completa, sem "nas notas coloque". Sem nada assim, ou em finanças: null. Detalhe que foi para as notas não é motivo para baixar a confidence.
+- repeat: em evento e tarefa que se repete, a regra no formato RRULE, só com FREQ (DAILY, WEEKLY, MONTHLY, YEARLY), INTERVAL e BYDAY (SU, MO, TU, WE, TH, FR, SA, só em WEEKLY): "todo dia" = FREQ=DAILY, "toda segunda" = FREQ=WEEKLY;BYDAY=MO, "terça e quinta" = FREQ=WEEKLY;BYDAY=TU,TH, "dia sim, dia não" = FREQ=DAILY;INTERVAL=2, "a cada 15 dias" = FREQ=WEEKLY;INTERVAL=2, "todo mês" = FREQ=MONTHLY. "Duas vezes por semana" sem dizer os dias: escolha dias espaçados a partir da data (sem data, de hoje) e use confidence abaixo de 0.7. Sem repetição, ou em finanças: null.
+- subtasks: em tarefa, os itens que o pedido lista para dentro dela ("nessa tarefa quero que tenha: manhã, alimentação; noite, alimentação; lavar a varanda" = ["Manhã: alimentação", "Noite: alimentação", "Lavar a varanda"]), cada um curto e com a primeira letra maiúscula. Os itens não viram tarefas separadas nem vão para notes. Sem itens, ou fora de tarefa: [].
 - list: o nome EXATO de uma lista de tarefas quando o pedido apontar para ela ("na lista do mercado", "no trabalho"), senão null.
 - account e to_account: o nome EXATO de uma conta da lista quando o pedido apontar para ela ("no nubank", "no crédito", "no cartão"), senão null. Não invente.
 - category: o nome EXATO de uma categoria da lista do tipo certo que combine com o gasto (uber = Transporte, ifood = Alimentação), ou null se nenhuma servir.
@@ -211,6 +219,8 @@ export async function extractItems(text: string, context: ExtractContext): Promi
       list: item.list,
       location: item.location,
       notes: item.notes,
+      repeat: item.repeat,
+      subtasks: item.subtasks,
       confidence: item.confidence,
     })),
     ...usage,

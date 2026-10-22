@@ -1,4 +1,4 @@
-import { addDays } from '@jottape/finance-engine';
+import { addDays, buildRRule, parseSimpleRRule } from '@jottape/finance-engine';
 import type {
   AssistantDraft,
   AssistantEventDraft,
@@ -61,6 +61,10 @@ export interface ExtractedItem {
   location: string | null;
   /** O que anotar no evento ou na tarefa. */
   notes: string | null;
+  /** Regra de repetição como o Haiku escreveu ("FREQ=WEEKLY;BYDAY=TU,TH"). */
+  repeat: string | null;
+  /** Itens de dentro da tarefa. */
+  subtasks: string[];
   confidence: number;
 }
 
@@ -263,6 +267,24 @@ const kindConfidence = (item: ExtractedItem, jev: JevAnswers | null) =>
 
 const notesOf = (item: ExtractedItem) => item.notes?.trim().slice(0, 2000) || null;
 
+/**
+ * A repetição do Haiku, refeita só com o que as telas editam (frequência, intervalo, dias da
+ * semana). Regra que não dá para ler: sem repetição.
+ */
+export function repeatOf(item: { repeat: string | null }): string | null {
+  const parsed = item.repeat ? parseSimpleRRule(item.repeat.trim()) : null;
+  if (!parsed) return null;
+  const interval =
+    parsed.interval && Number.isInteger(parsed.interval) ? Math.min(parsed.interval, 30) : 1;
+  return buildRRule({ freq: parsed.freq, interval, byWeekday: parsed.byWeekday });
+}
+
+const subtasksOf = (item: ExtractedItem) =>
+  (item.subtasks ?? [])
+    .map((title) => title.trim().slice(0, 300))
+    .filter(Boolean)
+    .slice(0, 20);
+
 const isTime = (value: string | null): value is string =>
   Boolean(value && /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
 
@@ -431,6 +453,7 @@ export function resolveEvent({
     allDay,
     location: item.location?.trim().slice(0, 300) || null,
     notes: notesOf(item),
+    rrule: repeatOf(item),
   };
   const missing: AssistantMissing[] = !allDay && !startTime ? ['time'] : [];
   return finish(draft, missing, { kind: kindConfidence(item, jev) }, item, Boolean(jev));
@@ -462,7 +485,9 @@ export function resolveTask({
   }
   confidences.list = list.confidence;
 
-  const date = item.date ? resolveDate(item.date, today) : null;
+  const rrule = repeatOf(item);
+  // Tarefa que repete precisa de prazo: sem data, a primeira vez é hoje.
+  const date = item.date ? resolveDate(item.date, today) : rrule ? today : null;
   const draft: AssistantTaskDraft = {
     type: 'task',
     title: item.description.trim().slice(0, 300) || 'Tarefa',
@@ -470,6 +495,8 @@ export function resolveTask({
     time: date && isTime(item.time) ? item.time : null,
     listId: list.value?.id ?? null,
     notes: notesOf(item),
+    rrule,
+    subtasks: subtasksOf(item),
   };
   return finish(draft, [], confidences, item, Boolean(jev));
 }

@@ -1,3 +1,4 @@
+import { buildRRule, describeRRule, type Frequency, parseSimpleRRule } from '@jottape/finance-engine';
 import type {
   AssistantIntent,
   AssistantTestCase,
@@ -17,6 +18,7 @@ import {
 } from '@/components/ios/fields';
 import { Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
+import { WeekdayPicker } from '@/components/weekday-picker';
 import { useCreateTestCase, useDeleteTestCase, useUpdateTestCase } from '@/features/assistant';
 
 // Caso de teste do Jotta: o pedido e o que o primeiro item precisa ter. Campo vazio não é
@@ -64,6 +66,40 @@ interface Form {
   allDay: string;
   list: string;
   notes: string;
+  /** '' não confere, 'none' espera sem repetição, ou a frequência (regra fora disso: a regra). */
+  repeat: string;
+  /** Dias da repetição semanal (0 = domingo); vazio é semanal sem dias. */
+  weekdays: number[];
+  /** '' não confere, ou quantas subtarefas. */
+  subtasks: string;
+}
+
+const REPEATS = [
+  { value: 'none', label: 'Não repete' },
+  { value: 'DAILY', label: 'Todo dia' },
+  { value: 'WEEKLY', label: 'Toda semana' },
+  { value: 'MONTHLY', label: 'Todo mês' },
+  { value: 'YEARLY', label: 'Todo ano' },
+];
+
+function repeatForm(rrule: string | null | undefined) {
+  if (rrule === undefined) return { repeat: '', weekdays: [] };
+  if (rrule === null) return { repeat: 'none', weekdays: [] };
+  const parsed = parseSimpleRRule(rrule);
+  if (!parsed || (parsed.interval ?? 1) > 1 || parsed.count || parsed.until) {
+    return { repeat: rrule, weekdays: [] };
+  }
+  return { repeat: parsed.freq, weekdays: parsed.byWeekday ?? [] };
+}
+
+function repeatRule(form: Pick<Form, 'repeat' | 'weekdays'>): string | null | undefined {
+  if (form.repeat === '') return undefined;
+  if (form.repeat === 'none') return null;
+  if (form.repeat.startsWith('FREQ=')) return form.repeat;
+  return buildRRule({
+    freq: form.repeat as Frequency,
+    ...(form.repeat === 'WEEKLY' && form.weekdays.length ? { byWeekday: form.weekdays } : {}),
+  });
 }
 
 function formOf(text: string, expect: AssistantTestExpect): Form {
@@ -81,6 +117,8 @@ function formOf(text: string, expect: AssistantTestExpect): Form {
     allDay: fromBool(expect.allDay),
     list: expect.list ?? '',
     notes: fromBool(expect.notes),
+    ...repeatForm(expect.repeat),
+    subtasks: expect.subtasks === undefined ? '' : String(expect.subtasks),
   };
 }
 
@@ -104,11 +142,14 @@ function expectOf(form: Form): AssistantTestExpect {
     set('time', toNullable(form.time));
     set('endTime', form.endTime);
     set('notes', toBool(form.notes));
+    set('repeat', repeatRule(form));
   }
   if (intent === 'task') {
     set('time', toNullable(form.time));
     set('list', form.list);
     set('notes', toBool(form.notes));
+    set('repeat', repeatRule(form));
+    if (form.subtasks !== '') set('subtasks', Number(form.subtasks));
   }
   return expect;
 }
@@ -332,6 +373,40 @@ function CaseForm({ editing, onDone }: { editing: TestCaseEditing; onDone: () =>
                   value={form.list}
                   onChange={(list) => patch({ list })}
                   options={names(context.lists)}
+                />
+              </FieldRow>
+            )}
+            <FieldRow label='Repete'>
+              <SelectInput
+                value={form.repeat}
+                onChange={(repeat) => patch({ repeat, weekdays: [] })}
+                options={optional([
+                  ...REPEATS,
+                  ...(form.repeat.startsWith('FREQ=')
+                    ? [{ value: form.repeat, label: describeRRule(form.repeat) }]
+                    : []),
+                ])}
+              />
+            </FieldRow>
+            {form.repeat === 'WEEKLY' && (
+              <WeekdayPicker
+                value={form.weekdays}
+                onChange={(weekdays) => patch({ weekdays })}
+                allowEmpty
+                weekStartsOn={0}
+              />
+            )}
+            {intent === 'task' && (
+              <FieldRow label='Subtarefas'>
+                <SelectInput
+                  value={form.subtasks}
+                  onChange={(subtasks) => patch({ subtasks })}
+                  options={optional(
+                    Array.from({ length: 11 }, (_, i) => ({
+                      value: String(i),
+                      label: i === 0 ? 'Nenhuma' : String(i),
+                    }))
+                  )}
                 />
               </FieldRow>
             )}

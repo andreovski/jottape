@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { idSchema, isoDateSchema, isoDateTimeSchema } from './common';
+import { idSchema, isoDateSchema, isoDateTimeSchema, rruleSchema } from './common';
 import { createEventBodySchema, eventResponseSchema } from './events';
 import { createTaskBodySchema, type TaskResponse } from './tasks';
 import {
@@ -46,6 +46,8 @@ export const assistantEventDraftSchema = z.object({
   location: z.string().max(300).nullable(),
   /** O que o pedido mandou anotar ("nas notas coloque..."); vai na descrição do evento. */
   notes: z.string().max(2000).nullable().default(null),
+  /** Repetição ("toda segunda"), como na tela da Agenda. */
+  rrule: rruleSchema.nullable().default(null),
 });
 export type AssistantEventDraft = z.infer<typeof assistantEventDraftSchema>;
 
@@ -57,6 +59,10 @@ export const assistantTaskDraftSchema = z.object({
   time: timeSchema.nullable(),
   listId: idSchema.nullable(),
   notes: z.string().max(2000).nullable().default(null),
+  /** Repetição ("todo dia", "terça e quinta"); tarefa que repete sempre tem data. */
+  rrule: rruleSchema.nullable().default(null),
+  /** Itens da tarefa ("manhã: alimentação, noite: alimentação"), criados como subtarefas. */
+  subtasks: z.array(z.string().max(300)).max(20).default([]),
 });
 export type AssistantTaskDraft = z.infer<typeof assistantTaskDraftSchema>;
 
@@ -232,6 +238,8 @@ export const saveAssistantCardBodySchema = z.object({
   transaction: createTransactionBodySchema.optional(),
   event: createEventBodySchema.optional(),
   task: createTaskBodySchema.optional(),
+  /** Subtarefas da folha da tarefa (sem elas, as do rascunho). */
+  subtasks: z.array(z.string().trim().min(1).max(300)).max(20).optional(),
 });
 export type SaveAssistantCardBody = z.infer<typeof saveAssistantCardBodySchema>;
 
@@ -322,6 +330,10 @@ export const assistantTestExpectSchema = z.object({
   allDay: z.boolean().optional(),
   list: z.string().max(120).optional(),
   notes: z.boolean().optional(),
+  /** A regra de repetição esperada ("FREQ=DAILY"); null espera sem repetição. */
+  repeat: rruleSchema.nullable().optional(),
+  /** Quantas subtarefas a tarefa deve ter. */
+  subtasks: z.number().int().min(0).max(20).optional(),
 });
 export type AssistantTestExpect = z.infer<typeof assistantTestExpectSchema>;
 

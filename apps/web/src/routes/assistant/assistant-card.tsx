@@ -1,3 +1,4 @@
+import { describeRRule } from '@jottape/finance-engine';
 import type {
   AccountResponse,
   AssistantCardResponse,
@@ -12,7 +13,7 @@ import type {
 import { Check, CircleCheck, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { Fragment, type ReactNode, useState } from 'react';
 
-import { newEventForm } from '@/components/agenda/event-form-model';
+import { newEventForm, repeatFromRRule } from '@/components/agenda/event-form-model';
 import { EventFormSheet } from '@/components/agenda/event-form-sheet';
 import { CategoryIcon } from '@/components/finance/category-icon';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
@@ -466,6 +467,7 @@ function EventCard({ card, draft }: { card: AssistantCardResponse; draft: Assist
       location: draft.location ?? '',
       notes: draft.notes ?? '',
       allDay: draft.allDay,
+      ...(draft.rrule ? repeatFromRRule(draft.rrule, draft.date) : {}),
       ...(draft.startTime ? { startTime: draft.startTime } : {}),
       ...(draft.startTime ? { endTime: draft.endTime ?? draft.startTime } : {}),
     };
@@ -484,6 +486,7 @@ function EventCard({ card, draft }: { card: AssistantCardResponse; draft: Assist
           value: when || 'Falta o horário',
           uncertain: card.missing.includes('time'),
         },
+        ...(draft.rrule ? [{ label: 'Repete', value: describeRRule(draft.rrule) }] : []),
         ...(draft.location ? [{ label: 'Local', value: draft.location }] : []),
         ...(draft.notes ? [{ label: 'Notas', value: draft.notes }] : []),
       ]}
@@ -520,6 +523,7 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
   const due = draft.date
     ? `${relativeDay(draft.date)}${draft.time ? `, ${draft.time}` : ''}`
     : 'Sem prazo';
+  const subtasks = draft.subtasks ?? [];
 
   return (
     <CardShell
@@ -534,6 +538,23 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
           uncertain: card.uncertain.includes('list'),
         },
         { label: 'Prazo', value: due },
+        ...(draft.rrule ? [{ label: 'Repete', value: describeRRule(draft.rrule) }] : []),
+        ...(subtasks.length
+          ? [
+              {
+                label: subtasks.length === 1 ? 'Subtarefa' : 'Subtarefas',
+                value: (
+                  <ul>
+                    {subtasks.map((title, index) => (
+                      <li key={index} className='truncate'>
+                        {title}
+                      </li>
+                    ))}
+                  </ul>
+                ),
+              },
+            ]
+          : []),
         ...(draft.notes ? [{ label: 'Notas', value: draft.notes }] : []),
       ]}
       savedLabel='Nas tarefas'
@@ -550,8 +571,10 @@ function TaskCard({ card, draft }: { card: AssistantCardResponse; draft: Assista
               date: draft.date ?? undefined,
               time: draft.time ?? undefined,
               notes: draft.notes ?? undefined,
+              rrule: draft.rrule ?? undefined,
+              subtasks,
             }}
-            onCreate={(task) => actions.saveFrom({ task })}
+            onCreate={(task, subtasks) => actions.saveFrom({ task, subtasks })}
           />
         )
       }

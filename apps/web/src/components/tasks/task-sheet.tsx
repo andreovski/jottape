@@ -3,6 +3,7 @@ import { Bell, Calendar, Clock, Flag, Hash, List, Plus, Repeat, X } from 'lucide
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { weekdayOf } from '@/components/agenda/calendar';
 import { Button, CheckCircle, Pill, Segmented, Switch } from '@/components/ios/controls';
 import {
   DateInput,
@@ -14,6 +15,7 @@ import {
 } from '@/components/ios/fields';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
+import { WeekdayPicker } from '@/components/weekday-picker';
 import { useMe } from '@/features/auth';
 import {
   useCreateTask,
@@ -49,6 +51,10 @@ export interface TaskSheetDefaults {
   title?: string;
   notes?: string;
   tags?: string[];
+  /** Com data, já começa repetindo. */
+  rrule?: string;
+  /** Subtarefas já escritas (o Assistente monta). */
+  subtasks?: string[];
 }
 
 const PRIORITIES: { value: 'NONE' | TaskPriority; label: string }[] = [
@@ -74,7 +80,7 @@ export function TaskSheet({
   task: TaskResponse | null;
   defaults?: TaskSheetDefaults;
   /** Cria por outro caminho (o Assistente salva o rascunho). Devolve se deu certo. */
-  onCreate?: (body: CreateTaskBody) => Promise<boolean>;
+  onCreate?: (body: CreateTaskBody, subtasks: string[]) => Promise<boolean>;
 }) {
   const lists = useTaskLists();
   const me = useMe();
@@ -97,7 +103,7 @@ export function TaskSheet({
   );
   const [tagDraft, setTagDraft] = useState('');
   const [subDraft, setSubDraft] = useState('');
-  const [pendingSubs, setPendingSubs] = useState<string[]>([]);
+  const [pendingSubs, setPendingSubs] = useState<string[]>(defaults.subtasks ?? []);
   const [saving, setSaving] = useState(false);
   const { errors, validate } = useFormErrors({
     title: !form.title.trim() && 'Informe o título.',
@@ -113,6 +119,8 @@ export function TaskSheet({
     setTagDraft('');
   }
 
+  const subs = () => [...pendingSubs, subDraft].map((title) => title.trim()).filter(Boolean);
+
   async function save() {
     if (saving || !validate()) return;
     const finalForm = tagDraft.trim() ? { ...form, tags: addTag(form.tags, tagDraft) } : form;
@@ -127,11 +135,10 @@ export function TaskSheet({
           ...(isSubtask || nextListId === task.listId ? {} : { listId: nextListId }),
         });
       } else if (onCreate) {
-        if (!(await onCreate(body))) return;
+        if (!(await onCreate(body, subs()))) return;
       } else {
         const created = await create.mutateAsync(body);
-        const subs = [...pendingSubs, subDraft].map((title) => title.trim()).filter(Boolean);
-        for (const title of subs) {
+        for (const title of subs()) {
           await create.mutateAsync({ title, parentTaskId: created.id, listId: created.listId });
         }
       }
@@ -277,6 +284,13 @@ export function TaskSheet({
                 }
               />
             }
+          />
+        )}
+        {form.hasDate && form.repeat === 'WEEKLY' && (
+          <WeekdayPicker
+            value={form.weekdays.length ? form.weekdays : [weekdayOf(form.date)]}
+            onChange={(weekdays) => patch({ weekdays })}
+            weekStartsOn={me.data?.weekStartsOn ?? 0}
           />
         )}
         {form.hasDate && (

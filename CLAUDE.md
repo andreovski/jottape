@@ -110,7 +110,9 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   Assistente (`scripts/benchmark-ci.ts`): busca os casos em `/ci/assistant/cases` (`BENCH_TOKEN`),
   roda a base (em cache pelo commit) e o PR, repete o caso que quebrou e fica vermelho se ele
   falhar de novo. Evento e tarefa levam
-  `notes` (descrição do evento, notas da tarefa).
+  `notes` (descrição do evento, notas da tarefa) e `rrule` (o Haiku escreve a regra; `repeatOf`
+  refaz só com frequência, intervalo e dias; tarefa que repete sem data começa hoje), e a tarefa
+  leva `subtasks`, criadas como subtarefas.
 - Jobs rodam dentro da API (não há agendador externo); desligados em teste e com `DISABLE_JOBS=true`.
   Por isso a API **não dorme** no Railway.
 

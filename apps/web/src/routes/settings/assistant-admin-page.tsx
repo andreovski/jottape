@@ -63,6 +63,8 @@ const CORRECTION_LABEL: Record<string, string> = {
   notes: 'Notas',
   allDay: 'Dia inteiro',
   list: 'Lista',
+  repeat: 'Repetição',
+  subtasks: 'Subtarefas',
 };
 
 const ENGINE_LABEL = { haiku: 'Haiku', jev: 'Jev', answer: 'Resposta', change: 'Mudança' };
