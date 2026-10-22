@@ -1,10 +1,10 @@
 import type { TransactionResponse } from '@jottape/schemas';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
-import { Inbox, Plus } from 'lucide-react';
+import { ChevronRight, Inbox, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import { AccountChip, AddAccountChip } from '@/components/finance/account-card';
 import { AccountSheet } from '@/components/finance/account-sheet';
+import { AccountsSheet, AccountsStackIcon } from '@/components/finance/accounts-sheet';
 import {
   availableBalance,
   forecastAt,
@@ -63,13 +63,25 @@ export function FinancePage() {
 
   const scroller = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
-  // Trocar de aba volta a lista para o topo.
+  const [compact, setCompact] = useState(false);
+  const accountsSheet = useSheetState<undefined>();
+  // Trocar de aba volta a lista para o topo (e o evento de rolagem abre o topo de novo).
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 });
   }, [tab]);
 
+  const onScroll = (element: HTMLDivElement) => {
+    const top = element.scrollTop;
+    setScrolled(top > 0);
+    // Recolher o topo aumenta a área da lista; com pouco conteúdo isso puxaria a rolagem de volta
+    // ao início e o topo abriria de novo, num vai e volta. Só recolhe quando sobra rolagem.
+    const room = element.scrollHeight - element.clientHeight;
+    setCompact((was) => (was ? top > 4 : top > 40 && room > 200));
+  };
+
   return (
-    // Saldo, contas e abas ficam presos no topo; só o conteúdo da aba rola.
+    // Saldo, contas e abas ficam presos no topo; só o conteúdo da aba rola. Ao rolar, o topo
+    // encolhe numa barra só com o saldo, o botão das contas e o "+".
     <div className='flex h-dvh flex-col'>
       <header
         className={cn(
@@ -78,27 +90,26 @@ export function FinancePage() {
         )}
       >
         <div className='mx-auto max-w-3xl px-4 lg:px-8'>
-          <div className='flex h-12 items-center justify-between'>
-            <h1 className='text-title-1 font-bold'>Finanças</h1>
-            <BarButton label='Novo lançamento' onClick={() => txSheet.show(undefined)}>
-              <Plus strokeWidth={2.25} />
-            </BarButton>
-          </div>
-          <Hero />
-          <Wallet onAddAccount={() => accountSheet.show(undefined)} />
-          <ReviewBanner />
+          <Summary
+            compact={compact}
+            onAdd={() => txSheet.show(undefined)}
+            onAccounts={() => accountsSheet.show(undefined)}
+            onAddAccount={() => accountSheet.show(undefined)}
+          />
+          {!compact && <ReviewBanner />}
           <Segmented
             value={tab}
             onChange={(value) => setSearch({ tab: value })}
             options={TABS}
-            className='mb-3'
+            size={compact ? 'sm' : 'md'}
+            className={compact ? 'mb-2' : 'mb-3'}
           />
         </div>
       </header>
 
       <div
         ref={scroller}
-        onScroll={(event) => setScrolled(event.currentTarget.scrollTop > 0)}
+        onScroll={(event) => onScroll(event.currentTarget)}
         className='min-h-0 flex-1 overflow-y-auto overscroll-contain'
       >
         <div className='mx-auto max-w-3xl px-4 pt-2 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
@@ -127,6 +138,14 @@ export function FinancePage() {
         }
       />
       <AccountSheet open={accountSheet.open} onOpenChange={accountSheet.onOpenChange} />
+      <FinanceAccountsSheet
+        open={accountsSheet.open}
+        onOpenChange={accountsSheet.onOpenChange}
+        onAddAccount={() => {
+          accountsSheet.onOpenChange(false);
+          accountSheet.show(undefined);
+        }}
+      />
     </div>
   );
 }
@@ -156,77 +175,163 @@ function ReviewBanner() {
   );
 }
 
-/** Saldo disponível numa linha, com a previsão do fim do mês ao lado. */
-function Hero() {
+/** Saldo disponível, previsão do fim do mês e contas (só quando não é cartão nem arquivada). */
+function useTotals() {
   const { data: accounts, isLoading } = useAccounts();
   const { data: forecast } = useForecast(30);
-  const today = todayKey();
-  const balance = availableBalance(accounts ?? []);
-  const endOfMonth = forecastAt(forecast, lastDayOfMonth(monthOfDay(today)));
-  const signed = (cents: number) => (cents < 0 ? `−${money(-cents)}` : money(cents));
+  const visible = (accounts ?? []).filter((a) => !a.archived);
+  const endOfMonth = forecastAt(forecast, lastDayOfMonth(monthOfDay(todayKey())));
+  return {
+    isLoading,
+    accounts: visible,
+    balance: availableBalance(accounts ?? []),
+    endOfMonth: endOfMonth?.totalCents,
+  };
+}
+
+const signed = (cents: number) => (cents < 0 ? `−${money(-cents)}` : money(cents));
+
+/**
+ * Topo das Finanças. Aberto: título, saldo grande com o fim do mês embaixo e, ao lado, o botão das
+ * contas (mini cartões empilhados, como o Wallet). Recolhido: uma barra só com o saldo menor, o
+ * botão das contas em pílula e o "+".
+ */
+function Summary({
+  compact,
+  onAdd,
+  onAccounts,
+  onAddAccount,
+}: {
+  compact: boolean;
+  onAdd: () => void;
+  onAccounts: () => void;
+  onAddAccount: () => void;
+}) {
+  const { isLoading, accounts, balance, endOfMonth } = useTotals();
+  const cards = accounts.filter((a) => a.type === 'CREDIT_CARD').length;
+  const others = accounts.length - cards;
+  const openAccounts = accounts.length ? onAccounts : onAddAccount;
+
+  const value = isLoading ? (
+    <Skeleton className={cn('my-1 w-36', compact ? 'h-5' : 'h-8')} />
+  ) : (
+    <div
+      className={cn(
+        'font-rounded numeric truncate font-bold tracking-tight',
+        compact ? 'text-[21px] leading-[26px]' : 'text-[32px] leading-[38px]',
+        balance < 0 && 'text-red'
+      )}
+    >
+      {signed(balance)}
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <div className='animate-in fade-in flex h-[52px] items-center gap-2.5 duration-200'>
+        <div className='min-w-0 flex-1'>
+          <div className='text-caption-2 text-label-2 font-medium'>Saldo disponível</div>
+          {value}
+        </div>
+        <button
+          type='button'
+          onClick={openAccounts}
+          aria-label='Contas'
+          className='bg-fill text-subhead flex h-8 shrink-0 items-center gap-1.5 rounded-full pr-2 pl-1.5 font-semibold active:opacity-60'
+        >
+          {accounts.length ? (
+            <>
+              <AccountsStackIcon accounts={accounts} size='sm' />
+              {accounts.length}
+            </>
+          ) : (
+            <Plus className='text-tint size-4' strokeWidth={2.5} />
+          )}
+          <ChevronRight className='text-label-3 size-3.5' strokeWidth={3} />
+        </button>
+        <BarButton label='Novo lançamento' onClick={onAdd} className='size-8 [&_svg]:size-[18px]'>
+          <Plus strokeWidth={2.25} />
+        </BarButton>
+      </div>
+    );
+  }
 
   return (
-    <div className='mb-3 flex items-end justify-between gap-4'>
-      <div className='min-w-0'>
-        <div className='text-footnote text-label-2 font-medium'>Saldo disponível</div>
-        {isLoading ? (
-          <Skeleton className='my-1 h-7 w-40' />
-        ) : (
-          <div
-            className={cn(
-              'font-rounded numeric truncate text-[28px] leading-[34px] font-bold tracking-tight',
-              balance < 0 && 'text-red'
-            )}
-          >
-            {signed(balance)}
-          </div>
-        )}
+    <div className='animate-in fade-in duration-200'>
+      <div className='flex h-12 items-center justify-between'>
+        <h1 className='text-title-1 font-bold'>Finanças</h1>
+        <BarButton label='Novo lançamento' onClick={onAdd}>
+          <Plus strokeWidth={2.25} />
+        </BarButton>
       </div>
-      {endOfMonth && (
-        <div className='shrink-0 pb-0.5 text-right'>
-          <div className='text-footnote text-label-2'>Fim do mês</div>
-          <div
-            className={cn(
-              'font-rounded numeric text-callout font-semibold',
-              endOfMonth.totalCents < 0 && 'text-red'
-            )}
-          >
-            {signed(endOfMonth.totalCents)}
-          </div>
+      <div className='mb-3 flex items-end justify-between gap-3'>
+        <div className='min-w-0'>
+          <div className='text-footnote text-label-2 font-medium'>Saldo disponível</div>
+          {value}
+          {endOfMonth !== undefined && (
+            <div className='text-footnote text-label-2 truncate'>
+              Fim do mês{' '}
+              <span
+                className={cn(
+                  'font-rounded numeric text-foreground font-semibold',
+                  endOfMonth < 0 && 'text-red'
+                )}
+              >
+                {signed(endOfMonth)}
+              </span>
+            </div>
+          )}
         </div>
-      )}
+        <button
+          type='button'
+          onClick={openAccounts}
+          className='bg-surface mb-0.5 flex h-11 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.06)] transition-transform duration-150 active:scale-[0.96] dark:shadow-none'
+        >
+          {isLoading ? (
+            <Skeleton className='h-[22px] w-[34px] rounded-[5px]' />
+          ) : accounts.length ? (
+            <AccountsStackIcon accounts={accounts} />
+          ) : (
+            <span className='text-tint flex h-[30px] w-[30px] items-center justify-center'>
+              <Plus className='size-5' strokeWidth={2.5} />
+            </span>
+          )}
+          <span className='text-footnote leading-tight'>
+            <span className='block font-semibold'>
+              {accounts.length
+                ? others
+                  ? `${others} ${others === 1 ? 'conta' : 'contas'}`
+                  : `${cards} ${cards === 1 ? 'cartão' : 'cartões'}`
+                : 'Adicionar'}
+            </span>
+            <span className='text-label-2 block'>
+              {accounts.length
+                ? others && cards
+                  ? `${cards} ${cards === 1 ? 'cartão' : 'cartões'}`
+                  : 'ver todas'
+                : 'conta'}
+            </span>
+          </span>
+          <ChevronRight className='text-label-3 size-4' strokeWidth={2.75} />
+        </button>
+      </div>
     </div>
   );
 }
 
-/** Faixa de contas em cartões pequenos, com o "+" no fim. */
-function Wallet({ onAddAccount }: { onAddAccount: () => void }) {
-  const { data: accounts, isLoading } = useAccounts();
-  const navigate = useNavigate();
-  const visible = (accounts ?? []).filter((a) => !a.archived);
-
+/** Folha com a carteira completa, alimentada pelos mesmos totais do topo. */
+function FinanceAccountsSheet(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAddAccount: () => void;
+}) {
+  const { accounts, balance, endOfMonth } = useTotals();
   return (
-    <div
-      className='no-scrollbar -mx-4 mb-3 flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 pb-1 lg:-mx-8 lg:scroll-px-8 lg:px-8'
-      aria-label='Contas'
-    >
-      {isLoading
-        ? [0, 1].map((i) => (
-            <Skeleton key={i} className='h-[58px] w-[148px] shrink-0 rounded-[12px]' />
-          ))
-        : visible.map((account) => (
-            <AccountChip
-              key={account.id}
-              account={account}
-              onClick={() =>
-                void navigate({
-                  to: '/financas/contas/$accountId',
-                  params: { accountId: account.id },
-                })
-              }
-            />
-          ))}
-      {!isLoading && <AddAccountChip onClick={onAddAccount} />}
-    </div>
+    <AccountsSheet
+      {...props}
+      accounts={accounts}
+      balanceCents={balance}
+      endOfMonthCents={endOfMonth}
+    />
   );
 }
