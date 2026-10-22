@@ -1,6 +1,6 @@
 import type { BankMovementResponse } from '@jottape/schemas';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ChevronLeft, CircleCheck } from 'lucide-react';
+import { ChevronLeft, CircleCheck, Flag } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
@@ -21,6 +21,7 @@ import {
 import { useAccounts, useCategories } from '@/features/finance';
 import { capitalize, money, relativeDay } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { BankFeedbackSheet } from '@/routes/settings/bank-feedback-sheet';
 
 /** Lançamentos que vieram do banco e não casaram com nada: o usuário confere antes do saldo. */
 export function ReviewPage() {
@@ -131,6 +132,7 @@ function ReviewSheet({
   const [kind, setKind] = useState(movement.kind);
   const [categoryId, setCategoryId] = useState(movement.suggestedCategoryId ?? '');
   const [description, setDescription] = useState(movement.description);
+  const [reporting, setReporting] = useState(false);
 
   async function save() {
     await accept.mutateAsync({
@@ -205,6 +207,19 @@ function ReviewSheet({
       >
         Ignorar (não lançar)
       </Button>
+      <button
+        type='button'
+        onClick={() => setReporting(true)}
+        className='text-tint text-subhead mx-auto mt-4 flex items-center gap-1.5 active:opacity-40'
+      >
+        <Flag className='size-4' /> Algo veio errado
+      </button>
+      <BankFeedbackSheet
+        open={reporting}
+        nested
+        movementId={movement.id}
+        onClose={() => setReporting(false)}
+      />
     </Sheet>
   );
 }

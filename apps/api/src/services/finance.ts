@@ -5,8 +5,10 @@ import {
   dateOccurrences,
   installmentDates,
   invoiceCycleFor,
+  invoiceCycleForMonth,
   type LedgerAccount,
   type LedgerTransaction,
+  referenceMonthForDue,
   splitInstallments,
 } from '@jottape/finance-engine';
 import type {
@@ -83,6 +85,50 @@ async function ensureInvoice(db: Db, userId: string, card: Account, date: string
   });
 }
 
+/** Fatura de um vencimento dado pelo banco, com as datas do banco (fechamento, se veio). */
+export interface BankBill {
+  dueDate: string;
+  closingDate: string | null;
+}
+
+/** O mês de fechamento (1º dia) da fatura que o banco diz que vence em `bill.dueDate`. */
+export function billReferenceMonth(card: Account, bill: BankBill): Date {
+  if (!card.closingDay || !card.dueDay) {
+    throw new AppError(400, 'Cartão sem dia de fechamento ou de vencimento.');
+  }
+  const month = bill.closingDate
+    ? bill.closingDate.slice(0, 7)
+    : referenceMonthForDue(bill.dueDate, card.closingDay, card.dueDay);
+  return toDbDate(`${month}-01`);
+}
+
+/**
+ * A fatura do cartão que vence em `bill.dueDate`. Quando o banco deu o fechamento, as datas dele
+ * valem mais que as do cartão (e a situação da fatura segue o banco).
+ */
+export async function ensureBillInvoice(db: Db, userId: string, card: Account, bill: BankBill) {
+  const referenceMonth = billReferenceMonth(card, bill);
+  const cycle = invoiceCycleForMonth(
+    fromDbDate(referenceMonth).slice(0, 7),
+    card.closingDay!,
+    card.dueDay!
+  );
+  const bankDates = bill.closingDate
+    ? { closingDate: toDbDate(bill.closingDate), dueDate: toDbDate(bill.dueDate) }
+    : null;
+  return db.creditCardInvoice.upsert({
+    where: { accountId_referenceMonth: { accountId: card.id, referenceMonth } },
+    update: bankDates ?? {},
+    create: {
+      userId,
+      accountId: card.id,
+      referenceMonth,
+      closingDate: bankDates?.closingDate ?? toDbDate(cycle.closingDate),
+      dueDate: bankDates?.dueDate ?? toDbDate(cycle.dueDate),
+    },
+  });
+}
+
 /** Lançamento no cartão (compra, estorno, saque) entra na fatura do ciclo; pagamento não. */
 async function invoiceIdFor(
   db: Db,
@@ -151,7 +197,7 @@ export async function listInvoices(userId: string, accountId: string) {
 export async function payInvoice(
   userId: string,
   invoiceId: string,
-  options: { fromAccountId?: string; date?: string }
+  options: { fromAccountId?: string; date?: string; amountCents?: number }
 ) {
   const invoice = await prisma.creditCardInvoice.findFirst({
     where: { id: invoiceId, userId },
@@ -178,7 +224,7 @@ export async function payInvoice(
       data: {
         userId,
         kind: 'TRANSFER',
-        amountCents: total,
+        amountCents: options.amountCents ?? total,
         date: toDbDate(date),
         accountId: from.id,
         toAccountId: invoice.accountId,
@@ -198,6 +244,38 @@ export async function payInvoice(
     },
   });
   return toInvoice(updated, todayIn(timezone));
+}
+
+/**
+ * Um débito já lançado como despesa era, na verdade, o pagamento da fatura (o banco disse): vira a
+ * transferência que paga a fatura, sem categoria, e a fatura fica paga.
+ */
+export async function turnIntoInvoicePayment(
+  userId: string,
+  invoiceId: string,
+  transactionId: string
+) {
+  const invoice = await prisma.creditCardInvoice.findFirst({
+    where: { id: invoiceId, userId, paidAt: null, payment: null },
+  });
+  const tx = await prisma.transaction.findFirst({
+    where: { id: transactionId, userId, kind: 'EXPENSE', invoiceId: null },
+  });
+  if (!invoice || !tx || tx.accountId === invoice.accountId) return false;
+  await prisma.$transaction([
+    prisma.transaction.update({
+      where: { id: tx.id },
+      data: {
+        kind: 'TRANSFER',
+        toAccountId: invoice.accountId,
+        categoryId: null,
+        paysInvoiceId: invoice.id,
+        recurrenceId: null,
+      },
+    }),
+    prisma.creditCardInvoice.update({ where: { id: invoice.id }, data: { paidAt: new Date() } }),
+  ]);
+  return true;
 }
 
 // ---------------------------------------------------------------- contas
@@ -296,7 +374,12 @@ function templateFrom(body: CreateTransactionBody): TransactionTemplate {
 
 const withRecurrence = { recurrence: { select: { rrule: true } } } as const;
 
-export async function createTransactions(userId: string, body: CreateTransactionBody) {
+/** `bill`: a fatura que o banco já disse (só para um lançamento simples no cartão). */
+export async function createTransactions(
+  userId: string,
+  body: CreateTransactionBody,
+  options: { bill?: BankBill } = {}
+) {
   const today = todayIn(await userTimezone(userId));
   const template = templateFrom(body);
 
@@ -360,7 +443,10 @@ export async function createTransactions(userId: string, body: CreateTransaction
         userId,
         date: toDbDate(body.date),
         status: body.status ?? defaultStatus(body.date, today),
-        invoiceId: await invoiceIdFor(db, userId, account, body.date),
+        invoiceId:
+          options.bill && account.type === 'CREDIT_CARD'
+            ? (await ensureBillInvoice(db, userId, account, options.bill)).id
+            : await invoiceIdFor(db, userId, account, body.date),
       });
     }
 

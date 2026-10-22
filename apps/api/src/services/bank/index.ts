@@ -7,32 +7,50 @@ import type {
   LinkBankAccountBody,
   SaveBankCredentialsBody,
 } from '@jottape/schemas';
-import type { AccountType, BankAccount, BankMovement, Prisma } from '@prisma/client';
+import type { Account, AccountType, BankAccount, BankMovement, Prisma } from '@prisma/client';
 
 import { encrypt } from '@/lib/crypto';
 import { fromDbDate, todayIn, toDbDate } from '@/lib/dates';
 import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
-import { createTransactions, userTimezone } from '@/services/finance';
+import {
+  billReferenceMonth,
+  createTransactions,
+  ensureBillInvoice,
+  payInvoice,
+  turnIntoInvoicePayment,
+  userTimezone,
+} from '@/services/finance';
+
+import { allowedUserIds } from './admin';
 
 import {
   authenticatePluggy,
   createConnectToken,
   fetchAccounts,
+  fetchBills,
   fetchItem,
   fetchTransactions,
   forgetPluggyKey,
   meuPluggyConnectorIds,
   type PluggyAccount,
   PluggyApiError,
+  type PluggyBill,
   pluggyFetch,
   type PluggyItem,
 } from './client';
 import {
+  type BillDates,
+  billDates,
+  billPayment,
   candidateRange,
   categoryMemory,
   findMatch,
   importedDescription,
+  invoiceForPayment,
+  looksLikeInvoicePayment,
+  MATCH_WINDOW_DAYS,
+  movementBill,
   parseMovement,
   suggestCategory,
 } from './movements';
@@ -75,7 +93,8 @@ function itemError(item: PluggyItem): string | null {
 // ---------------------------------------------------------------- estado
 
 export async function bankStatus(userId: string): Promise<BankStatusResponse> {
-  const [credential, items, pendingCount] = await Promise.all([
+  const [user, credential, items, pendingCount] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { bankNoticeAt: true } }),
     prisma.pluggyCredential.findUnique({ where: { userId } }),
     prisma.pluggyItem.findMany({
       where: { userId },
@@ -92,6 +111,7 @@ export async function bankStatus(userId: string): Promise<BankStatusResponse> {
     syncedAt: credential?.syncedAt?.toISOString() ?? null,
     lastError: credential?.lastError ?? null,
     pendingCount,
+    noticeAcceptedAt: user.bankNoticeAt?.toISOString() ?? null,
     items: items.map((item) => ({
       id: item.id,
       itemId: item.itemId,
@@ -112,6 +132,12 @@ export async function bankStatus(userId: string): Promise<BankStatusResponse> {
       })),
     })),
   };
+}
+
+/** A pessoa leu o aviso de privacidade; vale em todos os aparelhos. */
+export async function acceptNotice(userId: string) {
+  await prisma.user.update({ where: { id: userId }, data: { bankNoticeAt: new Date() } });
+  return bankStatus(userId);
 }
 
 // ---------------------------------------------------------------- chaves e bancos
@@ -335,18 +361,39 @@ async function importMovements(
   // filtramos pela data da parcela.
   const fetchFrom = bankAccount.type === 'CREDIT' ? addDays(dateFrom, -366) : dateFrom;
   const remote = await fetchTransactions(userId, bankAccount.externalId, fetchFrom);
-  const known = new Set(
+
+  // No cartão, as faturas fechadas do banco dizem em que fatura cada lançamento caiu e se ela
+  // foi paga. Sem elas (o banco não informa), vale a data.
+  const card =
+    bankAccount.type === 'CREDIT'
+      ? await prisma.account.findFirst({ where: { id: accountId, userId, type: 'CREDIT_CARD' } })
+      : null;
+  const pluggyBills = card ? await fetchBillsOrNone(userId, bankAccount.externalId) : [];
+  const bills = new Map(pluggyBills.map((bill) => [bill.id, billDates(bill, timeZone)]));
+
+  const parsed = remote
+    .map((tx) => parseMovement(tx, bankAccount.type, timeZone))
+    .filter((m): m is NonNullable<typeof m> => m !== null)
+    .map((m) => ({ ...m, bill: card ? movementBill(m, bills, card) : null }));
+  const known = new Map(
     (
       await prisma.bankMovement.findMany({
         where: { bankAccountId: bankAccount.id, externalId: { in: remote.map((tx) => tx.id) } },
-        select: { externalId: true },
+        select: { id: true, externalId: true, billDueDate: true, billClosingDate: true },
       })
-    ).map((m) => m.externalId)
+    ).map((m) => [m.externalId, m])
   );
-  const fresh = remote
-    .filter((tx) => !known.has(tx.id))
-    .map((tx) => parseMovement(tx, bankAccount.type, timeZone))
-    .filter((m): m is NonNullable<typeof m> => m !== null && m.date >= dateFrom)
+  // A fatura chega depois do lançamento (quando fecha): guarda nos que já tínhamos.
+  for (const movement of parsed) {
+    const stored = known.get(movement.externalId);
+    if (!stored || !movement.bill || sameBill(stored, movement.bill)) continue;
+    await prisma.bankMovement.update({
+      where: { id: stored.id },
+      data: billColumns(movement.bill),
+    });
+  }
+  const fresh = parsed
+    .filter((m) => !known.has(m.externalId) && m.date >= dateFrom)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const range = candidateRange(fresh);
@@ -383,6 +430,7 @@ async function importMovements(
       description: movement.description,
       installmentNumber: movement.installmentNumber,
       installmentTotal: movement.installmentTotal,
+      ...(movement.bill ? billColumns(movement.bill) : {}),
     };
     const match = findMatch(movement, accountId, options, taken);
     if (match) {
@@ -410,7 +458,138 @@ async function importMovements(
     }),
     prisma.bankAccount.update({ where: { id: bankAccount.id }, data: { syncedAt: new Date() } }),
   ]);
+  if (card) {
+    await alignInvoices(userId, bankAccount.id, card);
+    await payBills(userId, card, pluggyBills, timeZone);
+  }
   return rows.length;
+}
+
+async function fetchBillsOrNone(userId: string, accountId: string): Promise<PluggyBill[]> {
+  try {
+    return await fetchBills(userId, accountId);
+  } catch (error) {
+    if (!(error instanceof PluggyApiError)) throw error;
+    console.warn('[bank] faturas indisponíveis', error.status);
+    return [];
+  }
+}
+
+const billColumns = (bill: BillDates) => ({
+  billDueDate: toDbDate(bill.dueDate),
+  billClosingDate: bill.closingDate ? toDbDate(bill.closingDate) : null,
+});
+
+function sameBill(
+  stored: { billDueDate: Date | null; billClosingDate: Date | null },
+  bill: BillDates
+) {
+  return (
+    stored.billDueDate !== null &&
+    fromDbDate(stored.billDueDate) === bill.dueDate &&
+    (stored.billClosingDate ? fromDbDate(stored.billClosingDate) : null) === bill.closingDate
+  );
+}
+
+const storedBill = (m: Pick<BankMovement, 'billDueDate' | 'billClosingDate'>): BillDates | null =>
+  m.billDueDate
+    ? {
+        dueDate: fromDbDate(m.billDueDate),
+        closingDate: m.billClosingDate ? fromDbDate(m.billClosingDate) : null,
+      }
+    : null;
+
+/**
+ * Põe cada lançamento do cartão na fatura em que o banco o pôs (o Jottape decide pela data, e o
+ * banco pode datar a parcela pela fatura). Fatura paga não muda; a que ficar vazia sai.
+ */
+async function alignInvoices(userId: string, bankAccountId: string, card: Account) {
+  const movements = await prisma.bankMovement.findMany({
+    where: { bankAccountId, billDueDate: { not: null }, transactionId: { not: null } },
+    include: {
+      transaction: {
+        select: { id: true, invoiceId: true, paysInvoiceId: true, invoice: true },
+      },
+    },
+  });
+  const emptied = new Set<string>();
+  for (const movement of movements) {
+    const tx = movement.transaction;
+    const bill = storedBill(movement);
+    if (!tx || !bill || tx.paysInvoiceId || tx.invoice?.paidAt) continue;
+    const target = await ensureBillInvoice(prisma, userId, card, bill);
+    if (target.id === tx.invoiceId || target.paidAt) continue;
+    await prisma.transaction.update({ where: { id: tx.id }, data: { invoiceId: target.id } });
+    if (tx.invoiceId) emptied.add(tx.invoiceId);
+  }
+  if (emptied.size) {
+    await prisma.creditCardInvoice.deleteMany({
+      where: { id: { in: [...emptied] }, paidAt: null, items: { none: {} }, payment: null },
+    });
+  }
+}
+
+/**
+ * Fatura que o banco diz paga e que o Jottape ainda tem aberta: paga pela conta de pagamento do
+ * cartão, na data e no valor do banco. O débito do pagamento na conta casa com essa transferência.
+ */
+async function payBills(userId: string, card: Account, bills: PluggyBill[], timeZone: string) {
+  if (!card.paymentAccountId) return;
+  for (const bill of bills) {
+    const paid = billPayment(bill, timeZone);
+    if (!paid) continue;
+    const invoice = await prisma.creditCardInvoice.findFirst({
+      where: {
+        accountId: card.id,
+        referenceMonth: billReferenceMonth(card, billDates(bill, timeZone)),
+        paidAt: null,
+        payment: null,
+        items: { some: {} },
+      },
+    });
+    if (!invoice) continue;
+
+    // O débito na conta já virou despesa na revisão: pagar de novo tiraria duas vezes.
+    const window = {
+      gte: toDbDate(addDays(paid.date, -MATCH_WINDOW_DAYS)),
+      lte: toDbDate(addDays(paid.date, MATCH_WINDOW_DAYS)),
+    };
+    const debit = await prisma.bankMovement.findFirst({
+      where: {
+        userId,
+        kind: 'EXPENSE',
+        amountCents: paid.amountCents,
+        date: window,
+        bankAccount: { accountId: card.paymentAccountId },
+      },
+      include: { transaction: { select: { kind: true } } },
+      orderBy: { date: 'asc' },
+    });
+    if (debit?.status === 'MATCHED') continue;
+    // Já lançado da revisão como despesa: a despesa vira o pagamento (senão sairia duas vezes).
+    if (debit?.status === 'IMPORTED') {
+      if (debit.transactionId && debit.transaction?.kind === 'EXPENSE') {
+        await turnIntoInvoicePayment(userId, invoice.id, debit.transactionId);
+      }
+      continue;
+    }
+
+    try {
+      const result = await payInvoice(userId, invoice.id, {
+        fromAccountId: card.paymentAccountId,
+        date: paid.date,
+        amountCents: paid.amountCents,
+      });
+      if (debit?.status === 'PENDING' && result.paymentTransactionId) {
+        await prisma.bankMovement.update({
+          where: { id: debit.id },
+          data: { status: 'MATCHED', transactionId: result.paymentTransactionId },
+        });
+      }
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+    }
+  }
 }
 
 /** Atualiza um banco: estado, contas e saldos, e os lançamentos das contas ligadas. */
@@ -488,7 +667,10 @@ export async function syncUser(userId: string) {
 /** Job: o Meu Pluggy atualiza os bancos uma vez por dia; aqui passamos a cada poucas horas. */
 export async function syncAllBanks() {
   const credentials = await prisma.pluggyCredential.findMany({ select: { userId: true } });
+  // Beta: só o dono e os convidados sincronizam.
+  const allowed = await allowedUserIds(credentials.map((c) => c.userId));
   for (const { userId } of credentials) {
+    if (!allowed.has(userId)) continue;
     try {
       await syncUser(userId);
     } catch (error) {
@@ -562,18 +744,40 @@ export async function acceptMovement(
         ? movement.suggestedCategoryId
         : null;
   try {
-    const [created] = await createTransactions(userId, {
-      kind,
-      amountCents: movement.amountCents,
-      date: fromDbDate(movement.date),
-      accountId,
-      categoryId,
-      description: body.description ?? importedDescription(movement),
-      status: 'DONE',
-    });
+    // Pagamento de fatura, a menos que a pessoa tenha escolhido outra categoria ou tipo.
+    const payment =
+      kind === 'EXPENSE' && categoryId === movement.suggestedCategoryId
+        ? await payInvoiceWith(userId, movement, accountId)
+        : null;
+    if (payment) {
+      const updated = await prisma.bankMovement.update({
+        where: { id },
+        data: { transactionId: payment },
+        include: withAccount,
+      });
+      return toBankMovement(updated);
+    }
+
+    const [created] = await createTransactions(
+      userId,
+      {
+        kind,
+        amountCents: movement.amountCents,
+        date: fromDbDate(movement.date),
+        accountId,
+        categoryId,
+        description: body.description ?? importedDescription(movement),
+        status: 'DONE',
+      },
+      { bill: storedBill(movement) ?? undefined }
+    );
+    const edited =
+      kind !== movement.kind ||
+      categoryId !== movement.suggestedCategoryId ||
+      (body.description !== undefined && body.description !== importedDescription(movement));
     const updated = await prisma.bankMovement.update({
       where: { id },
-      data: { transactionId: created!.id },
+      data: { transactionId: created!.id, edited },
       include: withAccount,
     });
     return toBankMovement(updated);
@@ -583,9 +787,49 @@ export async function acceptMovement(
   }
 }
 
+/**
+ * Débito na conta que paga um cartão, com cara de pagamento de fatura e uma fatura aberta perto do
+ * vencimento: paga essa fatura (transferência para o cartão) em vez de virar despesa. Devolve o id
+ * do pagamento, ou null para seguir como lançamento comum.
+ */
+async function payInvoiceWith(userId: string, movement: BankMovement, accountId: string) {
+  if (movement.kind !== 'EXPENSE' || !looksLikeInvoicePayment(movement.description)) return null;
+  const invoices = await prisma.creditCardInvoice.findMany({
+    where: {
+      userId,
+      paidAt: null,
+      payment: null,
+      items: { some: {} },
+      account: { paymentAccountId: accountId, archivedAt: null },
+    },
+  });
+  const date = fromDbDate(movement.date);
+  const invoice = invoiceForPayment(
+    date,
+    invoices.map((i) => ({ id: i.id, dueDate: fromDbDate(i.dueDate) }))
+  );
+  if (!invoice) return null;
+  try {
+    const paid = await payInvoice(userId, invoice.id, {
+      fromAccountId: accountId,
+      date,
+      amountCents: movement.amountCents,
+    });
+    return paid.paymentTransactionId;
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    return null;
+  }
+}
+
 /** Aceita todos os pendentes com a categoria sugerida. */
 export async function acceptAll(userId: string) {
-  const pending = await listMovements(userId, 'PENDING');
+  // Pagamentos de fatura por último: a fatura precisa ter as compras para ser paga.
+  const pending = (await listMovements(userId, 'PENDING')).sort(
+    (a, b) =>
+      Number(looksLikeInvoicePayment(a.description)) -
+      Number(looksLikeInvoicePayment(b.description))
+  );
   let imported = 0;
   for (const movement of pending) {
     try {

@@ -196,23 +196,25 @@ export function SettingsPage() {
             detail={googleDetail}
           />
         </Link>
-        <Link to='/ajustes/bancos' className='block'>
-          <Row
-            chevron
-            leading={
-              <IconChip color='var(--green)'>
-                <Landmark />
-              </IconChip>
-            }
-            title='Bancos'
-            subtitle='Open Finance, grátis'
-            detail={
-              bank.data?.items.length
-                ? `${bank.data.items.length} ${bank.data.items.length === 1 ? 'banco' : 'bancos'}`
-                : undefined
-            }
-          />
-        </Link>
+        {bank.isSuccess && (
+          <Link to='/ajustes/bancos' className='block'>
+            <Row
+              chevron
+              leading={
+                <IconChip color='var(--green)'>
+                  <Landmark />
+                </IconChip>
+              }
+              title='Bancos'
+              subtitle='Open Finance, grátis'
+              detail={
+                bank.data?.items.length
+                  ? `${bank.data.items.length} ${bank.data.items.length === 1 ? 'banco' : 'bancos'}`
+                  : undefined
+              }
+            />
+          </Link>
+        )}
         <Link to='/ajustes/briefing' className='block'>
           <Row
             chevron
@@ -336,8 +338,8 @@ export function SettingsPage() {
       )}
 
       {devModeAvailable && (
-        <Section footer='Quem usa o Jotta, quanto custa, quanto acerta e os relatos de “Isso está errado”.'>
-          <Link to='/ajustes/assistente' className='block'>
+        <Section footer='Quem testa o Jotta e os Bancos, os números de cada um e os relatos. Só você vê.'>
+          <Link to='/ajustes/beta' className='block'>
             <Row
               chevron
               leading={
@@ -345,7 +347,7 @@ export function SettingsPage() {
                   <FlaskConical />
                 </IconChip>
               }
-              title='Beta do Jotta'
+              title='Beta'
             />
           </Link>
         </Section>

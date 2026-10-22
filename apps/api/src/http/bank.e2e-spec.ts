@@ -1,6 +1,7 @@
 import type {
   AccountResponse,
   BankMovementResponse,
+  BankAdminResponse,
   BankStatusResponse,
   InvoiceResponse,
   TransactionResponse,
@@ -10,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { syncAllBanks } from '@/services/bank';
+import { hashPassword } from '@/services/owner';
 import { FakePluggy } from '@/test/fake-pluggy';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
 
@@ -31,9 +33,11 @@ describe('bancos (Meu Pluggy)', () => {
   afterEach(() => {
     pluggy.uninstall();
     vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
 
   beforeEach(async () => {
+    vi.stubEnv('OWNER_EMAIL', 'andre@example.com');
     vi.useFakeTimers({ toFake: ['Date'], now: NOW });
     await resetDatabase();
     pluggy = new FakePluggy().install();
@@ -65,6 +69,13 @@ describe('bancos (Meu Pluggy)', () => {
       body.items[0]!.accounts.find((a) => a.name === externalName)!.id;
     return { checkingBank: accountId('Conta Corrente'), cardBank: accountId('Cartão Platinum') };
   }
+
+  it('o aviso de privacidade aparece até a pessoa ler, e fica lido', async () => {
+    expect((await status()).noticeAcceptedAt).toBeNull();
+    const accepted = (await api.post('/bank/notice')).json() as BankStatusResponse;
+    expect(accepted.noticeAcceptedAt).not.toBeNull();
+    expect((await status()).noticeAcceptedAt).toBe(accepted.noticeAcceptedAt);
+  });
 
   it('recusa chaves erradas e guarda o secret cifrado', async () => {
     const wrong = await api.put('/bank/credentials', { clientId: 'x', clientSecret: 'y' });
@@ -273,6 +284,96 @@ describe('bancos (Meu Pluggy)', () => {
     expect(furniture.description).toBe('Loja de Móveis (3/10)');
   });
 
+  describe('faturas do banco', () => {
+    // O banco fecha no dia 28 (o cartão diz 25): a Farmácia do dia 27 é da fatura de setembro,
+    // paga no dia 7. A parcela 2/3 vem datada pela fatura (novembro, mês do vencimento).
+    const SEPTEMBER_BILL = {
+      id: 'bill-set',
+      dueDate: '2026-10-08T03:00:00.000Z',
+      billClosingDate: '2026-09-28T03:00:00.000Z',
+      totalAmount: 200,
+      payments: [{ paymentDate: '2026-10-07T03:00:00.000Z', amount: 200 }],
+    };
+
+    function addMovements(withBill: boolean) {
+      pluggy.add(CARD_ID, {
+        id: 'k1',
+        description: 'Farmácia',
+        amount: 200,
+        date: '2026-09-27T03:00:00.000Z',
+        creditCardMetadata: withBill ? { billId: 'bill-set' } : null,
+      });
+      pluggy.add(CARD_ID, {
+        id: 'k2',
+        description: 'Loja',
+        amount: 60,
+        date: '2026-11-04T03:00:00.000Z',
+        status: 'PENDING',
+        creditCardMetadata: { installmentNumber: 2, totalInstallments: 3 },
+      });
+      pluggy.add(CHECKING_ID, {
+        id: 'p1',
+        description: 'Pagamento de fatura',
+        amount: -200,
+        date: '2026-10-07T03:00:00.000Z',
+      });
+    }
+
+    async function linkBoth() {
+      const { checkingBank, cardBank } = await connect();
+      await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+      const linked = (await api.patch(`/bank/accounts/${cardBank}`, { create: true })).json();
+      return (linked as BankStatusResponse).items[0]!.accounts[1]!.accountId!;
+    }
+
+    const invoicesOf = async (cardId: string) =>
+      ((await api.get(`/accounts/${cardId}/invoices`)).json() as InvoiceResponse[])
+        .map((i) => [i.referenceMonth, i.totalCents, i.status, i.closingDate, i.dueDate])
+        .sort();
+
+    async function expectRepaired(cardId: string) {
+      expect(await invoicesOf(cardId)).toEqual([
+        ['2026-09', 200_00, 'PAID', '2026-09-28', '2026-10-08'],
+        ['2026-10', 60_00, 'OPEN', '2026-10-25', '2026-11-05'],
+      ]);
+      const payment = await prisma.bankMovement.findFirstOrThrow({
+        where: { externalId: 'p1' },
+        include: { transaction: true },
+      });
+      expect(payment.transaction).toMatchObject({
+        kind: 'TRANSFER',
+        amountCents: 200_00,
+        accountId: checking.id,
+        toAccountId: cardId,
+        categoryId: null,
+      });
+      expect(payment.transaction!.paysInvoiceId).not.toBeNull();
+    }
+
+    it('põe cada lançamento na fatura do banco e o débito da conta paga a fatura', async () => {
+      pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
+      addMovements(true);
+      const cardId = await linkBoth();
+      expect((await api.post('/bank/movements/accept-all')).json()).toEqual({ imported: 3 });
+      await expectRepaired(cardId);
+    });
+
+    it('conserta o que já foi lançado quando a fatura do banco chega', async () => {
+      addMovements(false);
+      const cardId = await linkBoth();
+      await api.post('/bank/movements/accept-all');
+      // Sem a fatura do banco: a Farmácia caiu em outubro e o pagamento virou despesa.
+      expect((await invoicesOf(cardId)).map((i) => [i[0], i[1], i[2]])).toEqual([
+        ['2026-10', 260_00, 'OPEN'],
+      ]);
+
+      pluggy.transactions.get(CARD_ID)![0]!.creditCardMetadata = { billId: 'bill-set' };
+      pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
+      await syncAllBanks();
+      await expectRepaired(cardId);
+    });
+  });
+
   it('conta nova: o saldo inicial faz o saldo bater com o banco depois da revisão', async () => {
     const { checkingBank } = await connect();
     pluggy.add(CHECKING_ID, {
@@ -338,5 +439,93 @@ describe('bancos (Meu Pluggy)', () => {
     expect(
       (await api.patch(`/bank/accounts/${checkingBank}`, { accountId: otherAccount.id })).statusCode
     ).toBe(404);
+  });
+
+  describe('beta', () => {
+    async function guest() {
+      await prisma.user.create({
+        data: {
+          email: 'bia@example.com',
+          name: 'Bia',
+          timezone: 'America/Sao_Paulo',
+          passwordHash: await hashPassword('senha-da-bia'),
+        },
+      });
+      const login = await app.inject({
+        method: 'POST',
+        url: '/sessions',
+        payload: { email: 'bia@example.com', password: 'senha-da-bia' },
+      });
+      const cookie = login.cookies.find((c) => c.name === 'jottape_session')!;
+      return client(app, `jottape_session=${cookie.value}`);
+    }
+
+    it('só convidados usam; o dono convida pelo painel e vê até onde cada um chegou', async () => {
+      const bia = await guest();
+      expect((await bia.get('/bank')).statusCode).toBe(403);
+      expect((await bia.get('/bank/admin')).statusCode).toBe(403);
+
+      const panel = (await api.get('/bank/admin')).json() as BankAdminResponse;
+      const biaId = panel.users.find((u) => u.email === 'bia@example.com')!.id;
+      expect(panel.users.map((u) => [u.name, u.access, u.stage])).toEqual([
+        ['André', 'owner', 'none'],
+        ['Bia', 'none', 'none'],
+      ]);
+
+      const invited = (
+        await api.patch(`/bank/admin/users/${biaId}`, { bankAccess: true })
+      ).json() as BankAdminResponse;
+      expect(invited.users.find((u) => u.id === biaId)!.access).toBe('app');
+      expect((await bia.get('/bank')).statusCode).toBe(200);
+
+      // O dono chega a "conta ligada" e aceita um lançamento trocando o tipo.
+      pluggy.add(CHECKING_ID, {
+        id: 'b1',
+        description: 'Padaria',
+        amount: -12,
+        date: '2026-10-16T03:00:00.000Z',
+      });
+      const { checkingBank } = await connect();
+      await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+      const [first] = await pending();
+      await api.post(`/bank/movements/${first!.id}/accept`, {
+        kind: first!.kind === 'EXPENSE' ? 'INCOME' : 'EXPENSE',
+      });
+      const owner = ((await api.get('/bank/admin')).json() as BankAdminResponse).users[0]!;
+      expect(owner).toMatchObject({ stage: 'accepted', banks: 1, linkedAccounts: 1 });
+      expect(owner.last30).toMatchObject({ imported: 1, edited: 1 });
+
+      // Tirar o convite fecha de novo.
+      await api.patch(`/bank/admin/users/${biaId}`, { bankAccess: false });
+      expect((await bia.get('/bank')).statusCode).toBe(403);
+    });
+
+    it('"Algo veio errado" guarda o relato com a foto do estado, sem as chaves', async () => {
+      pluggy.add(CHECKING_ID, {
+        id: 'b1',
+        description: 'Padaria',
+        amount: -12,
+        date: '2026-10-16T03:00:00.000Z',
+      });
+      const { checkingBank } = await connect();
+      await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+      const [first] = await pending();
+      expect(
+        (await api.post('/bank/feedback', { note: 'Veio duplicado', movementId: first!.id }))
+          .statusCode
+      ).toBe(204);
+
+      const [report] = ((await api.get('/bank/admin')).json() as BankAdminResponse).feedback;
+      expect(report).toMatchObject({ userName: 'André', note: 'Veio duplicado', resolvedAt: null });
+      const snapshot = JSON.stringify(report!.snapshot);
+      expect(snapshot).toContain(first!.description);
+      expect(snapshot).not.toContain('pluggy-client');
+      expect(snapshot).not.toContain(pluggy.itemId);
+
+      const resolved = (
+        await api.post(`/bank/admin/feedback/${report!.id}/resolve`)
+      ).json() as BankAdminResponse;
+      expect(resolved.feedback[0]!.resolvedAt).not.toBeNull();
+    });
   });
 });

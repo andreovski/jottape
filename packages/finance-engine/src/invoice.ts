@@ -45,3 +45,16 @@ export function invoiceCycleFor(
     purchaseDate < closingThisMonth ? thisMonth : addMonthsToMonth(thisMonth, 1);
   return invoiceCycleForMonth(referenceMonth, closingDay, dueDay);
 }
+
+/**
+ * A fatura que vence em `dueDate` (vinda do banco): o mês de fechamento é o do vencimento, ou o
+ * anterior quando o cartão vence no mês seguinte ao fechamento.
+ */
+export function referenceMonthForDue(
+  dueDate: DateString,
+  closingDay: number,
+  dueDay: number
+): string {
+  const dueMonth = dueDate.slice(0, 7);
+  return dueDay > closingDay ? dueMonth : addMonthsToMonth(dueMonth, -1);
+}

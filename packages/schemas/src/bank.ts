@@ -70,6 +70,8 @@ export const bankStatusResponseSchema = z.object({
   items: z.array(bankItemResponseSchema),
   /** Lançamentos do banco esperando revisão. */
   pendingCount: z.number().int(),
+  /** Quando leu o aviso de privacidade (null = mostrar antes de tudo). */
+  noticeAcceptedAt: z.string().nullable(),
 });
 export type BankStatusResponse = z.infer<typeof bankStatusResponseSchema>;
 
@@ -106,3 +108,59 @@ export const acceptBankMovementBodySchema = z.object({
   description: z.string().trim().min(1, 'Informe a descrição.').max(120).optional(),
 });
 export type AcceptBankMovementBody = z.infer<typeof acceptBankMovementBodySchema>;
+
+// ---------------------------------------------------------------- beta
+
+export const bankFeedbackBodySchema = z.object({
+  note: z.string().trim().min(1, 'Conte o que veio errado.').max(2000),
+  /** Lançamento da revisão de onde veio o relato. */
+  movementId: idSchema.optional(),
+});
+export type BankFeedbackBody = z.infer<typeof bankFeedbackBodySchema>;
+
+export const updateBankUserBodySchema = z.object({ bankAccess: z.boolean() });
+export type UpdateBankUserBody = z.infer<typeof updateBankUserBodySchema>;
+
+/** Até onde a pessoa chegou na configuração. */
+export const bankStageSchema = z.enum(['none', 'keys', 'bank', 'linked', 'accepted']);
+export type BankStage = z.infer<typeof bankStageSchema>;
+
+export const bankAdminUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  access: z.enum(['owner', 'app', 'none']),
+  stage: bankStageSchema,
+  banks: z.number().int(),
+  linkedAccounts: z.number().int(),
+  /** Lançamentos do banco dos últimos 30 dias, por destino. */
+  last30: z.object({
+    matched: z.number().int(),
+    imported: z.number().int(),
+    ignored: z.number().int(),
+    pending: z.number().int(),
+    edited: z.number().int(),
+  }),
+  /** Erros gravados agora (das chaves e de cada banco). */
+  errors: z.array(z.string()),
+  syncedAt: z.string().nullable(),
+  /** Dias, em média, entre o lançamento no banco e a chegada no Jottape (30 dias). */
+  lagDays: z.number().nullable(),
+});
+export type BankAdminUser = z.infer<typeof bankAdminUserSchema>;
+
+export const bankAdminFeedbackSchema = z.object({
+  id: z.string(),
+  userName: z.string(),
+  note: z.string(),
+  snapshot: z.unknown(),
+  createdAt: z.string(),
+  resolvedAt: z.string().nullable(),
+});
+export type BankAdminFeedback = z.infer<typeof bankAdminFeedbackSchema>;
+
+export const bankAdminResponseSchema = z.object({
+  users: z.array(bankAdminUserSchema),
+  feedback: z.array(bankAdminFeedbackSchema),
+});
+export type BankAdminResponse = z.infer<typeof bankAdminResponseSchema>;

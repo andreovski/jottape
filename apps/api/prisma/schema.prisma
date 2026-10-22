@@ -15,25 +15,29 @@ datasource db {
 // evento e tarefa são timestamptz.
 
 model User {
-  id                   String   @id @default(uuid())
+  id                   String    @id @default(uuid())
   name                 String
-  email                String   @unique
-  passwordHash         String?  @map("password_hash")
-  googleSub            String?  @unique @map("google_sub")
-  timezone             String   @default("America/Sao_Paulo")
-  currency             String   @default("BRL")
-  weekStartsOn         Int      @default(0) @map("week_starts_on")
-  defaultReminderMin   Int?     @default(10) @map("default_reminder_min")
-  dailySummaryHour     Int?     @default(8) @map("daily_summary_hour")
-  lastDailySummaryDate String?  @map("last_daily_summary_date")
+  email                String    @unique
+  passwordHash         String?   @map("password_hash")
+  googleSub            String?   @unique @map("google_sub")
+  timezone             String    @default("America/Sao_Paulo")
+  currency             String    @default("BRL")
+  weekStartsOn         Int       @default(0) @map("week_starts_on")
+  defaultReminderMin   Int?      @default(10) @map("default_reminder_min")
+  dailySummaryHour     Int?      @default(8) @map("daily_summary_hour")
+  lastDailySummaryDate String?   @map("last_daily_summary_date")
   /// Calendário do Google onde nascem os eventos novos (vale entre as contas conectadas).
-  defaultCalendarId    String?  @unique @map("default_calendar_id")
+  defaultCalendarId    String?   @unique @map("default_calendar_id")
   /// Convidado do beta do Assistente (o dono liga no painel; ASSISTANT_EMAILS também vale).
-  assistantAccess      Boolean  @default(false) @map("assistant_access")
+  assistantAccess      Boolean   @default(false) @map("assistant_access")
   /// Pedidos por mês deste usuário; null usa ASSISTANT_MONTHLY_LIMIT.
-  assistantLimit       Int?     @map("assistant_limit")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  assistantLimit       Int?      @map("assistant_limit")
+  /// Quando a pessoa leu o aviso de privacidade de Bancos (null = mostrar na primeira entrada).
+  bankNoticeAt         DateTime? @map("bank_notice_at")
+  /// Convidado do beta de Bancos (o dono liga no painel; o dono sempre tem).
+  bankAccess           Boolean   @default(false) @map("bank_access")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   googleConnections GoogleConnection[]
   googleCalendars   GoogleCalendar[]
@@ -61,6 +65,7 @@ model User {
   pluggyItems       PluggyItem[]
   bankAccounts      BankAccount[]
   bankMovements     BankMovement[]
+  bankFeedback      BankFeedback[]
 
   @@map("users")
 }
@@ -577,9 +582,14 @@ model BankMovement {
   description         String
   installmentNumber   Int?               @map("installment_number")
   installmentTotal    Int?               @map("installment_total")
+  /// A fatura do cartão em que o banco pôs o movimento (vencimento e fechamento do banco).
+  billDueDate         DateTime?          @map("bill_due_date") @db.Date
+  billClosingDate     DateTime?          @map("bill_closing_date") @db.Date
   status              BankMovementStatus
   suggestedCategoryId String?            @map("suggested_category_id")
   transactionId       String?            @map("transaction_id")
+  /// Aceito na revisão com tipo, categoria ou descrição trocados (mede a categoria sugerida).
+  edited              Boolean            @default(false)
   createdAt           DateTime           @default(now()) @map("created_at")
   updatedAt           DateTime           @updatedAt @map("updated_at")
 
@@ -591,6 +601,22 @@ model BankMovement {
   @@unique([bankAccountId, externalId])
   @@index([userId, status])
   @@map("bank_movements")
+}
+
+/// "Algo veio errado" no beta de Bancos: o texto e uma foto do estado (nunca as chaves).
+model BankFeedback {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  note       String
+  /// Bancos, contas e, se veio da revisão, o lançamento, como estavam no relato.
+  snapshot   Json
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("bank_feedback")
 }
 
 // ---------------------------------------------------------------- briefing

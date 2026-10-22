@@ -36,7 +36,8 @@ const STEPS: Record<Platform, Step[]> = {
       icon: <Share />,
       color: 'var(--blue)',
       title: 'Toque em Compartilhar',
-      subtitle: 'O ícone de quadrado com seta: na barra de baixo (Safari) ou ao lado do endereço (Chrome)',
+      subtitle:
+        'O ícone de quadrado com seta: na barra de baixo (Safari) ou ao lado do endereço (Chrome)',
     },
     {
       icon: <SquarePlus />,

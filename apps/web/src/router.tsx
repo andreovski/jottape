@@ -17,7 +17,9 @@ import { ReviewPage } from '@/routes/finance/review-page';
 import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
 import { AssistantAdminPage } from '@/routes/settings/assistant-admin-page';
 import { AssistantMemoryPage } from '@/routes/settings/assistant-memory-page';
+import { BankAdminPage } from '@/routes/settings/bank-admin-page';
 import { BankPage } from '@/routes/settings/bank-page';
+import { BetaPage } from '@/routes/settings/beta-page';
 import { BriefingSettingsPage } from '@/routes/settings/briefing-page';
 import { CategoriesPage } from '@/routes/settings/categories-page';
 import { GooglePage } from '@/routes/settings/google-page';
@@ -128,6 +130,8 @@ const appRoutes = appRoute.addChildren([
   route('/ajustes/google', GooglePage),
   route('/ajustes/bancos', BankPage),
   route('/ajustes/briefing', BriefingSettingsPage),
+  route('/ajustes/beta', BetaPage),
+  route('/ajustes/beta/bancos', BankAdminPage),
   route('/ajustes/assistente', AssistantAdminPage),
   route('/ajustes/jotta', AssistantMemoryPage),
   route('/ajustes/instalar', InstallPage),

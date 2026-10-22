@@ -1,6 +1,13 @@
-import { addDays, addMonthsClamped, dateStringInZone, diffInDays } from '@jottape/finance-engine';
+import {
+  addDays,
+  addMonthsClamped,
+  dateStringInZone,
+  diffInDays,
+  invoiceCycleForMonth,
+  referenceMonthForDue,
+} from '@jottape/finance-engine';
 
-import type { PluggyTransaction } from './client';
+import type { PluggyBill, PluggyTransaction } from './client';
 
 // Regras puras da importação: como um lançamento da Pluggy vira movimento, com qual lançamento do
 // Jottape ele casa e que categoria sugerir. Sem banco de dados, com teste (movements.spec.ts).
@@ -17,6 +24,10 @@ export interface ParsedMovement {
   installmentTotal: number | null;
   /** Pagamento da fatura visto pelo cartão: não é receita, a fatura já é paga pela conta. */
   isCardPayment: boolean;
+  /** A fatura do cartão em que o banco pôs o lançamento (só depois que ela fecha). */
+  billId: string | null;
+  /** Parcela 2 em diante datada pela fatura (não pela compra): a data cai no mês do vencimento. */
+  datedByBill: boolean;
 }
 
 /** Dias de folga entre a data do banco e a do lançamento feito à mão. */
@@ -49,11 +60,16 @@ export function parseMovement(
 
   let date = dateStringInZone(new Date(tx.date), timeZone);
   // Alguns bancos datam todas as parcelas pela compra: a parcela N cai N-1 meses depois, senão
-  // todas iriam para a mesma fatura.
-  if (installmentNumber && installmentNumber > 1 && meta?.purchaseDate) {
-    const purchase = dateStringInZone(new Date(meta.purchaseDate), timeZone);
-    if (Math.abs(diffInDays(purchase, date)) <= 20) {
+  // todas iriam para a mesma fatura. Os outros datam pela fatura, no mês do vencimento.
+  let datedByBill = false;
+  if (installmentNumber && installmentNumber > 1) {
+    const purchase = meta?.purchaseDate
+      ? dateStringInZone(new Date(meta.purchaseDate), timeZone)
+      : null;
+    if (purchase && Math.abs(diffInDays(purchase, date)) <= 20) {
       date = addMonthsClamped(purchase, installmentNumber - 1);
+    } else {
+      datedByBill = accountType === 'CREDIT';
     }
   }
 
@@ -70,6 +86,8 @@ export function parseMovement(
     installmentTotal,
     isCardPayment:
       accountType === 'CREDIT' && kind === 'INCOME' && CARD_PAYMENT.test(plain(description)),
+    billId: accountType === 'CREDIT' ? (meta?.billId ?? null) : null,
+    datedByBill,
   };
 }
 
@@ -186,4 +204,79 @@ export function importedDescription(movement: {
   if (!movement.installmentTotal || !movement.installmentNumber) return movement.description;
   const suffix = ` (${movement.installmentNumber}/${movement.installmentTotal})`;
   return movement.description.slice(0, 120 - suffix.length) + suffix;
+}
+
+// ---------------------------------------------------------------- faturas do cartão
+
+export interface BillDates {
+  dueDate: string;
+  closingDate: string | null;
+}
+
+/** As datas de uma fatura da Pluggy no fuso do usuário. */
+export function billDates(bill: PluggyBill, timeZone: string): BillDates {
+  return {
+    dueDate: dateStringInZone(new Date(bill.dueDate), timeZone),
+    closingDate: bill.billClosingDate
+      ? dateStringInZone(new Date(bill.billClosingDate), timeZone)
+      : null,
+  };
+}
+
+/**
+ * Em que fatura o banco pôs o movimento do cartão: a do `billId`, quando ela já fechou; na parcela
+ * datada pela fatura, a que vence no mês da data. Sem nenhum dos dois, vale a data (null).
+ */
+export function movementBill(
+  movement: Pick<ParsedMovement, 'billId' | 'datedByBill' | 'date'>,
+  bills: Map<string, BillDates>,
+  card: { closingDay: number | null; dueDay: number | null }
+): BillDates | null {
+  const bill = movement.billId ? bills.get(movement.billId) : undefined;
+  if (bill) return bill;
+  if (!movement.datedByBill || !card.closingDay || !card.dueDay) return null;
+  const month = referenceMonthForDue(movement.date, card.closingDay, card.dueDay);
+  return {
+    dueDate: invoiceCycleForMonth(month, card.closingDay, card.dueDay).dueDate,
+    closingDate: null,
+  };
+}
+
+/** A fatura foi paga inteira, segundo o banco? Devolve quanto e quando (o último pagamento). */
+export function billPayment(
+  bill: PluggyBill,
+  timeZone: string
+): { amountCents: number; date: string } | null {
+  const totalCents = Math.round(bill.totalAmount * 100);
+  const payments = (bill.payments ?? []).filter((p) => p.paymentDate && p.amount > 0);
+  const paidCents = payments.reduce((sum, p) => sum + Math.round(p.amount * 100), 0);
+  if (totalCents <= 0 || paidCents < totalCents) return null;
+  const last = payments
+    .map((p) => p.paymentDate!)
+    .sort()
+    .at(-1)!;
+  return { amountCents: paidCents, date: dateStringInZone(new Date(last), timeZone) };
+}
+
+const INVOICE_PAYMENT =
+  /\b(fatura|fat)\b|\bcart(ao|oes)\b.*\b(pag|pagamento|pagto|pgto)\b|\b(pag|pagamento|pagto|pgto)\b.*\bcart(ao|oes)\b/;
+
+/** Débito na conta com cara de pagamento de fatura ("Pagamento de fatura", "PGTO FAT CARTAO"). */
+export function looksLikeInvoicePayment(description: string): boolean {
+  return INVOICE_PAYMENT.test(plain(description));
+}
+
+/** A fatura que um pagamento do dia `date` paga: a de vencimento mais perto, de 10 dias antes a 20 depois. */
+export function invoiceForPayment<T extends { dueDate: string }>(
+  date: string,
+  invoices: T[]
+): T | null {
+  let best: { invoice: T; distance: number } | null = null;
+  for (const invoice of invoices) {
+    const days = diffInDays(date, invoice.dueDate);
+    if (days < -10 || days > 20) continue;
+    const distance = Math.abs(days);
+    if (!best || distance < best.distance) best = { invoice, distance };
+  }
+  return best?.invoice ?? null;
 }

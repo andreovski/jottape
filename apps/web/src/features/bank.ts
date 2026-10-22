@@ -1,5 +1,7 @@
 import type {
   AcceptBankMovementBody,
+  BankAdminResponse,
+  BankFeedbackBody,
   BankConnectTokenResponse,
   BankMovementResponse,
   BankStatusResponse,
@@ -13,10 +15,12 @@ import { api } from '@/lib/api';
 // Bancos pelo Meu Pluggy. Ler o banco pode levar um tempo (a Pluggy pagina os lançamentos).
 const SLOW = { timeout: 120_000 };
 
+/** Estado dos bancos. Fora do beta a API responde 403: sem retentar, e a tela some. */
 export function useBankStatus() {
   return useQuery({
     queryKey: ['bank'],
     queryFn: () => api.get('bank').json<BankStatusResponse>(),
+    retry: false,
   });
 }
 
@@ -42,6 +46,9 @@ function useBankMutation<T, R>(run: (input: T) => Promise<R>) {
   const invalidate = useInvalidateBank();
   return useMutation({ mutationFn: run, onSuccess: () => invalidate() });
 }
+
+export const useAcceptBankNotice = () =>
+  useBankMutation(() => api.post('bank/notice').json<BankStatusResponse>());
 
 export const useSaveBankCredentials = () =>
   useBankMutation((body: SaveBankCredentialsBody) =>
@@ -76,6 +83,41 @@ export const useAcceptAllMovements = () =>
 
 export const useIgnoreMovement = () =>
   useBankMutation((id: string) => api.post(`bank/movements/${id}/ignore`));
+
+export const useSendBankFeedback = () =>
+  useMutation({
+    mutationFn: (body: BankFeedbackBody) => api.post('bank/feedback', { json: body }),
+  });
+
+// ---------------------------------------------------------------- painel do beta (só o dono)
+
+const ADMIN_KEY = ['bank-admin'];
+
+export function useBankAdmin() {
+  return useQuery({
+    queryKey: ADMIN_KEY,
+    queryFn: () => api.get('bank/admin').json<BankAdminResponse>(),
+    retry: false,
+  });
+}
+
+function useBankAdminMutation<T>(call: (input: T) => Promise<BankAdminResponse>) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: call,
+    onSuccess: (data) => client.setQueryData(ADMIN_KEY, data),
+  });
+}
+
+export const useUpdateBankUser = () =>
+  useBankAdminMutation(({ id, bankAccess }: { id: string; bankAccess: boolean }) =>
+    api.patch(`bank/admin/users/${id}`, { json: { bankAccess } }).json<BankAdminResponse>()
+  );
+
+export const useResolveBankFeedback = () =>
+  useBankAdminMutation((id: string) =>
+    api.post(`bank/admin/feedback/${id}/resolve`).json<BankAdminResponse>()
+  );
 
 /**
  * Abre o widget da Pluggy (Pluggy Connect) já no conector do Meu Pluggy. O pacote só carrega

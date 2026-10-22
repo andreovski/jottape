@@ -138,10 +138,20 @@ function ReviewBanner() {
   return (
     <Link
       to='/financas/revisar'
-      className='bg-green/15 text-green text-subhead mb-3 flex items-center gap-2 rounded-[12px] px-3 py-2 font-semibold active:opacity-60'
+      className='bg-surface mb-3 flex items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 active:opacity-60'
     >
-      <Inbox className='size-[18px]' />
-      {pending === 1 ? '1 lançamento do banco' : `${pending} lançamentos do banco`} para revisar
+      <span className='bg-green/15 text-green flex size-10 shrink-0 items-center justify-center rounded-[11px]'>
+        <Inbox className='size-5' />
+      </span>
+      <span className='min-w-0 flex-1'>
+        <span className='text-subhead block font-semibold'>
+          {pending === 1 ? '1 lançamento do banco' : `${pending} lançamentos do banco`} para revisar
+        </span>
+        <span className='text-footnote text-label-2 block'>Confira e importe para o saldo.</span>
+      </span>
+      <span className='bg-green text-subhead shrink-0 rounded-full px-3 py-1 font-semibold text-white'>
+        Revisar
+      </span>
     </Link>
   );
 }
