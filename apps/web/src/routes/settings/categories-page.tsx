@@ -1,7 +1,7 @@
 import type { CategoryKind, CategoryResponse } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { CATEGORY_ICONS, CategoryIcon } from '@/components/finance/category-icon';
 import { CategoryPicker } from '@/components/finance/category-picker';
@@ -33,6 +33,104 @@ export function groupCategories(categories: CategoryResponse[], kind: CategoryKi
       parent,
       children: ofKind.filter((c) => c.parentId === parent.id).sort(byName),
     }));
+}
+
+/** Ícones por página no seletor: 3 linhas de 6. */
+const ICONS_PER_PAGE = 18;
+
+export function iconPages<T>(icons: T[], perPage = ICONS_PER_PAGE): T[][] {
+  const pages: T[][] = [];
+  for (let i = 0; i < icons.length; i += perPage) pages.push(icons.slice(i, i + perPage));
+  return pages;
+}
+
+/** Grade de ícones em páginas que deslizam para o lado, com bolinhas de página embaixo. */
+function IconPicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (icon: string) => void;
+}) {
+  const pages = iconPages(CATEGORY_ICONS);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(() =>
+    Math.max(
+      0,
+      pages.findIndex((icons) => icons.some((i) => i.name === value))
+    )
+  );
+
+  // Ao abrir, começa na página do ícone escolhido.
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollLeft = page * el.clientWidth;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const goTo = (index: number) => {
+    const el = scroller.current;
+    el?.scrollTo({ left: index * el.clientWidth, behavior: 'smooth' });
+  };
+
+  return (
+    <div>
+      <div
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setPage(Math.round(el.scrollLeft / el.clientWidth));
+        }}
+        className='no-scrollbar flex snap-x snap-mandatory overflow-x-auto overscroll-x-contain'
+      >
+        {pages.map((icons, index) => (
+          <div
+            key={index}
+            role='group'
+            aria-label={`Página ${index + 1} de ${pages.length}`}
+            className='grid w-full shrink-0 snap-start grid-cols-6 content-start gap-3 p-4 pb-3'
+          >
+            {icons.map(({ name: iconName, label, icon: Icon }) => {
+              const selected = value === iconName;
+              return (
+                <button
+                  key={iconName}
+                  type='button'
+                  aria-label={label}
+                  title={label}
+                  aria-pressed={selected}
+                  onClick={() => onChange(iconName)}
+                  className={cn(
+                    'bg-fill text-label-2 mx-auto flex size-10 items-center justify-center rounded-full transition-transform active:scale-90',
+                    selected && 'ring-label-3 text-foreground ring-[3px]'
+                  )}
+                >
+                  <Icon className='size-5' strokeWidth={2.25} />
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      {pages.length > 1 && (
+        <div className='flex justify-center gap-2 pb-3'>
+          {pages.map((_, index) => (
+            <button
+              key={index}
+              type='button'
+              aria-label={`Ir para a página ${index + 1}`}
+              aria-current={page === index}
+              onClick={() => goTo(index)}
+              className={cn(
+                'size-[7px] rounded-full transition-colors',
+                page === index ? 'bg-label-2' : 'bg-label-3'
+              )}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CategorySheet({
@@ -142,27 +240,7 @@ function CategorySheet({
         </Section>
 
         <Section header='Ícone'>
-          <div className='grid grid-cols-6 gap-3 p-4'>
-            {CATEGORY_ICONS.map(({ name: iconName, label, icon: Icon }) => {
-              const selected = icon === iconName;
-              return (
-                <button
-                  key={iconName}
-                  type='button'
-                  aria-label={label}
-                  title={label}
-                  aria-pressed={selected}
-                  onClick={() => setIcon(iconName)}
-                  className={cn(
-                    'bg-fill text-label-2 mx-auto flex size-10 items-center justify-center rounded-full transition-transform active:scale-90',
-                    selected && 'ring-label-3 text-foreground ring-[3px]'
-                  )}
-                >
-                  <Icon className='size-5' strokeWidth={2.25} />
-                </button>
-              );
-            })}
-          </div>
+          <IconPicker value={icon} onChange={setIcon} />
         </Section>
 
         {existing && (
