@@ -175,7 +175,7 @@ export const useResolveFeedback = () =>
       .json<AssistantAdminResponse>()
   );
 
-/** Os 50 pedidos levam perto de um minuto. */
+/** Os 60 pedidos levam perto de um minuto. */
 export function useRunBenchmark() {
   const client = useQueryClient();
   return useMutation({
