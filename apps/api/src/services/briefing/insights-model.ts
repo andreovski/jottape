@@ -70,6 +70,7 @@ Regras:
 - Nunca invente números: todo valor vem dos dados, ou de uma conta simples com eles (diferença, soma, porcentagem).
 - O briefing já mostra o total gasto no mês comparado ao mês passado: não repita só isso. Vá além dele.
 - Escreva todo valor em dinheiro como [[centavos]], com o número inteiro (R$ 32,50 vira [[3250]]). Nunca escreva "R$" nem o valor por extenso. Porcentagens podem ir como "38%".
+- Só use porcentagem quando a base for relevante. Se a base for pequena (poucos reais) ou a variação passar de 100%, compare os dois valores ou diga "o dobro", "3 vezes" — nunca escreva algo como "5000%".
 - texto: uma frase em português do Brasil, direta, com até 150 caracteres, sem markdown e sem emoji. Não diga "hoje", "ontem" nem quantos dias faltam: o texto pode ser lido nos dias seguintes.
 - Datas como "12 de outubro", nunca AAAA-MM-DD. Use os nomes das categorias e das descrições como vieram.
 - tom: "bom" (notícia boa), "neutro", "atencao" (vale ficar de olho) ou "ruim" (problema claro, como faltar dinheiro).

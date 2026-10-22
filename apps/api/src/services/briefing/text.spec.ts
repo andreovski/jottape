@@ -205,6 +205,15 @@ describe('finanças', () => {
         12
       )?.text
     ).toBe('Lazer (102%) e Mercado (85%) estão no limite do orçamento.');
+    expect(
+      budgetLine(
+        [
+          { name: 'Mercado', ratio: 0.85, spentCents: 85, limitCents: 100 },
+          { name: 'Lazer', ratio: 5000, spentCents: 5000, limitCents: 1 },
+        ],
+        12
+      )?.text
+    ).toBe('Lazer (estourou) e Mercado (85%) estão no limite do orçamento.');
   });
 
   it('mês e ontem', () => {
@@ -212,6 +221,27 @@ describe('finanças', () => {
       'Você gastou {0} este mês, 10% a menos que no mesmo ponto de setembro.'
     );
     expect(monthLine(0, 0, 'setembro')).toBeNull();
+    // Base de R$ 0,01: antes saía "5906900% a mais".
+    expect(monthLine(59070, 1, 'setembro')).toMatchObject({
+      text: 'Você gastou {0} este mês, contra {1} até o mesmo ponto de setembro.',
+      values: [59070, 1],
+      tone: 'warning',
+    });
+    expect(monthLine(200000, 10000, 'setembro')?.text).toBe(
+      'Você gastou {0} este mês, contra {1} até o mesmo ponto de setembro.'
+    );
+    expect(monthLine(20000, 10000, 'setembro')?.text).toBe(
+      'Você gastou {0} este mês, o dobro do que gastou até o mesmo ponto de setembro.'
+    );
+    expect(monthLine(34000, 10000, 'setembro')?.text).toBe(
+      'Você gastou {0} este mês, 3,4 vezes o que gastou até o mesmo ponto de setembro.'
+    );
+    expect(monthLine(19000, 10000, 'setembro')?.text).toBe(
+      'Você gastou {0} este mês, 90% a mais que no mesmo ponto de setembro.'
+    );
+    expect(monthLine(0, 10000, 'setembro')?.text).toBe(
+      'Nada gasto este mês ainda. Até o mesmo ponto de setembro foram {0}.'
+    );
     expect(yesterdayLine(2, 5000)?.text).toBe('Ontem você concluiu 2 tarefas e gastou {0}.');
     expect(yesterdayLine(0, 0)).toBeNull();
   });
@@ -225,6 +255,10 @@ describe('de fora', () => {
         { code: 'BTC', valueBrl: 413295, change: 0.012 },
       ])?.text
     ).toBe('Dólar R$ 5,05 (−0,3%), Bitcoin R$ 413.295 (+1,2%).');
+    // Variação de base zerada vinda da fonte não aparece.
+    expect(currencyLine([{ code: 'USD', valueBrl: 5.0453, change: 52000 }])?.text).toBe(
+      'Dólar R$ 5,05.'
+    );
   });
 
   it('feriados', () => {

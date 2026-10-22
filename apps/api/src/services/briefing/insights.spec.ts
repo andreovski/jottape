@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { insightLines, insightTarget, toStored } from './insights';
+import { hasAbsurdPercent, insightLines, insightTarget, toStored } from './insights';
 
 describe('insights de IA', () => {
   it('analisa o mês corrente, e o fechamento do anterior do dia 1 ao 3', () => {
@@ -32,5 +32,17 @@ describe('insights de IA', () => {
       tone: 'warning',
       href: '/assistente?pergunta=Com%20o%20que%20gastei%20mais%20em%20Mercado%3F',
     });
+  });
+
+  it('descarta insight com porcentagem absurda', () => {
+    expect(hasAbsurdPercent('Mercado subiu 38% em relação a setembro.')).toBe(false);
+    expect(hasAbsurdPercent('Lazer subiu 5906900% em relação a setembro.')).toBe(true);
+    expect(hasAbsurdPercent('Lazer subiu 1.250,5% no mês.')).toBe(true);
+    expect(
+      insightLines([
+        { text: 'Gastos subiram 5000% no mês.', values: [], tone: 'warning', question: '' },
+        { text: 'Mercado caiu 12% no mês.', values: [], tone: 'good', question: '' },
+      ]).map((l) => l.text)
+    ).toEqual(['Mercado caiu 12% no mês.']);
   });
 });
