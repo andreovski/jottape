@@ -1,5 +1,5 @@
 import { ACCOUNT_TYPE_LABELS, type AccountResponse, type AccountType } from '@jottape/schemas';
-import { CreditCard, Landmark, type LucideIcon, PiggyBank, Plus, Wallet } from 'lucide-react';
+import { CreditCard, Landmark, type LucideIcon, PiggyBank, Wallet } from 'lucide-react';
 
 import { money } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -21,17 +21,23 @@ export function AccountCard({
   account,
   onClick,
   size = 'md',
+  peek,
   className,
+  style: extraStyle,
 }: {
   account: AccountResponse;
   onClick?: () => void;
   size?: 'md' | 'lg';
+  /** Na pilha da folha de contas só o topo aparece: o valor sobe para o lado do nome. */
+  peek?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   const color = accountColor(account);
   const Icon = ACCOUNT_TYPE_ICONS[account.type];
   const isCard = account.type === 'CREDIT_CARD';
   const value = isCard ? (account.openInvoiceCents ?? 0) : account.balanceCents;
+  const formatted = !isCard && value < 0 ? `−${money(-value)}` : money(value);
 
   const content = (
     <>
@@ -64,7 +70,16 @@ export function AccountCard({
               {account.archived && ' · Arquivada'}
             </span>
           </span>
-          <Icon className='size-6 shrink-0 text-white/85' strokeWidth={1.75} />
+          {peek ? (
+            <span className='font-rounded numeric text-headline shrink-0 font-semibold'>
+              {isCard && (
+                <span className='text-caption mr-1 font-medium text-white/75'>Fatura</span>
+              )}
+              {formatted}
+            </span>
+          ) : (
+            <Icon className='size-6 shrink-0 text-white/85' strokeWidth={1.75} />
+          )}
         </span>
         <span className='flex items-end justify-between gap-3'>
           <span className='min-w-0'>
@@ -77,7 +92,7 @@ export function AccountCard({
                 size === 'lg' ? 'text-[34px]' : 'text-[26px]'
               )}
             >
-              {!isCard && value < 0 ? `−${money(-value)}` : money(value)}
+              {formatted}
             </span>
           </span>
           {isCard && account.closingDay && (
@@ -93,6 +108,7 @@ export function AccountCard({
   const style = {
     background: cardGradient(color),
     boxShadow: `0 10px 24px -12px color-mix(in srgb, ${color} 70%, transparent)`,
+    ...extraStyle,
   };
 
   if (onClick) {
@@ -115,53 +131,5 @@ export function AccountCard({
     <div className={cn(cardShape, className)} style={style}>
       {content}
     </div>
-  );
-}
-
-/** Versão pequena do cartão, para a faixa de contas fixa no topo das Finanças. */
-export function AccountChip({
-  account,
-  onClick,
-}: {
-  account: AccountResponse;
-  onClick: () => void;
-}) {
-  const color = accountColor(account);
-  const Icon = ACCOUNT_TYPE_ICONS[account.type];
-  const isCard = account.type === 'CREDIT_CARD';
-  const value = isCard ? (account.openInvoiceCents ?? 0) : account.balanceCents;
-  return (
-    <button
-      type='button'
-      onClick={onClick}
-      className='relative flex h-[58px] w-[148px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-[12px] px-3 py-2 text-left text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.3)] transition-transform duration-150 select-none active:scale-[0.96]'
-      style={{
-        background: cardGradient(color),
-        boxShadow: `0 6px 14px -10px color-mix(in srgb, ${color} 80%, transparent)`,
-      }}
-    >
-      <span className='flex items-center gap-1.5'>
-        <Icon className='size-3.5 shrink-0 text-white/85' strokeWidth={2} />
-        <span className='text-caption truncate font-semibold'>{account.name}</span>
-      </span>
-      <span className='font-rounded numeric text-callout truncate leading-tight font-semibold'>
-        {isCard && <span className='text-caption-2 mr-1 font-medium text-white/75'>Fatura</span>}
-        {!isCard && value < 0 ? `−${money(-value)}` : money(value)}
-      </span>
-    </button>
-  );
-}
-
-/** "Adicionar conta" no tamanho do `AccountChip`. */
-export function AddAccountChip({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type='button'
-      onClick={onClick}
-      aria-label='Adicionar conta'
-      className='border-label-3 text-tint flex h-[58px] w-[58px] shrink-0 snap-start items-center justify-center rounded-[12px] border-2 border-dashed transition-transform active:scale-[0.96]'
-    >
-      <Plus className='size-6' strokeWidth={2.5} />
-    </button>
   );
 }
