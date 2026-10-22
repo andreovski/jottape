@@ -51,6 +51,8 @@ function item(overrides: Partial<ExtractedItem> = {}): ExtractedItem {
     list: null,
     location: null,
     notes: null,
+    repeat: null,
+    subtasks: [],
     confidence: 0.95,
     ...overrides,
   };
@@ -484,6 +486,54 @@ describe('assistente', () => {
     ).json() as AssistantCardResponse;
     expect(undone.task).toBeNull();
     expect(await prisma.task.count({ where: { deletedAt: null } })).toBe(0);
+  });
+
+  it('cria tarefa que repete com as subtarefas, e a folha troca as subtarefas', async () => {
+    vi.mocked(extractItems).mockResolvedValue({
+      items: [
+        item({
+          intent: 'task',
+          excerpt: 'tarefa diária Condessa',
+          amountCents: null,
+          description: 'Condessa',
+          repeat: 'FREQ=DAILY',
+          subtasks: ['Manhã: alimentação', 'Noite: alimentação', 'Lavar a varanda'],
+        }),
+      ],
+      inputTokens: 900,
+      outputTokens: 80,
+    });
+    vi.mocked(askJev).mockResolvedValue({ answers: { kind: sure('task') }, inputTokens: 200 });
+
+    const reply = await send('tarefa diária Condessa');
+    const [card] = reply.messages[1].cards;
+    expect(card.task).toMatchObject({ title: 'Condessa', rrule: 'FREQ=DAILY' });
+    expect(card.task?.subtasks.map((s) => s.title)).toEqual([
+      'Manhã: alimentação',
+      'Noite: alimentação',
+      'Lavar a varanda',
+    ]);
+
+    // Desfazer leva as subtarefas junto.
+    await api.post(`/assistant/cards/${card.id}/undo`);
+    expect(await prisma.task.count({ where: { deletedAt: null } })).toBe(0);
+
+    // Salvando pela folha, valem as subtarefas dela.
+    const saved = (
+      await api.post(`/assistant/cards/${card.id}/save`, {
+        task: {
+          title: 'Condessa',
+          dueAt: '2026-10-20T03:00:00.000Z',
+          hasTime: false,
+          rrule: 'FREQ=WEEKLY;BYDAY=TU,TH',
+        },
+        subtasks: ['Alimentação'],
+      })
+    ).json() as AssistantCardResponse;
+    expect(saved.task).toMatchObject({ rrule: 'FREQ=WEEKLY;BYDAY=TU,TH' });
+    expect(saved.task?.subtasks.map((s) => s.title)).toEqual(['Alimentação']);
+    const stored = await prisma.assistantCard.findUniqueOrThrow({ where: { id: card.id } });
+    expect(stored.corrections).toEqual(expect.arrayContaining(['repeat', 'subtasks']));
   });
 
   it('responde pergunta consultando os lançamentos, com os valores à parte', async () => {
@@ -1028,6 +1078,7 @@ describe('assistente', () => {
         time: '14:00',
         endTime: '15:00',
         notes: false,
+        repeat: null,
       });
 
       // O dono corrige o que estava errado (a nota) e salva.

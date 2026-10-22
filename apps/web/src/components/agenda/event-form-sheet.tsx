@@ -1,4 +1,4 @@
-import { addDays, describeRRule } from '@jottape/finance-engine';
+import { describeRRule } from '@jottape/finance-engine';
 import type { CreateEventBody, EventOccurrence, UpdateEventBody } from '@jottape/schemas';
 import { Check } from 'lucide-react';
 import { useState } from 'react';
@@ -16,13 +16,12 @@ import {
 } from '@/components/ios/fields';
 import { Section } from '@/components/ios/list';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
+import { WeekdayPicker } from '@/components/weekday-picker';
 import { useCreateEvent, useEvent, useUpdateEvent } from '@/features/agenda';
 import { useMe } from '@/features/auth';
-import { appTimeZone, weekdayNarrow } from '@/lib/format';
+import { appTimeZone } from '@/lib/format';
 import { useFormErrors } from '@/lib/use-form-errors';
-import { cn } from '@/lib/utils';
 
-import { weekdayOrder } from './calendar';
 import { LOCAL_COLOR, useCalendars } from './calendars';
 import {
   ALERT_OPTIONS,
@@ -41,9 +40,6 @@ import {
 export type EventFormMode =
   | { kind: 'create'; initial: EventForm }
   | { kind: 'edit'; event: EventOccurrence };
-
-/** Um domingo qualquer: dá a letra de cada dia da semana. */
-const SUNDAY = '2026-10-18';
 
 /**
  * "Cancelar · Novo Evento · Adicionar". Montada de novo a cada abertura (o pai troca a `key`),
@@ -292,33 +288,11 @@ export function EventFormSheet({
               />
             </FieldRow>
             {(form.repeat === 'weekly' || form.repeat === 'biweekly') && (
-              <div className='flex justify-between gap-1 px-4 py-2.5 shadow-[inset_0_-0.5px_0_var(--separator)]'>
-                {weekdayOrder(weekStartsOn).map((weekday) => {
-                  const active = form.weekdays.includes(weekday);
-                  return (
-                    <button
-                      key={weekday}
-                      type='button'
-                      aria-pressed={active}
-                      aria-label={`Dia da semana ${weekday}`}
-                      onClick={() =>
-                        setForm((current) => {
-                          const next = active
-                            ? current.weekdays.filter((d) => d !== weekday)
-                            : [...current.weekdays, weekday];
-                          return { ...current, weekdays: next.length ? next : current.weekdays };
-                        })
-                      }
-                      className={cn(
-                        'text-footnote flex size-9 items-center justify-center rounded-full font-semibold transition-colors duration-150 active:scale-95',
-                        active ? 'bg-tint text-white' : 'bg-fill text-foreground'
-                      )}
-                    >
-                      {weekdayNarrow(addDays(SUNDAY, weekday))}
-                    </button>
-                  );
-                })}
-              </div>
+              <WeekdayPicker
+                value={form.weekdays}
+                onChange={(weekdays) => set('weekdays', weekdays)}
+                weekStartsOn={weekStartsOn}
+              />
             )}
             {form.repeat !== 'never' && form.repeat !== 'custom' && (
               <>

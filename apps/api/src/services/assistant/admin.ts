@@ -283,6 +283,7 @@ async function suggestCase(
       ...(first.allDay ? {} : { time: first.startTime }),
       ...(first.endTime ? { endTime: first.endTime } : {}),
       notes: Boolean(first.notes),
+      repeat: first.rrule ?? null,
     });
   } else if (first?.type === 'task') {
     const inbox = options.lists.find((l) => l.isInbox)?.name ?? 'Entrada';
@@ -291,6 +292,8 @@ async function suggestCase(
       ...(first.time ? { time: first.time } : {}),
       list: name(options.lists, first.listId) ?? inbox,
       notes: Boolean(first.notes),
+      repeat: first.rrule ?? null,
+      subtasks: first.subtasks?.length ?? 0,
     });
   }
   return {

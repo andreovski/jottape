@@ -14,6 +14,7 @@ import {
   historyHints,
   mergeHints,
   resolveItem,
+  repeatOf,
 } from './resolve';
 import { CHANGE_FAILED, extractMoney, replyText, restoreMoney } from './text';
 
@@ -48,6 +49,8 @@ function item(
     list: null,
     location: null,
     notes: null,
+    repeat: null,
+    subtasks: [],
     confidence: 0.95,
     ...overrides,
   } as ExtractedItem & { intent: FinanceIntent };
@@ -378,8 +381,18 @@ describe('resolveEvent', () => {
       allDay: false,
       location: null,
       notes: null,
+      rrule: null,
     });
     expect(result.autoSave).toBe(true);
+  });
+
+  it('leva a repetição', () => {
+    const result = resolveEvent({
+      item: event({ time: '19:00', repeat: 'FREQ=WEEKLY;BYDAY=MO' }),
+      jev: null,
+      today: TODAY,
+    });
+    expect(result.draft).toMatchObject({ rrule: 'FREQ=WEEKLY;BYDAY=MO' });
   });
 
   it('sem horário falta o horário; dia todo não precisa; fim não passa da meia-noite', () => {
@@ -423,6 +436,8 @@ describe('resolveTask', () => {
       time: null,
       listId: 'l-mercado',
       notes: null,
+      rrule: null,
+      subtasks: [],
     });
     expect(result.autoSave).toBe(true);
   });
@@ -435,6 +450,35 @@ describe('resolveTask', () => {
       today: TODAY,
     });
     expect(result.draft).toMatchObject({ notes: 'Pela plataforma' });
+  });
+
+  it('repete todo dia a partir de hoje e leva os itens como subtarefas', () => {
+    const result = resolveTask({
+      item: task({
+        description: 'Condessa',
+        repeat: 'FREQ=DAILY',
+        subtasks: [' Manhã: alimentação ', 'Noite: alimentação', '', 'Lavar a varanda'],
+      }),
+      lists,
+      jev: null,
+      today: TODAY,
+    });
+    expect(result.draft).toMatchObject({
+      date: TODAY,
+      rrule: 'FREQ=DAILY',
+      subtasks: ['Manhã: alimentação', 'Noite: alimentação', 'Lavar a varanda'],
+    });
+  });
+
+  it('repetição: só o que as telas editam, e regra ilegível fica de fora', () => {
+    expect(repeatOf({ repeat: 'FREQ=WEEKLY;BYDAY=TH,TU' })).toBe('FREQ=WEEKLY;BYDAY=TU,TH');
+    expect(repeatOf({ repeat: 'RRULE:FREQ=DAILY;INTERVAL=2;COUNT=5' })).toBe(
+      'FREQ=DAILY;INTERVAL=2'
+    );
+    expect(repeatOf({ repeat: 'FREQ=DAILY;BYDAY=MO' })).toBe('FREQ=DAILY');
+    expect(repeatOf({ repeat: 'toda segunda' })).toBeNull();
+    expect(repeatOf({ repeat: 'FREQ=WEEKLY;BYDAY=XX' })).toBeNull();
+    expect(repeatOf({ repeat: null })).toBeNull();
   });
 
   it('lista que não existe cai na Entrada e fica marcada', () => {

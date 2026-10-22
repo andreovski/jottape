@@ -135,7 +135,7 @@ export function newEventForm({
   };
 }
 
-function repeatFromRRule(rrule: string | null, startDate: string) {
+export function repeatFromRRule(rrule: string | null, startDate: string) {
   const base = {
     repeat: 'never' as RepeatKind,
     weekdays: [weekdayOf(startDate)],

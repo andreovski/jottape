@@ -390,6 +390,7 @@ async function runCase(text: string, expect: Expect, options: Options) {
         endTime: draft.endTime,
         allDay: draft.allDay,
         notes: Boolean(draft.notes),
+        repeat: draft.rrule,
       });
     } else if (draft.type === 'task') {
       Object.assign(got, {
@@ -397,6 +398,8 @@ async function runCase(text: string, expect: Expect, options: Options) {
         time: draft.time,
         list: draft.listId ? nameOf(lists, draft.listId) : (lists[0]?.name ?? 'Entrada'),
         notes: Boolean(draft.notes),
+        repeat: draft.rrule,
+        subtasks: draft.subtasks.length,
       });
     }
   }

@@ -321,13 +321,16 @@ export function reminderOptions(current: string) {
   return [...REMINDER_OPTIONS, { value: current, label: reminderLabel(Number(current)) }];
 }
 
-/** A regra simples ("FREQ=WEEKLY") vira a opção do seletor; regra complexa é preservada. */
+/**
+ * A regra simples ("FREQ=WEEKLY", ou semanal em dias escolhidos) vira a opção do seletor; regra
+ * complexa é preservada.
+ */
 export function repeatValue(rrule: string | null): string {
   if (!rrule) return '';
   const parsed = parseSimpleRRule(rrule);
   if (
     parsed &&
-    !parsed.byWeekday?.length &&
+    (!parsed.byWeekday?.length || parsed.freq === 'WEEKLY') &&
     !parsed.count &&
     !parsed.until &&
     (!parsed.interval || parsed.interval === 1)
@@ -335,6 +338,12 @@ export function repeatValue(rrule: string | null): string {
     return parsed.freq;
   }
   return rrule;
+}
+
+/** Dias da semana de uma repetição semanal (0 = domingo); vazio fora dela. */
+export function weekdaysOf(rrule: string | null): number[] {
+  const parsed = rrule ? parseSimpleRRule(rrule) : null;
+  return parsed?.freq === 'WEEKLY' ? (parsed.byWeekday ?? []) : [];
 }
 
 export interface TaskForm {
@@ -346,6 +355,8 @@ export interface TaskForm {
   time: string;
   /** '' | frequência simples | regra completa preservada. */
   repeat: string;
+  /** Na repetição semanal, os dias (0 = domingo); vazio é o dia do prazo. */
+  weekdays: number[];
   /** '' ou minutos antes. */
   reminder: string;
   tags: string[];
@@ -363,6 +374,7 @@ export function formFromTask(
     title?: string;
     notes?: string;
     tags?: string[];
+    rrule?: string;
   },
   timeZone?: string
 ): TaskForm {
@@ -374,7 +386,8 @@ export function formFromTask(
       date: defaults.date ?? defaults.today,
       hasTime: Boolean(defaults.date && defaults.time),
       time: defaults.time ?? '09:00',
-      repeat: '',
+      repeat: defaults.date && defaults.rrule ? repeatValue(defaults.rrule) : '',
+      weekdays: defaults.date && defaults.rrule ? weekdaysOf(defaults.rrule) : [],
       reminder: '',
       tags: defaults.tags ?? [],
       priority: null,
@@ -390,6 +403,7 @@ export function formFromTask(
     hasTime: hasDate && task.hasTime,
     time: task.dueAt && task.hasTime ? wallClock(task.dueAt, timeZone) : '09:00',
     repeat: repeatValue(task.rrule),
+    weekdays: weekdaysOf(task.rrule),
     reminder: task.reminders.length ? String(task.reminders[0]) : '',
     tags: task.tags,
     priority: task.priority,
@@ -430,7 +444,12 @@ export function bodyFromForm(form: TaskForm, timeZone: string) {
       ? null
       : form.repeat.startsWith('FREQ=')
         ? form.repeat
-        : buildRRule({ freq: form.repeat as Frequency });
+        : buildRRule({
+            freq: form.repeat as Frequency,
+            ...(form.repeat === 'WEEKLY' && form.weekdays.length
+              ? { byWeekday: form.weekdays }
+              : {}),
+          });
   return {
     title: form.title.trim(),
     notes: form.notes.trim() || null,

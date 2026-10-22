@@ -19,7 +19,9 @@ export type CorrectedField =
   | 'location'
   | 'notes'
   | 'allDay'
-  | 'list';
+  | 'list'
+  | 'repeat'
+  | 'subtasks';
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
@@ -77,6 +79,7 @@ export function correctionsOf(
     changed('location', text(draft.location) ?? '', text(sheet.location) ?? '');
     changed('notes', text(draft.notes) ?? '', text(sheet.description) ?? '');
     changed('allDay', draft.allDay, sheet.allDay ?? false);
+    changed('repeat', draft.rrule ?? '', sheet.rrule ?? '');
     if (sheet.allDay) {
       changed('date', draft.date, sheet.startAt.slice(0, 10));
     } else {
@@ -90,6 +93,10 @@ export function correctionsOf(
     changed('title', text(draft.title), text(sheet.title));
     changed('notes', text(draft.notes) ?? '', text(sheet.notes) ?? '');
     changed('list', draft.listId ?? inboxId, sheet.listId ?? inboxId);
+    changed('repeat', draft.rrule ?? '', sheet.rrule ?? '');
+    if (body.subtasks) {
+      changed('subtasks', (draft.subtasks ?? []).join('\n'), body.subtasks.join('\n'));
+    }
     const due = sheet.dueAt ? wall(sheet.dueAt, timeZone) : null;
     changed('date', draft.date ?? '', due?.date ?? '');
     if (draft.time) changed('time', draft.time, sheet.hasTime && due ? due.time : null);

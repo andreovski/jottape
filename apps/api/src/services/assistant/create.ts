@@ -90,6 +90,7 @@ async function eventBody(
     description: draft.notes,
     allDay: draft.allDay,
     ...times,
+    ...(draft.rrule ? { rrule: draft.rrule } : {}),
     calendarId: user.defaultCalendarId,
   };
 }
@@ -107,6 +108,7 @@ function taskBody(draft: AssistantDraft, timeZone: string): CreateTaskBody | nul
     ...(draft.notes ? { notes: draft.notes } : {}),
     dueAt,
     hasTime: Boolean(dueAt && draft.time),
+    ...(dueAt && draft.rrule ? { rrule: draft.rrule } : {}),
   };
 }
 
@@ -118,7 +120,7 @@ export async function createFromDraft(
   userId: string,
   draft: AssistantDraft,
   timeZone: string,
-  sheet: Pick<SaveAssistantCardBody, 'transaction' | 'event' | 'task'> = {}
+  sheet: Pick<SaveAssistantCardBody, 'transaction' | 'event' | 'task' | 'subtasks'> = {}
 ): Promise<Created | null> {
   if (draft.type === 'transaction') {
     const body = sheet.transaction ?? transactionBody(draft);
@@ -137,8 +139,13 @@ export async function createFromDraft(
     return { ...NOTHING, eventId: (await createEvent(userId, body)).id };
   }
   const body = sheet.task ?? taskBody(draft, timeZone);
-  if (!body) return null;
-  return { ...NOTHING, taskId: (await createTask(userId, body)).id };
+  if (!body || draft.type !== 'task') return null;
+  const task = await createTask(userId, body);
+  // As subtarefas da folha (a pessoa pode ter mudado), ou as que o pedido listou.
+  for (const title of sheet.subtasks ?? draft.subtasks ?? []) {
+    await createTask(userId, { title, parentTaskId: task.id, listId: task.listId });
+  }
+  return { ...NOTHING, taskId: task.id };
 }
 
 const ignoreMissing = (error: unknown) => {

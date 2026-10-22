@@ -27,6 +27,7 @@ import {
   smartView,
   sortLists,
   visibleSubtasks,
+  weekdaysOf,
 } from './task-logic';
 
 const TZ = 'America/Sao_Paulo';
@@ -277,7 +278,36 @@ describe('formulário', () => {
   it('repetição simples vira a opção; complexa é preservada', () => {
     expect(repeatValue(null)).toBe('');
     expect(repeatValue('FREQ=WEEKLY')).toBe('WEEKLY');
-    expect(repeatValue('FREQ=WEEKLY;BYDAY=MO,WE')).toBe('FREQ=WEEKLY;BYDAY=MO,WE');
+    expect(repeatValue('FREQ=WEEKLY;BYDAY=MO,WE')).toBe('WEEKLY');
+    expect(weekdaysOf('FREQ=WEEKLY;BYDAY=MO,WE')).toEqual([1, 3]);
+    expect(weekdaysOf('FREQ=DAILY')).toEqual([]);
+    expect(repeatValue('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO')).toBe('FREQ=WEEKLY;INTERVAL=2;BYDAY=MO');
+    expect(repeatValue('FREQ=DAILY;BYDAY=MO,WE')).toBe('FREQ=DAILY;BYDAY=MO,WE');
+  });
+
+  it('semanal em dias escolhidos vira BYDAY; sem dias, só semanal', () => {
+    const form = formFromTask(null, { listId: 'in', today: '2026-10-18', date: '2026-10-20' });
+    const weekly = { ...form, title: 'Condessa', repeat: 'WEEKLY' };
+    expect(bodyFromForm({ ...weekly, weekdays: [4, 2] }, TZ).rrule).toBe(
+      'FREQ=WEEKLY;BYDAY=TU,TH'
+    );
+    expect(bodyFromForm({ ...weekly, weekdays: [] }, TZ).rrule).toBe('FREQ=WEEKLY');
+    // Os dias só valem na repetição semanal.
+    expect(bodyFromForm({ ...weekly, repeat: 'DAILY', weekdays: [2] }, TZ).rrule).toBe(
+      'FREQ=DAILY'
+    );
+  });
+
+  it('o Assistente abre a folha já repetindo', () => {
+    const form = formFromTask(null, {
+      listId: 'in',
+      today: '2026-10-18',
+      date: '2026-10-20',
+      rrule: 'FREQ=WEEKLY;BYDAY=TU,TH',
+    });
+    expect(form).toMatchObject({ repeat: 'WEEKLY', weekdays: [2, 4] });
+    const noDate = formFromTask(null, { listId: 'in', today: '2026-10-18', rrule: 'FREQ=DAILY' });
+    expect(noDate.repeat).toBe('');
   });
 
   it('lê uma tarefa com hora', () => {
