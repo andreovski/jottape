@@ -7,6 +7,7 @@ import type {
 import { describe, expect, it } from 'vitest';
 
 import {
+  activeFilterCount,
   availableBalance,
   axisTicks,
   budgetBar,
@@ -25,11 +26,14 @@ import {
   installmentPreview,
   invoiceTitle,
   lastDayOfMonth,
+  NO_FILTERS,
+  orderedPeriod,
   repetitionFields,
   resolveMonth,
   scopeAccountIds,
   shiftMonth,
   signedAmount,
+  type StatementFilters,
   styledCategory,
   totalsOf,
   zeroCrossingOffset,
@@ -169,16 +173,27 @@ describe('filtros do extrato', () => {
   ];
   const ids = (result: TransactionResponse[]) => result.map((t) => t.id);
 
-  it('filtra por tipo e por previstos', () => {
-    expect(ids(filterTransactions(list, 'all'))).toEqual(['in', 'out', 'plan']);
-    expect(ids(filterTransactions(list, 'income'))).toEqual(['in']);
-    expect(ids(filterTransactions(list, 'expense'))).toEqual(['out', 'plan']);
-    expect(ids(filterTransactions(list, 'planned'))).toEqual(['plan']);
+  const only = (filters: Partial<StatementFilters>) => ({ ...NO_FILTERS, ...filters });
+
+  it('filtra por tipo e por previstos, que combinam', () => {
+    expect(ids(filterTransactions(list, NO_FILTERS))).toEqual(['in', 'out', 'plan']);
+    expect(ids(filterTransactions(list, only({ kind: 'income' })))).toEqual(['in']);
+    expect(ids(filterTransactions(list, only({ kind: 'expense' })))).toEqual(['out', 'plan']);
+    expect(ids(filterTransactions(list, only({ planned: true })))).toEqual(['plan']);
+    expect(ids(filterTransactions(list, only({ kind: 'income', planned: true })))).toEqual([]);
+  });
+
+  it('conta os filtros ligados e põe o período em ordem', () => {
+    expect(activeFilterCount(NO_FILTERS, null)).toBe(0);
+    const period = { from: '2026-10-01', to: '2026-10-15' };
+    expect(activeFilterCount({ kind: 'expense', planned: true }, period)).toBe(3);
+    expect(orderedPeriod({ from: '2026-10-15', to: '2026-10-01' })).toEqual(period);
+    expect(orderedPeriod(period)).toEqual(period);
   });
 
   it('busca sem diferenciar maiúsculas nem acentos', () => {
-    expect(ids(filterTransactions(list, 'all', 'acougue'))).toEqual(['out']);
-    expect(ids(filterTransactions(list, 'all', '  SAL '))).toEqual(['in']);
+    expect(ids(filterTransactions(list, NO_FILTERS, 'acougue'))).toEqual(['out']);
+    expect(ids(filterTransactions(list, NO_FILTERS, '  SAL '))).toEqual(['in']);
   });
 });
 
@@ -218,13 +233,13 @@ describe('contas e cartões no extrato', () => {
   });
 
   it('o pagamento da fatura aparece nos dois lados', () => {
-    expect(ids(filterTransactions(list, 'all', '', contas))).toEqual([
+    expect(ids(filterTransactions(list, NO_FILTERS, '', contas))).toEqual([
       'salario',
       'pix',
       'fatura',
       'guardar',
     ]);
-    expect(ids(filterTransactions(list, 'all', '', cartoes))).toEqual(['compra', 'fatura']);
+    expect(ids(filterTransactions(list, NO_FILTERS, '', cartoes))).toEqual(['compra', 'fatura']);
   });
 
   it('a fatura sai das contas e entra no cartão; transferência entre contas fica neutra', () => {
@@ -232,11 +247,13 @@ describe('contas e cartões no extrato', () => {
     expect(signedAmount(fatura, contas)).toBe(-80000);
     expect(signedAmount(fatura, cartoes)).toBe(80000);
     expect(signedAmount(list[4], contas)).toBe(0);
-    expect(totalsOf(filterTransactions(list, 'all', '', contas), contas)).toMatchObject({
+    expect(totalsOf(filterTransactions(list, NO_FILTERS, '', contas), contas)).toMatchObject({
       incomeCents: 500000,
       expenseCents: 83000,
     });
-    expect(ids(filterTransactions(list, 'expense', '', cartoes))).toEqual(['compra']);
+    expect(ids(filterTransactions(list, { kind: 'expense', planned: false }, '', cartoes))).toEqual(
+      ['compra']
+    );
   });
 
   it('só oferece o recorte quando há cartão e conta', () => {

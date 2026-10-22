@@ -137,13 +137,38 @@ export function totalsOf(transactions: TransactionResponse[], accountId?: Accoun
   return totals;
 }
 
-export type StatementFilter = 'all' | 'income' | 'expense' | 'planned';
+/** Filtros da folha do extrato: tipo e "só previstos" (combinam entre si). */
+export interface StatementFilters {
+  kind: 'all' | 'income' | 'expense';
+  planned: boolean;
+}
 
-const normalize = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+export const NO_FILTERS: StatementFilters = { kind: 'all', planned: false };
+
+/** Período personalizado do extrato (dias inclusive). */
+export interface Period {
+  from: string;
+  to: string;
+}
+
+/** Quantos filtros da folha estão ligados (o número no botão). */
+export const activeFilterCount = (filters: StatementFilters, period: Period | null) =>
+  (filters.kind !== 'all' ? 1 : 0) + (filters.planned ? 1 : 0) + (period ? 1 : 0);
+
+/** Período em ordem: quem digita "até" antes do "de" não fica com a lista vazia. */
+export const orderedPeriod = ({ from, to }: Period): Period =>
+  from <= to ? { from, to } : { from: to, to: from };
+
+const normalize = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 export function filterTransactions(
   transactions: TransactionResponse[],
-  filter: StatementFilter,
+  filters: StatementFilters,
   search = '',
   accountId?: AccountScope
 ): TransactionResponse[] {
@@ -151,9 +176,9 @@ export function filterTransactions(
   return transactions.filter((tx) => {
     if (accountId && !inScope(accountId, tx.accountId) && !inScope(accountId, tx.toAccountId))
       return false;
-    if (filter === 'planned' && tx.status !== 'PLANNED') return false;
-    if (filter === 'income' && signedAmount(tx, accountId) <= 0) return false;
-    if (filter === 'expense' && signedAmount(tx, accountId) >= 0) return false;
+    if (filters.planned && tx.status !== 'PLANNED') return false;
+    if (filters.kind === 'income' && signedAmount(tx, accountId) <= 0) return false;
+    if (filters.kind === 'expense' && signedAmount(tx, accountId) >= 0) return false;
     if (term && !normalize(`${tx.description} ${tx.notes ?? ''}`).includes(term)) return false;
     return true;
   });
