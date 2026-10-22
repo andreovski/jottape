@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, Plus } from 'lucide-react';
 import { useState } from 'react';
 
-import { CategoryIcon, categoryIconOf } from '@/components/finance/category-icon';
+import { CATEGORY_ICONS, CategoryIcon } from '@/components/finance/category-icon';
 import { CategoryPicker } from '@/components/finance/category-picker';
 import { Button, EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
 import { ColorPicker, FieldError, FieldRow, SWATCHES } from '@/components/ios/fields';
@@ -18,22 +18,6 @@ import {
 } from '@/features/finance';
 import { useFormErrors } from '@/lib/use-form-errors';
 import { cn } from '@/lib/utils';
-
-/** Ícones oferecidos (os nomes que o `CategoryIcon` conhece). */
-const ICON_NAMES = [
-  'shopping-cart',
-  'utensils',
-  'home',
-  'car',
-  'heart-pulse',
-  'graduation-cap',
-  'party-popper',
-  'repeat',
-  'briefcase',
-  'plus-circle',
-  'circle-ellipsis',
-  'tag',
-];
 
 type Editing = { category?: CategoryResponse; parentId?: string | null } | null;
 
@@ -159,14 +143,14 @@ function CategorySheet({
 
         <Section header='Ícone'>
           <div className='grid grid-cols-6 gap-3 p-4'>
-            {ICON_NAMES.map((iconName) => {
-              const Icon = categoryIconOf(iconName);
+            {CATEGORY_ICONS.map(({ name: iconName, label, icon: Icon }) => {
               const selected = icon === iconName;
               return (
                 <button
                   key={iconName}
                   type='button'
-                  aria-label={iconName}
+                  aria-label={label}
+                  title={label}
                   aria-pressed={selected}
                   onClick={() => setIcon(iconName)}
                   className={cn(
