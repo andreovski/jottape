@@ -23,9 +23,22 @@ export interface SkyTheme {
   /** Brilho no canto (sol, lua ou nada). */
   glow: 'sun' | 'moon' | 'none';
   rain: boolean;
+  /** Quanto chove agora (código WMO), para a animação; null sem chuva. */
+  intensity: RainIntensity | null;
 }
 
-const PALETTES: Record<SkyKind, Omit<SkyTheme, 'kind'>> = {
+export type RainIntensity = 'drizzle' | 'rain' | 'heavy' | 'storm';
+
+/** Garoa (51–57), chuva (61, 63, 66, 80), forte (65, 67, 81, 82) ou tempestade (95+). */
+export function rainIntensity(code: number): RainIntensity | null {
+  if (code >= 95) return 'storm';
+  if (code >= 51 && code <= 57) return 'drizzle';
+  if ([65, 67, 81, 82].includes(code)) return 'heavy';
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return 'rain';
+  return null;
+}
+
+const PALETTES: Record<SkyKind, Omit<SkyTheme, 'kind' | 'intensity'>> = {
   'clear-day': { colors: ['#1A66D6', '#3A8EEF', '#69B2F5'], glow: 'sun', rain: false },
   'clear-night': { colors: ['#0B1640', '#23306E', '#4B3F8F'], glow: 'moon', rain: false },
   'cloudy-day': { colors: ['#4F6987', '#6F88A6', '#93A9C0'], glow: 'sun', rain: false },
@@ -59,7 +72,9 @@ export function skyKind(sky: BriefingSky | null, hour: number): SkyKind {
 
 export function skyTheme(sky: BriefingSky | null, hour: number): SkyTheme {
   const kind = skyKind(sky, hour);
-  return { kind, ...PALETTES[kind] };
+  const palette = PALETTES[kind];
+  const intensity = palette.rain ? ((sky ? rainIntensity(sky.code) : null) ?? 'rain') : null;
+  return { kind, ...palette, intensity };
 }
 
 export function skyGradient(theme: SkyTheme, angle = 165) {
