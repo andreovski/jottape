@@ -4,9 +4,8 @@ import { ChevronLeft, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { CATEGORY_ICONS, CategoryIcon } from '@/components/finance/category-icon';
-import { CategoryPicker } from '@/components/finance/category-picker';
 import { Button, EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
-import { ColorPicker, FieldError, FieldRow, SWATCHES } from '@/components/ios/fields';
+import { ColorPicker, FieldError, SWATCHES } from '@/components/ios/fields';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
@@ -48,20 +47,24 @@ export function iconPages<T>(icons: T[], perPage = ICONS_PER_PAGE): T[][] {
 function IconPicker({
   value,
   onChange,
+  startAtValue,
 }: {
   value: string | null;
   onChange: (icon: string) => void;
+  /** Ao editar, abre na página do ícone escolhido; numa categoria nova, na primeira. */
+  startAtValue: boolean;
 }) {
   const pages = iconPages(CATEGORY_ICONS);
   const scroller = useRef<HTMLDivElement>(null);
   const [page, setPage] = useState(() =>
-    Math.max(
-      0,
-      pages.findIndex((icons) => icons.some((i) => i.name === value))
-    )
+    startAtValue
+      ? Math.max(
+          0,
+          pages.findIndex((icons) => icons.some((i) => i.name === value))
+        )
+      : 0
   );
 
-  // Ao abrir, começa na página do ícone escolhido.
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollLeft = page * el.clientWidth;
@@ -150,7 +153,8 @@ function CategorySheet({
     existing?.color ?? (existing ? null : SWATCHES[6])
   );
   const [icon, setIcon] = useState<string | null>(existing?.icon ?? (existing ? null : 'tag'));
-  const [parentId, setParentId] = useState(existing?.parentId ?? editing?.parentId ?? '');
+  // A mãe vem de onde a categoria foi criada (o "+ Subcategoria" da mãe); não se escolhe no formulário.
+  const parentId = existing?.parentId ?? editing?.parentId ?? null;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const create = useCreateCategory();
   const update = useUpdateCategory();
@@ -161,22 +165,18 @@ function CategorySheet({
   });
 
   const hasChildren = existing ? categories.some((c) => c.parentId === existing.id) : false;
-  const parents = categories
-    .filter((c) => c.kind === kind && !c.parentId && c.id !== existing?.id)
-    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  const isSub = Boolean(parentId);
   const preview = {
     id: existing?.id ?? 'novo',
     name,
     kind,
-    parentId: parentId || null,
+    parentId,
     icon,
     color,
   } satisfies CategoryResponse;
 
   async function save() {
     if (pending || !validate()) return;
-    const body = { name: name.trim(), color, icon, parentId: parentId || null };
+    const body = { name: name.trim(), color, icon, parentId };
     if (existing) await update.mutateAsync({ id: existing.id, ...body });
     else await create.mutateAsync({ ...body, kind });
     onClose();
@@ -187,7 +187,15 @@ function CategorySheet({
       <Sheet
         open={editing !== null}
         onOpenChange={(open) => !open && onClose()}
-        title={existing ? 'Editar Categoria' : 'Nova Categoria'}
+        title={
+          existing
+            ? parentId
+              ? 'Editar Subcategoria'
+              : 'Editar Categoria'
+            : parentId
+              ? 'Nova Subcategoria'
+              : 'Nova Categoria'
+        }
         confirmLabel={existing ? 'OK' : 'Adicionar'}
         confirmDisabled={pending}
         onConfirm={save}
@@ -214,38 +222,17 @@ function CategorySheet({
           </div>
         </div>
 
-        <Section header='Pertence a'>
-          <FieldRow label='Categoria-mãe'>
-            <CategoryPicker
-              value={parentId}
-              onChange={setParentId}
-              groups={hasChildren ? [] : parents.map((parent) => ({ parent, children: [] }))}
-              kind={kind}
-              title='Categoria-mãe'
-              placeholder='Nenhuma'
-            />
-          </FieldRow>
-        </Section>
-        {hasChildren && (
-          <p className='text-footnote text-label-2 -mt-5 mb-6 px-4'>
-            Esta categoria tem subcategorias, então não pode virar subcategoria.
-          </p>
-        )}
-
-        <Section
-          header='Cor'
-          footer={isSub ? 'Sem cor própria, a subcategoria usa a da categoria-mãe.' : undefined}
-        >
+        <Section header='Cor'>
           <ColorPicker value={color} onChange={setColor} />
         </Section>
 
         <Section header='Ícone'>
-          <IconPicker value={icon} onChange={setIcon} />
+          <IconPicker value={icon} onChange={setIcon} startAtValue={Boolean(existing)} />
         </Section>
 
         {existing && (
           <Button variant='destructive' className='w-full' onClick={() => setConfirmDelete(true)}>
-            Apagar Categoria
+            {parentId ? 'Apagar Subcategoria' : 'Apagar Categoria'}
           </Button>
         )}
       </Sheet>
