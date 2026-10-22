@@ -18,9 +18,9 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { Area, AreaChart, ResponsiveContainer, YAxis } from 'recharts';
 import { toast } from 'sonner';
 
-import { InstallInvite } from '@/components/install-invite';
 import { CategoryIcon } from '@/components/finance/category-icon';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
+import { InstallInvite } from '@/components/install-invite';
 import { CheckCircle, EmptyState, Skeleton } from '@/components/ios/controls';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';

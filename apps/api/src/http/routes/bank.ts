@@ -1,9 +1,11 @@
 import {
   acceptBankMovementBodySchema,
   addBankItemBodySchema,
+  bankFeedbackBodySchema,
   bankMovementStatusSchema,
   linkBankAccountBodySchema,
   saveBankCredentialsBodySchema,
+  updateBankUserBodySchema,
 } from '@jottape/schemas';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -23,6 +25,13 @@ import {
   saveCredentials,
   syncUser,
 } from '@/services/bank';
+import {
+  assertBankAllowed,
+  bankAdmin,
+  createFeedback,
+  resolveBankFeedback,
+  updateBankUser,
+} from '@/services/bank/admin';
 
 import { authenticate } from '../session';
 
@@ -31,6 +40,8 @@ const idParams = z.object({ id: z.string().uuid() });
 // Bancos pelo Meu Pluggy, com as chaves da Pluggy de cada usuário (aberto a todos, sem custo).
 export async function bankRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authenticate);
+  // Beta: só o dono e os convidados do painel (o painel é só do dono, e o dono sempre passa).
+  app.addHook('preHandler', async (request) => assertBankAllowed(request.userId));
 
   app.get('/bank', async (request) => bankStatus(request.userId));
 
@@ -93,5 +104,22 @@ export async function bankRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     await ignoreMovement(request.userId, id);
     return reply.status(204).send();
+  });
+
+  app.post('/bank/feedback', async (request, reply) => {
+    await createFeedback(request.userId, bankFeedbackBodySchema.parse(request.body));
+    return reply.status(204).send();
+  });
+
+  app.get('/bank/admin', async (request) => bankAdmin(request.userId));
+
+  app.patch('/bank/admin/users/:id', async (request) => {
+    const { id } = idParams.parse(request.params);
+    return updateBankUser(request.userId, id, updateBankUserBodySchema.parse(request.body));
+  });
+
+  app.post('/bank/admin/feedback/:id/resolve', async (request) => {
+    const { id } = idParams.parse(request.params);
+    return resolveBankFeedback(request.userId, id);
   });
 }

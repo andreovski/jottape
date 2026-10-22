@@ -1,6 +1,7 @@
 import type {
   AccountResponse,
   BankMovementResponse,
+  BankAdminResponse,
   BankStatusResponse,
   InvoiceResponse,
   TransactionResponse,
@@ -10,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { syncAllBanks } from '@/services/bank';
+import { hashPassword } from '@/services/owner';
 import { FakePluggy } from '@/test/fake-pluggy';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
 
@@ -31,9 +33,11 @@ describe('bancos (Meu Pluggy)', () => {
   afterEach(() => {
     pluggy.uninstall();
     vi.useRealTimers();
+    vi.unstubAllEnvs();
   });
 
   beforeEach(async () => {
+    vi.stubEnv('OWNER_EMAIL', 'andre@example.com');
     vi.useFakeTimers({ toFake: ['Date'], now: NOW });
     await resetDatabase();
     pluggy = new FakePluggy().install();
@@ -345,5 +349,93 @@ describe('bancos (Meu Pluggy)', () => {
     expect(
       (await api.patch(`/bank/accounts/${checkingBank}`, { accountId: otherAccount.id })).statusCode
     ).toBe(404);
+  });
+
+  describe('beta', () => {
+    async function guest() {
+      await prisma.user.create({
+        data: {
+          email: 'bia@example.com',
+          name: 'Bia',
+          timezone: 'America/Sao_Paulo',
+          passwordHash: await hashPassword('senha-da-bia'),
+        },
+      });
+      const login = await app.inject({
+        method: 'POST',
+        url: '/sessions',
+        payload: { email: 'bia@example.com', password: 'senha-da-bia' },
+      });
+      const cookie = login.cookies.find((c) => c.name === 'jottape_session')!;
+      return client(app, `jottape_session=${cookie.value}`);
+    }
+
+    it('só convidados usam; o dono convida pelo painel e vê até onde cada um chegou', async () => {
+      const bia = await guest();
+      expect((await bia.get('/bank')).statusCode).toBe(403);
+      expect((await bia.get('/bank/admin')).statusCode).toBe(403);
+
+      const panel = (await api.get('/bank/admin')).json() as BankAdminResponse;
+      const biaId = panel.users.find((u) => u.email === 'bia@example.com')!.id;
+      expect(panel.users.map((u) => [u.name, u.access, u.stage])).toEqual([
+        ['André', 'owner', 'none'],
+        ['Bia', 'none', 'none'],
+      ]);
+
+      const invited = (
+        await api.patch(`/bank/admin/users/${biaId}`, { bankAccess: true })
+      ).json() as BankAdminResponse;
+      expect(invited.users.find((u) => u.id === biaId)!.access).toBe('app');
+      expect((await bia.get('/bank')).statusCode).toBe(200);
+
+      // O dono chega a "conta ligada" e aceita um lançamento trocando o tipo.
+      pluggy.add(CHECKING_ID, {
+        id: 'b1',
+        description: 'Padaria',
+        amount: -12,
+        date: '2026-10-16T03:00:00.000Z',
+      });
+      const { checkingBank } = await connect();
+      await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+      const [first] = await pending();
+      await api.post(`/bank/movements/${first!.id}/accept`, {
+        kind: first!.kind === 'EXPENSE' ? 'INCOME' : 'EXPENSE',
+      });
+      const owner = ((await api.get('/bank/admin')).json() as BankAdminResponse).users[0]!;
+      expect(owner).toMatchObject({ stage: 'accepted', banks: 1, linkedAccounts: 1 });
+      expect(owner.last30).toMatchObject({ imported: 1, edited: 1 });
+
+      // Tirar o convite fecha de novo.
+      await api.patch(`/bank/admin/users/${biaId}`, { bankAccess: false });
+      expect((await bia.get('/bank')).statusCode).toBe(403);
+    });
+
+    it('"Algo veio errado" guarda o relato com a foto do estado, sem as chaves', async () => {
+      pluggy.add(CHECKING_ID, {
+        id: 'b1',
+        description: 'Padaria',
+        amount: -12,
+        date: '2026-10-16T03:00:00.000Z',
+      });
+      const { checkingBank } = await connect();
+      await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+      const [first] = await pending();
+      expect(
+        (await api.post('/bank/feedback', { note: 'Veio duplicado', movementId: first!.id }))
+          .statusCode
+      ).toBe(204);
+
+      const [report] = ((await api.get('/bank/admin')).json() as BankAdminResponse).feedback;
+      expect(report).toMatchObject({ userName: 'André', note: 'Veio duplicado', resolvedAt: null });
+      const snapshot = JSON.stringify(report!.snapshot);
+      expect(snapshot).toContain(first!.description);
+      expect(snapshot).not.toContain('pluggy-client');
+      expect(snapshot).not.toContain(pluggy.itemId);
+
+      const resolved = (
+        await api.post(`/bank/admin/feedback/${report!.id}/resolve`)
+      ).json() as BankAdminResponse;
+      expect(resolved.feedback[0]!.resolvedAt).not.toBeNull();
+    });
   });
 });

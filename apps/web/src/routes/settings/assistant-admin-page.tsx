@@ -82,11 +82,11 @@ export function AssistantAdminPage() {
   const back = (
     <button
       type='button'
-      onClick={() => navigate({ to: '/ajustes' })}
+      onClick={() => navigate({ to: '/ajustes/beta' })}
       className='text-tint text-body -ml-2 flex items-center active:opacity-40'
     >
       <ChevronLeft className='size-7' strokeWidth={2.2} />
-      Ajustes
+      Beta
     </button>
   );
 

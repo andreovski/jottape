@@ -1,4 +1,9 @@
-import { buildRRule, describeRRule, type Frequency, parseSimpleRRule } from '@jottape/finance-engine';
+import {
+  buildRRule,
+  describeRRule,
+  type Frequency,
+  parseSimpleRRule,
+} from '@jottape/finance-engine';
 import type {
   AssistantIntent,
   AssistantTestCase,

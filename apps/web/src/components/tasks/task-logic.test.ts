@@ -288,9 +288,7 @@ describe('formulário', () => {
   it('semanal em dias escolhidos vira BYDAY; sem dias, só semanal', () => {
     const form = formFromTask(null, { listId: 'in', today: '2026-10-18', date: '2026-10-20' });
     const weekly = { ...form, title: 'Condessa', repeat: 'WEEKLY' };
-    expect(bodyFromForm({ ...weekly, weekdays: [4, 2] }, TZ).rrule).toBe(
-      'FREQ=WEEKLY;BYDAY=TU,TH'
-    );
+    expect(bodyFromForm({ ...weekly, weekdays: [4, 2] }, TZ).rrule).toBe('FREQ=WEEKLY;BYDAY=TU,TH');
     expect(bodyFromForm({ ...weekly, weekdays: [] }, TZ).rrule).toBe('FREQ=WEEKLY');
     // Os dias só valem na repetição semanal.
     expect(bodyFromForm({ ...weekly, repeat: 'DAILY', weekdays: [2] }, TZ).rrule).toBe(

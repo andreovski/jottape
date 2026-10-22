@@ -15,6 +15,8 @@ import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
 import { createTransactions, userTimezone } from '@/services/finance';
 
+import { allowedUserIds } from './admin';
+
 import {
   authenticatePluggy,
   createConnectToken,
@@ -496,7 +498,10 @@ export async function syncUser(userId: string) {
 /** Job: o Meu Pluggy atualiza os bancos uma vez por dia; aqui passamos a cada poucas horas. */
 export async function syncAllBanks() {
   const credentials = await prisma.pluggyCredential.findMany({ select: { userId: true } });
+  // Beta: só o dono e os convidados sincronizam.
+  const allowed = await allowedUserIds(credentials.map((c) => c.userId));
   for (const { userId } of credentials) {
+    if (!allowed.has(userId)) continue;
     try {
       await syncUser(userId);
     } catch (error) {
@@ -579,9 +584,13 @@ export async function acceptMovement(
       description: body.description ?? importedDescription(movement),
       status: 'DONE',
     });
+    const edited =
+      kind !== movement.kind ||
+      categoryId !== movement.suggestedCategoryId ||
+      (body.description !== undefined && body.description !== importedDescription(movement));
     const updated = await prisma.bankMovement.update({
       where: { id },
-      data: { transactionId: created!.id },
+      data: { transactionId: created!.id, edited },
       include: withAccount,
     });
     return toBankMovement(updated);

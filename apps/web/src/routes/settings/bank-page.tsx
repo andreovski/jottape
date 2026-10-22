@@ -2,9 +2,10 @@ import { addDays } from '@jottape/finance-engine';
 import type { AccountResponse, BankAccountResponse, BankItemResponse } from '@jottape/schemas';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
-  ChevronLeft,
   ArrowDownToLine,
+  ChevronLeft,
   CreditCard,
+  Flag,
   Hash,
   Inbox,
   KeyRound,
@@ -28,19 +29,21 @@ import { ActionSheet, Sheet } from '@/components/ios/sheet';
 import {
   openPluggyConnect,
   PLUGGY_LINKS,
+  useAcceptBankNotice,
   useAddBankItem,
   useBankStatus,
   useLinkBankAccount,
   useRemoveBankCredentials,
   useRemoveBankItem,
   useSaveBankCredentials,
-  useAcceptBankNotice,
   useSyncBank,
 } from '@/features/bank';
 import { useAccounts } from '@/features/finance';
 import { errorMessage } from '@/lib/api';
 import { money, todayKey } from '@/lib/format';
 import { useFormErrors } from '@/lib/use-form-errors';
+
+import { BankFeedbackSheet } from './bank-feedback-sheet';
 
 /** Dias para trás que a primeira importação traz (igual ao padrão da API). */
 const DEFAULT_IMPORT_DAYS = 30;
@@ -61,6 +64,7 @@ export function BankPage() {
   const sync = useSyncBank();
   const data = status.data;
   const [noticeOpen, setNoticeOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const back = (
     <button
@@ -98,6 +102,21 @@ export function BankPage() {
       ) : (
         <Connected />
       )}
+      {data && (
+        <Section footer='Bancos está em beta. Lançamento duplicado, faltando ou na categoria errada? Conte aqui.'>
+          <Row
+            chevron
+            onClick={() => setFeedbackOpen(true)}
+            leading={
+              <IconChip color='var(--orange)'>
+                <Flag />
+              </IconChip>
+            }
+            title='Algo veio errado'
+          />
+        </Section>
+      )}
+      <BankFeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       {data && (
         <button
           type='button'
@@ -179,8 +198,8 @@ function PrivacyNotice({
 
 const NOTICE = [
   {
-    title: 'O Jottape não se conecta ao seu banco',
-    text: 'E nunca vê sua senha. A conexão é feita por você no Meu Pluggy, pelo Open Finance, com a autorização dada no app do próprio banco.',
+    title: 'Sem acesso direto ao banco',
+    text: 'O Jottape não se conecta ao seu banco e nunca vê sua senha. A conexão é feita por você no Meu Pluggy, pelo Open Finance, com a autorização dada no app do próprio banco.',
     icon: <Landmark />,
     color: 'var(--blue)',
   },
