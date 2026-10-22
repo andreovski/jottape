@@ -291,7 +291,8 @@ export function budgetLine(
 ): Line | null {
   const tight = budgets.filter((b) => b.ratio >= 0.8).sort((a, b) => b.ratio - a.ratio);
   if (tight.length === 0) return null;
-  const pct = (ratio: number) => `${Math.round(ratio * 100)}%`;
+  // Com limite muito baixo a porcentagem explode (500000%): a partir de 10× o limite, só diz que estourou.
+  const pct = (ratio: number) => (ratio >= 10 ? 'estourou' : `${Math.round(ratio * 100)}%`);
   const href = '/financas?tab=orcamentos';
   const over = tight[0].ratio >= 1;
   if (tight.length === 1) {
@@ -312,24 +313,58 @@ export function budgetLine(
   return line(`${list} estão no limite do orçamento.`, { tone: over ? 'bad' : 'warning', href });
 }
 
+const decimal = (value: number, digits: number) =>
+  value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+/** Abaixo disso (R$ 10) o mês passado não serve de base para porcentagem. */
+const MONTH_MIN_BASE_CENTS = 1000;
+
 export function monthLine(
   spentCents: number,
   previousCents: number,
   previousMonthName: string
 ): Line | null {
   if (spentCents === 0 && previousCents === 0) return null;
-  if (previousCents === 0)
-    return line('Você gastou {0} este mês.', { values: [spentCents], href: '/financas' });
-  const change = (spentCents - previousCents) / previousCents;
+  const href = '/financas';
+  const point = `mesmo ponto de ${previousMonthName}`;
+  if (previousCents === 0) return line('Você gastou {0} este mês.', { values: [spentCents], href });
+  if (spentCents === 0)
+    return line(`Nada gasto este mês ainda. Até o ${point} foram {0}.`, {
+      values: [previousCents],
+      tone: 'good',
+      href,
+    });
+  const ratio = spentCents / previousCents;
+  // Base pequena ou diferença enorme: a porcentagem fica absurda (R$ 0,01 → R$ 590 dá 5906900%),
+  // então mostra os dois valores.
+  if (previousCents < MONTH_MIN_BASE_CENTS || ratio >= 10)
+    return line(`Você gastou {0} este mês, contra {1} até o ${point}.`, {
+      values: [spentCents, previousCents],
+      tone: ratio > 1 ? 'warning' : 'good',
+      href,
+    });
+  if (ratio >= 1.995) {
+    const times = Math.round(ratio * 10) / 10;
+    const amount =
+      times === 2
+        ? 'o dobro do que gastou'
+        : `${decimal(times, times % 1 === 0 ? 0 : 1)} vezes o que gastou`;
+    return line(`Você gastou {0} este mês, ${amount} até o ${point}.`, {
+      values: [spentCents],
+      tone: 'warning',
+      href,
+    });
+  }
+  const change = ratio - 1;
   const pct = Math.round(Math.abs(change) * 100);
   const compare =
     pct < 3
-      ? `quase o mesmo que no mesmo ponto de ${previousMonthName}`
-      : `${pct}% ${change < 0 ? 'a menos' : 'a mais'} que no mesmo ponto de ${previousMonthName}`;
+      ? `quase o mesmo que no ${point}`
+      : `${pct}% ${change < 0 ? 'a menos' : 'a mais'} que no ${point}`;
   return line(`Você gastou {0} este mês, ${compare}.`, {
     values: [spentCents],
     tone: pct >= 3 ? (change < 0 ? 'good' : 'warning') : 'neutral',
-    href: '/financas',
+    href,
   });
 }
 
@@ -409,12 +444,17 @@ const currencyNames: Record<string, string> = {
   BTC: 'Bitcoin',
 };
 
-const decimal = (value: number, digits: number) =>
-  value.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+/** Variação de cotação acima de 1000% é dado quebrado da fonte (base zerada), não notícia. */
+export const saneChange = (change: number | null | undefined) =>
+  typeof change === 'number' && Number.isFinite(change) && Math.abs(change) < 10 ? change : null;
 
 /** " (+1,2%)", " (−0,6%)" ou nada. */
-const changeText = (change: number | null) =>
-  change === null ? '' : ` (${change >= 0 ? '+' : '−'}${decimal(Math.abs(change) * 100, 1)}%)`;
+const changeText = (raw: number | null) => {
+  const change = saneChange(raw);
+  return change === null
+    ? ''
+    : ` (${change >= 0 ? '+' : '−'}${decimal(Math.abs(change) * 100, 1)}%)`;
+};
 
 export function currencyLine(rates: Rate[]): Line | null {
   if (rates.length === 0) return null;

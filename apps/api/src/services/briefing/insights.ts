@@ -66,6 +66,13 @@ export function insightTarget(today: string): { kind: InsightKind; month: string
     : { kind: 'month', month };
 }
 
+/** "5906900%", "1.250%": porcentagem de base quase zero, que só confunde. */
+export function hasAbsurdPercent(text: string) {
+  return [...text.matchAll(/(\d[\d.]*)(?:,\d+)?\s*%/g)].some(
+    (m) => Number(m[1].replace(/\./g, '')) >= 1000
+  );
+}
+
 /** O que o modelo escreveu, já com `{n}` + valores e a pergunta para o Assistente. */
 export function toStored(insights: ModelInsight[]): StoredInsight[] {
   return insights
@@ -78,20 +85,23 @@ export function toStored(insights: ModelInsight[]): StoredInsight[] {
         question: insight.pergunta.trim().slice(0, 120),
       };
     })
-    .filter((insight) => insight.text.length > 0);
+    .filter((insight) => insight.text.length > 0 && !hasAbsurdPercent(insight.text));
 }
 
 /** As frases do briefing: tocar abre o Assistente com a pergunta pronta. */
 export function insightLines(items: StoredInsight[]): Line[] {
-  return items.map((item) =>
-    line(item.text, {
-      values: item.values,
-      tone: item.tone,
-      href: item.question
-        ? `/assistente?pergunta=${encodeURIComponent(item.question)}`
-        : '/financas',
-    })
-  );
+  // Filtra também o que já estava guardado antes da regra.
+  return items
+    .filter((item) => !hasAbsurdPercent(item.text))
+    .map((item) =>
+      line(item.text, {
+        values: item.values,
+        tone: item.tone,
+        href: item.question
+          ? `/assistente?pergunta=${encodeURIComponent(item.question)}`
+          : '/financas',
+      })
+    );
 }
 
 function storedItems(row: FinanceInsight | null): StoredInsight[] {

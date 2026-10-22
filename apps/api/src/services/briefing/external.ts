@@ -10,7 +10,14 @@ import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/prisma';
 
-import { firstSentences, type Rate, signNames, type TideSeries, type Weather } from './text';
+import {
+  firstSentences,
+  type Rate,
+  saneChange,
+  signNames,
+  type TideSeries,
+  type Weather,
+} from './text';
 
 // Serviços públicos e gratuitos, sem chave. A resposta fica guardada (igual para todos os
 // usuários), então cada fonte é consultada no máximo uma vez por chave e período.
@@ -221,7 +228,7 @@ async function yahooQuote(ticker: string, period: StockPeriod): Promise<StockQuo
     currency: result.meta.currency ?? 'BRL',
     price,
     reference,
-    change: reference ? price / reference - 1 : null,
+    change: reference ? saneChange(price / reference - 1) : null,
     points: points.length >= 2 ? points : [],
   };
 }
@@ -257,7 +264,7 @@ async function brapiQuote(ticker: string, period: StockPeriod): Promise<StockQuo
     reference: day ? (result.regularMarketPreviousClose ?? null) : null,
     change:
       day && typeof result.regularMarketChangePercent === 'number'
-        ? result.regularMarketChangePercent / 100
+        ? saneChange(result.regularMarketChangePercent / 100)
         : null,
     points: [],
   };
