@@ -67,8 +67,14 @@ export function Page({
           </div>
           <div className='text-tint ml-auto flex items-center justify-end gap-1'>{actions}</div>
         </div>
+        {/* Preso sob a barra por cima do conteúdo, sem ocupar espaço: se a barra crescesse, a página
+            andaria, o título voltaria à tela e a barra encolheria de novo, num pisca-pisca sem fim
+            (a tela "tremendo"). O Safari não compensa a rolagem como o Chrome. */}
         {accessory && compact && (
-          <div className='relative mx-auto max-w-3xl px-4 pb-2 lg:px-8'>{accessory}</div>
+          <div className='absolute inset-x-0 top-full -mt-4'>
+            <div aria-hidden className='top-scrim absolute inset-x-0 top-0 -bottom-4' />
+            <div className='relative mx-auto max-w-3xl px-4 pb-2 lg:px-8'>{accessory}</div>
+          </div>
         )}
       </div>
 
@@ -81,7 +87,12 @@ export function Page({
           {subtitle}
           <div ref={sentinel} />
         </header>
-        {accessory && !compact && <div className='mb-4'>{accessory}</div>}
+        {/* Continua no lugar (invisível) enquanto está lá em cima, pelo mesmo motivo. */}
+        {accessory && (
+          <div className={cn('mb-4', compact && 'invisible')} inert={compact}>
+            {accessory}
+          </div>
+        )}
         {children}
       </div>
     </div>
