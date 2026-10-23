@@ -1,9 +1,11 @@
 import type {
+  AddIcsCalendarBody,
   GoogleAccountResponse,
   GoogleCalendarResponse,
   GoogleStatusResponse,
   UpdateGoogleCalendarsBody,
   UpdateGoogleTasksAccountBody,
+  UpdateIcsCalendarBody,
 } from '@jottape/schemas';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -137,4 +139,40 @@ export function reconnect(account: GoogleAccountResponse) {
   else startGoogle('connect');
 }
 
-export const PROVIDER_NAME = { GOOGLE: 'Google', MICROSOFT: 'Microsoft' } as const;
+export const PROVIDER_NAME = { GOOGLE: 'Google', MICROSOFT: 'Microsoft', ICS: 'Link' } as const;
+
+/** De onde vem uma agenda por link, pelo domínio: "outlook.office365.com" -> "Outlook". */
+export function linkSourceName(host: string) {
+  if (/outlook|office365|office\.com|live\.com/i.test(host)) return 'Outlook';
+  if (/google/i.test(host)) return 'Google';
+  if (/icloud|apple/i.test(host)) return 'iCloud';
+  return host;
+}
+
+/** Agenda por link (ICS): o servidor lê o link na hora, então pode demorar um pouco. */
+export function useAddIcsCalendar() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AddIcsCalendarBody) =>
+      api.post('google/ics', { json: body, timeout: 60_000 }).json<GoogleStatusResponse>(),
+    onSuccess: (status) => {
+      client.setQueryData(['google'], status);
+      client.invalidateQueries({ queryKey: ['events'] });
+      client.invalidateQueries({ queryKey: ['agenda'] });
+      client.invalidateQueries({ queryKey: ['briefing'] });
+    },
+  });
+}
+
+export function useUpdateIcsCalendar() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateIcsCalendarBody & { id: string }) =>
+      api.patch(`google/ics/${id}`, { json: body, timeout: 60_000 }).json<GoogleStatusResponse>(),
+    onSuccess: (status) => {
+      client.setQueryData(['google'], status);
+      client.invalidateQueries({ queryKey: ['events'] });
+      client.invalidateQueries({ queryKey: ['agenda'] });
+    },
+  });
+}

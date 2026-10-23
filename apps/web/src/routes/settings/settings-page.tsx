@@ -187,11 +187,11 @@ export function SettingsPage() {
                 <GoogleGlyph />
               </IconChip>
             }
-            title={google.data?.microsoftConfigured ? 'Google e Microsoft' : 'Google'}
+            title='Agendas'
             subtitle={
               google.data?.microsoftConfigured
-                ? 'Agendas, Tarefas e login'
-                : 'Calendário, Tarefas e login'
+                ? 'Google, Microsoft, link ICS, Tarefas e login'
+                : 'Google, link ICS, Tarefas e login'
             }
             detail={googleDetail}
           />

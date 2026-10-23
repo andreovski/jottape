@@ -70,7 +70,7 @@ export const eventOccurrenceSchema = z.object({
   isRecurring: z.boolean(),
   /** A ocorrência foi alterada sozinha (override). */
   isException: z.boolean(),
-  source: z.enum(['LOCAL', 'GOOGLE', 'MICROSOFT']),
+  source: z.enum(['LOCAL', 'GOOGLE', 'MICROSOFT', 'ICS']),
   calendarId: z.string().nullable(),
   reminders: z.array(z.number().int()),
 });
@@ -86,7 +86,7 @@ export const eventResponseSchema = z.object({
   allDay: z.boolean(),
   color: z.string().nullable(),
   rrule: z.string().nullable(),
-  source: z.enum(['LOCAL', 'GOOGLE', 'MICROSOFT']),
+  source: z.enum(['LOCAL', 'GOOGLE', 'MICROSOFT', 'ICS']),
   calendarId: z.string().nullable(),
   reminders: z.array(z.number().int()),
   syncState: z.enum(['SYNCED', 'PENDING', 'ERROR']),

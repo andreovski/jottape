@@ -53,6 +53,17 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   (`graphFetch`, refresh token trocado a cada renovação). O delta traz ocorrências já expandidas,
   então evento da Microsoft não tem `rrule` local; série criada no Jottape vai como `recurrence` e
   volta como ocorrências.
+- **Agenda por link** (ICS/webcal, `services/ics`): para a agenda do trabalho que a TI não deixa
+  conectar (Outlook › Publicar um calendário). `GoogleConnection` com `provider: ICS` e um
+  calendário só; o link é segredo: fica cifrado em `refreshTokenEncrypted`, nunca vai para log,
+  erro ou resposta (o app só vê o domínio, em `email`). A busca só aceita http(s) para endereço
+  público (sem IP privado, nem depois de redirecionar), até 10 MB. `parse.ts` (puro, com teste)
+  lê o arquivo e expande tudo numa janela (180 dias para trás, 1 ano à frente) no relógio de
+  parede do evento: TZID do Windows pela tabela do CLDR (`windows-zones.ts`), EXDATE, exceção por
+  RECURRENCE-ID, dia inteiro do Outlook (`X-MICROSOFT-CDO-ALLDAYEVENT`). Cada ocorrência vira um
+  evento `source: ICS` com chave estável (`UID@início original`), e cada leitura grava só a
+  diferença. Job a cada 5 min, com ETag no mesmo dia. Só de leitura: a API recusa criar, editar,
+  apagar ou usar como calendário padrão.
 - **Bancos** (Meu Pluggy, `services/bank`): grátis e aberto a todos, sem chave no servidor. Cada
   usuário cria a própria aplicação na Pluggy e salva Client ID/Secret (`PluggyCredential`, secret
   cifrado); o banco entra pelo widget Pluggy Connect (conector MeuPluggy) ou pelo ID do item. Cada banco do

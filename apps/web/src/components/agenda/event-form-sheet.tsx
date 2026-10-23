@@ -91,7 +91,8 @@ export function EventFormSheet({
     { value: '', label: 'Jottape', group: grouped ? 'Jottape' : undefined },
     ...(status?.connected
       ? (status.calendars ?? [])
-          .filter((calendar) => calendar.selected)
+          // Agenda por link é só de leitura: não recebe eventos.
+          .filter((calendar) => calendar.selected && !calendar.readOnly)
           .map((calendar) => ({
             value: calendar.id,
             label: calendar.name,

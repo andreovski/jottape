@@ -6,6 +6,7 @@ import { Sheet } from '@/components/ios/sheet';
 import {
   alsoInLabel,
   calendarsBody,
+  linkSourceName,
   useGoogleStatus,
   useUpdateGoogleCalendars,
 } from '@/features/google';
@@ -26,6 +27,15 @@ export function CalendarsSheet({
 }) {
   const status = useGoogleStatus().data;
   const update = useUpdateGoogleCalendars();
+  // Uma seção por conta; as agendas por link ficam juntas numa só.
+  const accounts = status?.accounts ?? [];
+  const links = accounts.filter((a) => a.provider === 'ICS').map((a) => a.id);
+  const groups = [
+    ...accounts
+      .filter((a) => a.provider !== 'ICS')
+      .map((a) => ({ key: a.id, header: a.email, accountIds: [a.id] })),
+    ...(links.length ? [{ key: 'ics', header: 'Agendas por link', accountIds: links }] : []),
+  ];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title='Calendários' cancelLabel='OK'>
@@ -36,14 +46,14 @@ export function CalendarsSheet({
         />
       </Section>
 
-      {status?.accounts.map((account) => (
-        <Section key={account.id} header={account.email}>
-          {status.calendars
-            .filter((calendar) => calendar.accountId === account.id)
+      {groups.map((group) => (
+        <Section key={group.key} header={group.header}>
+          {status!.calendars
+            .filter((calendar) => group.accountIds.includes(calendar.accountId))
             .map((calendar) => {
               const toggle = () =>
                 update.mutate(
-                  calendarsBody(status, { selected: { id: calendar.id, on: !calendar.selected } })
+                  calendarsBody(status!, { selected: { id: calendar.id, on: !calendar.selected } })
                 );
               return (
                 <Row
@@ -57,7 +67,13 @@ export function CalendarsSheet({
                     />
                   }
                   title={calendar.name}
-                  subtitle={alsoInLabel(status, calendar)}
+                  subtitle={
+                    calendar.readOnly
+                      ? linkSourceName(
+                          status!.accounts.find((a) => a.id === calendar.accountId)?.email ?? ''
+                        )
+                      : alsoInLabel(status!, calendar)
+                  }
                 />
               );
             })}
@@ -69,7 +85,7 @@ export function CalendarsSheet({
           <Row
             action
             chevron
-            title={status?.connected ? 'Contas Google' : 'Conectar conta Google'}
+            title={status?.connected ? 'Contas e agendas' : 'Conectar uma agenda'}
           />
         </Link>
       </Section>

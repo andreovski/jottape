@@ -142,8 +142,13 @@ async function assertCalendar(userId: string, calendarId: string | null | undefi
     include: { connection: { select: { provider: true } } },
   });
   if (!calendar) throw notFound('Calendário');
+  if (calendar.connection.provider === 'ICS') throw readOnly();
   return calendar.connection.provider;
 }
+
+/** Agenda por link (ICS) é só de leitura: muda-se na agenda de origem. */
+const readOnly = () =>
+  new AppError(400, 'Esta agenda é só de leitura: mude o evento na agenda de origem.');
 
 async function eventResponse(event: Event) {
   const reminders = await prisma.reminder.findMany({
@@ -203,6 +208,7 @@ export async function createEvent(userId: string, body: CreateEventBody) {
 export async function updateEvent(userId: string, id: string, body: UpdateEventBody) {
   const event = await prisma.event.findFirst({ where: { id, userId } });
   if (!event) throw notFound('Evento');
+  if (event.source === 'ICS') throw readOnly();
   const { scope, occurrenceStart, reminders, calendarId, ...fields } = body;
 
   if (calendarId !== undefined && calendarId !== event.calendarId) {
@@ -290,6 +296,7 @@ export async function updateEvent(userId: string, id: string, body: UpdateEventB
 export async function deleteEvent(userId: string, id: string, query: DeleteEventQuery) {
   const event = await prisma.event.findFirst({ where: { id, userId } });
   if (!event) throw notFound('Evento');
+  if (event.source === 'ICS') throw readOnly();
 
   if (event.rrule && query.scope === 'single') {
     if (!query.occurrenceStart) throw new AppError(400, 'Informe a ocorrência (occurrenceStart).');
