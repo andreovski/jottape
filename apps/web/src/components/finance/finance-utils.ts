@@ -37,15 +37,43 @@ export const lastDayOfMonth = (month: string) => monthRange(month).last;
 
 // ------------------------------------------------------------------ lançamentos
 
-/** Valor com sinal do ponto de vista do extrato (ou de uma conta, quando `accountId` vem). */
-export function signedAmount(tx: TransactionResponse, accountId?: string): number {
+/** De onde o extrato é visto: uma conta, ou um grupo delas (só as contas, só os cartões). */
+export type AccountScope = string | ReadonlySet<string>;
+
+const inScope = (scope: AccountScope, id: string | null) =>
+  id !== null && (typeof scope === 'string' ? id === scope : scope.has(id));
+
+/**
+ * Valor com sinal do ponto de vista do extrato (ou de uma conta ou grupo, quando `accountId` vem).
+ * Transferência dentro do grupo não muda nada nele e fica com zero.
+ */
+export function signedAmount(tx: TransactionResponse, accountId?: AccountScope): number {
   if (tx.kind === 'INCOME') return tx.amountCents;
   if (tx.kind === 'EXPENSE') return -tx.amountCents;
   if (!accountId) return 0;
-  if (tx.toAccountId === accountId) return tx.amountCents;
-  if (tx.accountId === accountId) return -tx.amountCents;
+  const into = inScope(accountId, tx.toAccountId);
+  const out = inScope(accountId, tx.accountId);
+  if (into && !out) return tx.amountCents;
+  if (out && !into) return -tx.amountCents;
   return 0;
 }
+
+/** Recorte do extrato geral: tudo, só as contas (corrente, poupança, carteira) ou só os cartões. */
+export type StatementScope = 'all' | 'accounts' | 'cards';
+
+/** Contas do recorte; `undefined` em "tudo". */
+export function scopeAccountIds(
+  accounts: Pick<AccountResponse, 'id' | 'type'>[],
+  scope: StatementScope
+): ReadonlySet<string> | undefined {
+  if (scope === 'all') return undefined;
+  const cards = scope === 'cards';
+  return new Set(accounts.filter((a) => (a.type === 'CREDIT_CARD') === cards).map((a) => a.id));
+}
+
+/** O recorte só faz sentido quando há cartão e conta ao mesmo tempo. */
+export const hasCardsAndAccounts = (accounts: Pick<AccountResponse, 'type'>[]) =>
+  accounts.some((a) => a.type === 'CREDIT_CARD') && accounts.some((a) => a.type !== 'CREDIT_CARD');
 
 export interface DayGroup {
   date: string;
@@ -55,7 +83,10 @@ export interface DayGroup {
 }
 
 /** Agrupa por dia, do mais recente para o mais antigo; mantém a ordem da API dentro do dia. */
-export function groupByDay(transactions: TransactionResponse[], accountId?: string): DayGroup[] {
+export function groupByDay(
+  transactions: TransactionResponse[],
+  accountId?: AccountScope
+): DayGroup[] {
   const map = new Map<string, TransactionResponse[]>();
   for (const tx of transactions) {
     const list = map.get(tx.date);
@@ -84,7 +115,7 @@ export interface Totals {
  * lugar); com conta, a que chega é entrada e a que sai é saída. Os previstos entram nos totais e
  * também aparecem separados.
  */
-export function totalsOf(transactions: TransactionResponse[], accountId?: string): Totals {
+export function totalsOf(transactions: TransactionResponse[], accountId?: AccountScope): Totals {
   const totals: Totals = {
     incomeCents: 0,
     expenseCents: 0,
@@ -106,21 +137,65 @@ export function totalsOf(transactions: TransactionResponse[], accountId?: string
   return totals;
 }
 
-export type StatementFilter = 'all' | 'income' | 'expense' | 'planned';
+/**
+ * Chips de tipo da folha do extrato, que se combinam: cada lançamento cai em um só. Previsto é
+ * previsto (entrada ou saída); entradas e saídas são as já efetivadas.
+ */
+export interface StatementFilters {
+  income: boolean;
+  expense: boolean;
+  planned: boolean;
+}
 
-const normalize = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+export const NO_FILTERS: StatementFilters = { income: true, expense: true, planned: true };
+
+const allKinds = (filters: StatementFilters) =>
+  filters.income && filters.expense && filters.planned;
+
+/** Período personalizado do extrato (dias inclusive). */
+export interface Period {
+  from: string;
+  to: string;
+}
+
+/** Quantos filtros da folha estão ligados (o número no botão). */
+export const activeFilterCount = (filters: StatementFilters, period: Period | null) =>
+  (allKinds(filters) ? 0 : 1) + (period ? 1 : 0);
+
+/** Período em ordem: quem digita "até" antes do "de" não fica com a lista vazia. */
+export const orderedPeriod = ({ from, to }: Period): Period =>
+  from <= to ? { from, to } : { from: to, to: from };
+
+const normalize = (text: string) =>
+  text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
 export function filterTransactions(
   transactions: TransactionResponse[],
-  filter: StatementFilter,
+  filters: StatementFilters,
   search = '',
-  accountId?: string
+  accountId?: AccountScope
 ): TransactionResponse[] {
   const term = normalize(search);
   return transactions.filter((tx) => {
-    if (filter === 'planned' && tx.status !== 'PLANNED') return false;
-    if (filter === 'income' && signedAmount(tx, accountId) <= 0) return false;
-    if (filter === 'expense' && signedAmount(tx, accountId) >= 0) return false;
+    if (accountId && !inScope(accountId, tx.accountId) && !inScope(accountId, tx.toAccountId))
+      return false;
+    if (!allKinds(filters)) {
+      const value = signedAmount(tx, accountId);
+      // Transferência que não muda o saldo do recorte não é entrada nem saída: só com as duas.
+      const shown =
+        tx.status === 'PLANNED'
+          ? filters.planned
+          : value > 0
+            ? filters.income
+            : value < 0
+              ? filters.expense
+              : filters.income && filters.expense;
+      if (!shown) return false;
+    }
     if (term && !normalize(`${tx.description} ${tx.notes ?? ''}`).includes(term)) return false;
     return true;
   });

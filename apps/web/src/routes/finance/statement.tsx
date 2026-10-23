@@ -1,10 +1,16 @@
 import type { TransactionResponse } from '@jottape/schemas';
-import { CircleX, Receipt, Search } from 'lucide-react';
+import { CircleX, Receipt, Search, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 
 import {
+  activeFilterCount,
   filterTransactions,
-  type StatementFilter,
+  hasCardsAndAccounts,
+  NO_FILTERS,
+  type Period,
+  scopeAccountIds,
+  type StatementFilters,
+  type StatementScope,
   totalsOf,
 } from '@/components/finance/finance-utils';
 import { MonthSwitcher } from '@/components/finance/month-switcher';
@@ -12,17 +18,21 @@ import { TotalsCard, TransactionList } from '@/components/finance/transaction-li
 import { Button, EmptyState, Skeleton } from '@/components/ios/controls';
 import { Section } from '@/components/ios/list';
 import { useAccounts, useCategories, useTransactions } from '@/features/finance';
-import { capitalize, monthName } from '@/lib/format';
+import { capitalize, monthName, shortDay } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
-const FILTERS: { value: StatementFilter; label: string }[] = [
+import { StatementFiltersSheet } from './statement-filters-sheet';
+
+const SCOPES: { value: StatementScope; label: string }[] = [
   { value: 'all', label: 'Tudo' },
-  { value: 'income', label: 'Entradas' },
-  { value: 'expense', label: 'Saídas' },
-  { value: 'planned', label: 'Previstos' },
+  { value: 'accounts', label: 'Contas' },
+  { value: 'cards', label: 'Cartão' },
 ];
 
-/** Extrato do mês (de tudo ou de uma conta): mês, filtros, busca, dias e totais. */
+/**
+ * Extrato do mês ou de um período (de tudo ou de uma conta): recorte Tudo / Contas / Cartão, busca,
+ * folha de filtros (tipo, previstos, período), dias e totais.
+ */
 export function Statement({
   month,
   onMonthChange,
@@ -36,38 +46,77 @@ export function Statement({
   onSelect: (transaction: TransactionResponse) => void;
   onCreate: () => void;
 }) {
-  const [filter, setFilter] = useState<StatementFilter>('all');
+  const [filters, setFilters] = useState<StatementFilters>(NO_FILTERS);
+  const [period, setPeriod] = useState<Period | null>(null);
+  const [scope, setScope] = useState<StatementScope>('all');
   const [search, setSearch] = useState('');
-  const { data: transactions, isLoading } = useTransactions({ month, accountId });
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetKey, setSheetKey] = useState(0);
+  const openSheet = () => {
+    setSheetKey((key) => key + 1);
+    setSheetOpen(true);
+  };
+  const { data: transactions, isLoading } = useTransactions(
+    period ? { ...period, accountId } : { month, accountId }
+  );
   const { data: accounts = [] } = useAccounts({ archived: true });
   const { data: categories = [] } = useCategories();
 
+  // Contas e cartões só se separam no extrato geral, e só quando há os dois.
+  const showScope = !accountId && hasCardsAndAccounts(accounts);
+  const perspective = accountId ?? (showScope ? scopeAccountIds(accounts, scope) : undefined);
+
   const all = transactions ?? [];
-  const visible = filterTransactions(all, filter, search, accountId);
-  const totals = totalsOf(all, accountId);
+  const inScope = filterTransactions(all, NO_FILTERS, '', perspective);
+  const visible = filterTransactions(inScope, filters, search, perspective);
+  const totals = totalsOf(inScope, perspective);
+  const filterCount = activeFilterCount(filters, period);
+
+  const where = period ? 'no período' : `em ${monthName(month)}`;
+  const scopeLabel =
+    showScope && scope !== 'all' ? ` · ${scope === 'cards' ? 'Cartão' : 'Contas'}` : '';
+  const totalsTitle = `${period ? 'Resumo do período' : `Resumo de ${capitalize(monthName(month))}`}${scopeLabel}`;
+
+  const filterButton = <FilterButton count={filterCount} onClick={openSheet} />;
 
   return (
     <div>
-      <MonthSwitcher month={month} onChange={onMonthChange} className='-mx-2 mb-3' />
+      {period ? (
+        <PeriodBar period={period} onEdit={openSheet} onClear={() => setPeriod(null)} />
+      ) : (
+        <MonthSwitcher month={month} onChange={onMonthChange} className='-mx-2 mb-3' />
+      )}
 
-      <SearchField value={search} onChange={setSearch} />
-
-      <div className='no-scrollbar -mx-4 mt-3 mb-5 flex gap-2 overflow-x-auto px-4'>
-        {FILTERS.map((option) => (
-          <button
-            key={option.value}
-            type='button'
-            aria-pressed={filter === option.value}
-            onClick={() => setFilter(option.value)}
-            className={cn(
-              'text-subhead h-8 shrink-0 rounded-full px-3.5 font-medium transition-colors active:opacity-60',
-              filter === option.value ? 'bg-tint text-white' : 'bg-surface text-foreground'
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
+      <div className='flex items-center gap-2'>
+        <div className='min-w-0 flex-1'>
+          <SearchField value={search} onChange={setSearch} />
+        </div>
+        {!showScope && filterButton}
       </div>
+
+      {showScope ? (
+        <div className='mt-3 mb-5 flex items-center gap-2'>
+          <div className='flex min-w-0 flex-1 gap-2'>
+            {SCOPES.map((option) => (
+              <button
+                key={option.value}
+                type='button'
+                aria-pressed={scope === option.value}
+                onClick={() => setScope(option.value)}
+                className={cn(
+                  'text-subhead h-8 shrink-0 rounded-full px-3.5 font-medium transition-colors active:opacity-60',
+                  scope === option.value ? 'bg-tint text-white' : 'bg-surface text-foreground'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {filterButton}
+        </div>
+      ) : (
+        <div className='h-5' />
+      )}
 
       {isLoading ? (
         <StatementSkeleton />
@@ -76,7 +125,7 @@ export function Statement({
           transactions={visible}
           accounts={accounts}
           categories={categories}
-          accountId={accountId}
+          accountId={perspective}
           onSelect={onSelect}
         />
       ) : (
@@ -85,26 +134,108 @@ export function Statement({
             icon={<Receipt />}
             title={all.length ? 'Nada encontrado' : 'Nenhum lançamento'}
             message={
-              all.length
-                ? 'Tente outro filtro ou outra busca.'
-                : `Nada registrado em ${monthName(month)}.`
+              !all.length
+                ? `Nada registrado ${where}.`
+                : !inScope.length
+                  ? `Nada ${scope === 'cards' ? 'no cartão' : 'nas contas'} ${where}.`
+                  : 'Tente outro filtro ou outra busca.'
             }
             action={
-              !all.length && (
+              !all.length && !period ? (
                 <Button size='md' onClick={onCreate}>
                   Novo lançamento
                 </Button>
-              )
+              ) : filterCount > 0 ? (
+                <Button
+                  size='md'
+                  variant='tinted'
+                  onClick={() => {
+                    setFilters(NO_FILTERS);
+                    setPeriod(null);
+                  }}
+                >
+                  Limpar filtros
+                </Button>
+              ) : undefined
             }
           />
         </Section>
       )}
 
-      {!isLoading && all.length > 0 && (
-        <TotalsCard totals={totals} title={`Resumo de ${capitalize(monthName(month))}`} />
-      )}
+      {!isLoading && inScope.length > 0 && <TotalsCard totals={totals} title={totalsTitle} />}
+
+      <StatementFiltersSheet
+        key={sheetKey}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        filters={filters}
+        period={period}
+        month={month}
+        onApply={(nextFilters, nextPeriod) => {
+          setFilters(nextFilters);
+          setPeriod(nextPeriod);
+          setSheetOpen(false);
+        }}
+      />
     </div>
   );
+}
+
+/** Botão de filtros ao lado dos chips; com filtro ligado fica preenchido e mostra quantos. */
+function FilterButton({ count, onClick }: { count: number; onClick: () => void }) {
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      aria-label={count ? `Filtros (${count} ligados)` : 'Filtros'}
+      className={cn(
+        'relative flex size-9 shrink-0 items-center justify-center rounded-full transition-colors active:opacity-60',
+        count ? 'bg-tint text-white' : 'bg-surface text-tint'
+      )}
+    >
+      <SlidersHorizontal className='size-[18px]' strokeWidth={2.25} />
+      {count > 0 && (
+        <span className='bg-red text-caption-2 ring-background absolute -top-1 -right-1 flex size-[18px] items-center justify-center rounded-full font-semibold text-white ring-2'>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+/** No lugar do "‹ Mês ›" quando há período: as datas, tocar edita, "Limpar" volta para o mês. */
+function PeriodBar({
+  period,
+  onEdit,
+  onClear,
+}: {
+  period: Period;
+  onEdit: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className='mb-3 flex min-h-11 items-center justify-between gap-2'>
+      <button type='button' onClick={onEdit} className='min-w-0 text-left active:opacity-60'>
+        <div className='text-caption text-label-2 font-medium uppercase'>Período</div>
+        <div className='text-headline truncate'>{periodLabel(period)}</div>
+      </button>
+      <button
+        type='button'
+        onClick={onClear}
+        className='text-tint text-subhead shrink-0 font-medium active:opacity-40'
+      >
+        Voltar ao mês
+      </button>
+    </div>
+  );
+}
+
+/** "1 de out. – 15 de out." (com o ano quando muda de um lado para o outro). */
+export function periodLabel({ from, to }: Period) {
+  if (from === to) return shortDay(from);
+  const sameYear = from.slice(0, 4) === to.slice(0, 4);
+  const side = (day: string) => (sameYear ? shortDay(day) : `${shortDay(day)} ${day.slice(0, 4)}`);
+  return `${side(from)} – ${side(to)}`;
 }
 
 function SearchField({ value, onChange }: { value: string; onChange: (value: string) => void }) {

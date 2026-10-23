@@ -14,6 +14,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  SquareArrowOutUpRight,
   TriangleAlert,
   Unplug,
 } from 'lucide-react';
@@ -475,6 +476,16 @@ function Connected() {
               {data.items.length ? 'Conectar outro banco' : 'Conectar banco'}
             </span>
           }
+        />
+        <Row
+          onClick={() => window.open(PLUGGY_LINKS.meuPluggy, '_blank', 'noopener,noreferrer')}
+          leading={
+            <IconChip color='var(--green)'>
+              <SquareArrowOutUpRight />
+            </IconChip>
+          }
+          title='Vincular banco no Meu Pluggy'
+          subtitle='Banco novo? Conecte primeiro no site'
         />
         <Row
           onClick={() => setSheet('item')}
