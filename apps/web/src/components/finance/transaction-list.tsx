@@ -3,7 +3,7 @@ import { Clock, Repeat } from 'lucide-react';
 
 import { Section } from '@/components/ios/list';
 import { useUpdateTransaction } from '@/features/finance';
-import { money, relativeDay, signedMoney } from '@/lib/format';
+import { amountTone, money, relativeDay } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 import { CategoryIcon } from './category-icon';
@@ -41,8 +41,10 @@ export function TransactionList({
           header={relativeDay(group.date)}
           action={
             group.totalCents !== 0 ? (
-              <span className='text-footnote text-label-2 font-rounded numeric'>
-                {signedMoney(group.totalCents)}
+              <span
+                className={cn('text-footnote font-rounded numeric', amountTone(group.totalCents))}
+              >
+                {money(Math.abs(group.totalCents))}
               </span>
             ) : undefined
           }
@@ -96,22 +98,10 @@ export function TransactionRow({
   ].filter(Boolean);
 
   const signed = signedAmount(tx, accountId);
-  const amountText =
-    tx.kind === 'TRANSFER' && signed === 0
-      ? money(tx.amountCents)
-      : signed > 0
-        ? `+ ${money(signed)}`
-        : `− ${money(-signed)}`;
-
-  const amountColor = planned
-    ? 'text-label-2'
-    : tx.kind === 'TRANSFER'
-      ? accountId && signed > 0
-        ? 'text-green'
-        : 'text-label-2'
-      : signed > 0
-        ? 'text-green'
-        : 'text-foreground';
+  // Sem "+" ou "−": a cor diz se entrou (verde) ou saiu (vermelho). Transferência entre as
+  // contas do próprio extrato não muda o saldo e fica neutra.
+  const amountText = money(signed === 0 ? tx.amountCents : Math.abs(signed));
+  const amountColor = amountTone(signed, planned) ?? 'text-label-2';
 
   const actionLabel =
     tx.kind === 'INCOME' ? 'Receber' : tx.kind === 'TRANSFER' ? 'Efetivar' : 'Pagar';
@@ -179,8 +169,8 @@ export function TotalsCard({ totals, title }: { totals: Totals; title?: string }
         <TotalCell label='Saídas' value={money(totals.expenseCents)} className='text-red' />
         <TotalCell
           label='Resultado'
-          value={signedMoney(totals.netCents)}
-          className={totals.netCents < 0 ? 'text-red' : undefined}
+          value={money(Math.abs(totals.netCents))}
+          className={amountTone(totals.netCents)}
         />
       </div>
       {(totals.plannedIncomeCents > 0 || totals.plannedExpenseCents > 0) && (
@@ -188,8 +178,13 @@ export function TotalsCard({ totals, title }: { totals: Totals; title?: string }
           <Clock className='size-3.5' />
           <span>
             Inclui previstos:{' '}
-            <span className='font-rounded numeric'>+{money(totals.plannedIncomeCents)}</span> e{' '}
-            <span className='font-rounded numeric'>−{money(totals.plannedExpenseCents)}</span>
+            <span className='font-rounded numeric text-green/60'>
+              {money(totals.plannedIncomeCents)}
+            </span>{' '}
+            e{' '}
+            <span className='font-rounded numeric text-red/60'>
+              {money(totals.plannedExpenseCents)}
+            </span>
           </span>
         </div>
       )}

@@ -413,8 +413,8 @@ function BillRow({
       }
       trailing={
         <div className='flex items-center gap-2'>
-          <span className={cn('numeric text-body', income && 'text-green')}>
-            {income ? '+' : ''}
+          {/* Conta ainda não paga: a cor da entrada ou saída, mais transparente. */}
+          <span className={cn('numeric text-body', income ? 'text-green/60' : 'text-red/60')}>
             {format(bill.amountCents)}
           </span>
           <button

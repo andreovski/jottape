@@ -368,7 +368,6 @@ function TransactionCard({
     );
   }
 
-  const sign = draft.kind === 'EXPENSE' ? '−' : draft.kind === 'INCOME' ? '+' : '';
   const undone = card.status === 'UNDONE';
   return (
     <CardShell
@@ -383,7 +382,7 @@ function TransactionCard({
           )}
           style={undone ? undefined : { color: KIND_COLOR[draft.kind] }}
         >
-          {draft.amountCents ? `${sign}${format(draft.amountCents)}` : '—'}
+          {draft.amountCents ? format(draft.amountCents) : '—'}
         </span>
       }
       fields={[

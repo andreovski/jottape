@@ -12,7 +12,7 @@ import { MonthSwitcher } from '@/components/finance/month-switcher';
 import { EmptyState, Skeleton } from '@/components/ios/controls';
 import { Row, Section } from '@/components/ios/list';
 import { useCategories, useMonthSummary } from '@/features/finance';
-import { money, monthName, signedMoney } from '@/lib/format';
+import { amountTone, money, monthName } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export function SummaryTab({
@@ -92,10 +92,10 @@ function SummaryContent({
             <span
               className={cn(
                 'font-rounded numeric text-title-3',
-                summary.netCents < 0 ? 'text-red' : 'text-green'
+                amountTone(summary.netCents) ?? 'text-label-2'
               )}
             >
-              {signedMoney(summary.netCents)}
+              {money(Math.abs(summary.netCents))}
             </span>
           }
         />
@@ -104,12 +104,20 @@ function SummaryContent({
             <Row
               leading={<Clock className='text-label-2 size-[18px]' />}
               title='Entradas previstas'
-              detail={<span className='font-rounded'>{money(summary.plannedIncomeCents)}</span>}
+              detail={
+                <span className='font-rounded text-green/60'>
+                  {money(summary.plannedIncomeCents)}
+                </span>
+              }
             />
             <Row
               leading={<Clock className='text-label-2 size-[18px]' />}
               title='Saídas previstas'
-              detail={<span className='font-rounded'>{money(summary.plannedExpenseCents)}</span>}
+              detail={
+                <span className='font-rounded text-red/60'>
+                  {money(summary.plannedExpenseCents)}
+                </span>
+              }
             />
           </>
         )}
