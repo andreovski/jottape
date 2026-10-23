@@ -160,7 +160,6 @@ function plain(text: string): string {
     .toLowerCase();
 }
 
-const PIX = /\bpix\b/;
 const NAME_PARTICLES = new Set(['da', 'das', 'de', 'do', 'dos', 'e']);
 
 /** "JOSIANE CRISTINA DA SILVA" → "Josiane Cristina da Silva"; documento ou número, null. */
@@ -183,16 +182,14 @@ function personName(text: string): string | null {
 /**
  * Título do lançamento do banco. Muitos vêm como "o que foi|para quem|documento|banco"
  * ("Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP"): o título
- * é o nome depois do "|", com "Pix - " na frente quando foi Pix. Sem "|", fica como veio. O texto
+ * é o nome depois do "|" (a pessoa ou o estabelecimento). Sem "|", fica como veio. O texto
  * original vai nas notas do lançamento.
  */
 export function shortDescription(raw: string): string {
   const text = raw.trim();
-  const [what, ...rest] = text.split(/\s*\|\s*/);
-  if (!rest.length) return text;
+  const [, ...rest] = text.split(/\s*\|\s*/);
   const name = rest.map(personName).find(Boolean);
-  if (!name) return text;
-  return (PIX.test(plain(what!)) ? `Pix - ${name}` : name).slice(0, 120);
+  return name ? name.slice(0, 120) : text;
 }
 
 /** Descrição comparável: sem acento, número e pontuação, só as três primeiras palavras. */

@@ -244,12 +244,12 @@ it('a parcela vai no fim da descrição', () => {
 });
 
 describe('título do lançamento do banco', () => {
-  it('fica com o nome depois do "|", com "Pix - " quando foi Pix', () => {
+  it('fica com o nome depois do "|"', () => {
     expect(
       shortDescription(
         'Transferência enviada pelo Pix|JOSIANE CRISTINA DA SILVA|•••.123.456-••|NU PAGAMENTOS - IP'
       )
-    ).toBe('Pix - Josiane Cristina da Silva');
+    ).toBe('Josiane Cristina da Silva');
     expect(shortDescription('Transferência recebida|MARIA DE SOUZA|12.345.678/0001-90')).toBe(
       'Maria de Souza'
     );
@@ -266,8 +266,8 @@ describe('título do lançamento do banco', () => {
 
   it('a categoria sugerida olha o título: cada pessoa do Pix tem a sua', () => {
     const memory = categoryMemory([
-      { description: 'Pix - Josiane Cristina', kind: 'EXPENSE', categoryId: 'casa' },
-      { description: 'Pix - Outra Pessoa', kind: 'EXPENSE', categoryId: 'outros' },
+      { description: 'Josiane Cristina', kind: 'EXPENSE', categoryId: 'casa' },
+      { description: 'Outra Pessoa', kind: 'EXPENSE', categoryId: 'outros' },
     ]);
     expect(
       suggestCategory(memory, {

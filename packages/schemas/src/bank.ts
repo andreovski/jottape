@@ -93,7 +93,7 @@ export const bankMovementResponseSchema = z.object({
   kind: z.enum(['INCOME', 'EXPENSE']),
   amountCents: z.number().int(),
   date: isoDateSchema,
-  /** Título curto ("Pix - Josiane Cristina"). */
+  /** Título curto ("Josiane Cristina"). */
   description: z.string(),
   /** O texto como veio do banco (vai nas notas do lançamento quando difere do título). */
   bankDescription: z.string(),
@@ -109,6 +109,8 @@ export const acceptBankMovementBodySchema = z.object({
   kind: z.enum(['INCOME', 'EXPENSE']).optional(),
   categoryId: idSchema.nullable().optional(),
   description: z.string().trim().min(1, 'Informe a descrição.').max(120).optional(),
+  /** Sem vir, as notas levam o texto do banco (quando ele difere do título). */
+  notes: z.string().trim().max(2000).nullable().optional(),
 });
 export type AcceptBankMovementBody = z.infer<typeof acceptBankMovementBodySchema>;
 

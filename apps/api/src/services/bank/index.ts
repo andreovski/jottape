@@ -877,9 +877,11 @@ export async function acceptMovement(
         description: body.description ?? importedDescription(movement),
         // O texto como veio do banco fica nas notas quando o título é outro.
         notes:
-          shortDescription(movement.description) !== movement.description
-            ? movement.description
-            : null,
+          body.notes !== undefined
+            ? body.notes || null
+            : shortDescription(movement.description) !== movement.description
+              ? movement.description
+              : null,
         status: 'DONE',
       },
       { bill: storedBill(movement) ?? undefined }
