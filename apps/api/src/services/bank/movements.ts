@@ -60,13 +60,13 @@ export function parseMovement(
 
   let date = dateStringInZone(new Date(tx.date), timeZone);
   // Alguns bancos datam todas as parcelas pela compra: a parcela N cai N-1 meses depois, senão
-  // todas iriam para a mesma fatura. Os outros datam pela fatura, no mês do vencimento.
+  // todas iriam para a mesma fatura. Outros datam pela fatura, no mês do vencimento: só se sabe
+  // quando vem a data da compra, longe da data. Sem ela, vale a data (a do banco vem um mês depois
+  // da outra) até a fatura fechar e o `billId` dizer onde ela caiu.
   let datedByBill = false;
-  if (installmentNumber && installmentNumber > 1) {
-    const purchase = meta?.purchaseDate
-      ? dateStringInZone(new Date(meta.purchaseDate), timeZone)
-      : null;
-    if (purchase && Math.abs(diffInDays(purchase, date)) <= 20) {
+  if (installmentNumber && installmentNumber > 1 && meta?.purchaseDate) {
+    const purchase = dateStringInZone(new Date(meta.purchaseDate), timeZone);
+    if (Math.abs(diffInDays(purchase, date)) <= 20) {
       date = addMonthsClamped(purchase, installmentNumber - 1);
     } else {
       datedByBill = accountType === 'CREDIT';
@@ -406,38 +406,51 @@ export interface InstallmentPiece {
   date: string;
   installmentNumber: number;
   installmentTotal: number;
-  transactionId: string | null;
 }
 
 /** Folga, em dias, entre as datas de compra deduzidas de duas parcelas da mesma compra. */
 const SAME_PURCHASE_DAYS = 20;
 
+/** "3/10", "03/10", "PARC 3/10", "Parcela 03 de 10" no texto do banco. */
+const INSTALLMENT_TEXT = /\b((?:parc(?:ela)?\.?\s*)?)(0*)(\d{1,2})(\s*(?:\/|de)\s*)(0*\d{1,2})\b/gi;
+
+/** O texto da compra sem a parcela ("Loja 2/3" e "Loja 3/3" são a mesma compra). */
+function purchaseText(description: string): string {
+  return plain(description).replace(INSTALLMENT_TEXT, ' ').replace(/\s+/g, ' ').trim();
+}
+
 /**
- * Compras parceladas que o banco manda uma parcela por fatura: junta as parcelas da mesma compra
- * (mesmo texto e número de parcelas, valor perto e a mesma data de compra, contando um mês por
- * parcela) e devolve a última que o banco mandou, quando ela já está lançada e ainda faltam
- * parcelas depois dela.
+ * Junta as parcelas da mesma compra: mesmo texto (sem a parcela) e número de parcelas, valor perto
+ * e a mesma data de compra, contando um mês por parcela.
  */
-export function lastKnownInstallments<T extends InstallmentPiece>(pieces: T[]): T[] {
-  const series: { purchase: string; pieces: T[] }[] = [];
+export function installmentSeries<T extends InstallmentPiece>(pieces: T[]): T[][] {
+  const series: { text: string; purchase: string; pieces: T[] }[] = [];
   for (const piece of pieces) {
+    const text = purchaseText(piece.description);
     const purchase = addMonthsClamped(piece.date, -(piece.installmentNumber - 1));
-    const same = series.find(({ purchase: other, pieces: [first] }) => {
-      return (
-        first!.description === piece.description &&
-        first!.installmentTotal === piece.installmentTotal &&
-        Math.abs(first!.amountCents - piece.amountCents) <= piece.installmentTotal &&
-        Math.abs(diffInDays(other, purchase)) <= SAME_PURCHASE_DAYS
-      );
-    });
+    const same = series.find(
+      (s) =>
+        s.text === text &&
+        s.pieces[0]!.installmentTotal === piece.installmentTotal &&
+        Math.abs(s.pieces[0]!.amountCents - piece.amountCents) <= piece.installmentTotal &&
+        Math.abs(diffInDays(s.purchase, purchase)) <= SAME_PURCHASE_DAYS
+    );
     if (same) same.pieces.push(piece);
-    else series.push({ purchase, pieces: [piece] });
+    else series.push({ text, purchase, pieces: [piece] });
   }
-  return series
-    .map(({ pieces }) =>
-      pieces.reduce((last, piece) =>
-        piece.installmentNumber > last.installmentNumber ? piece : last
-      )
-    )
-    .filter((last) => last.transactionId && last.installmentNumber < last.installmentTotal);
+  return series.map((s) => s.pieces);
+}
+
+/** O título da parcela `n` a partir do da parcela `number`: troca a parcela onde ela aparece. */
+export function installmentTitle(title: string, number: number, total: number, n: number): string {
+  let changed = false;
+  const next = title.replace(
+    INSTALLMENT_TEXT,
+    (match, prefix: string, zeros: string, digits: string, sep: string, of: string) => {
+      if (Number(digits) !== number || Number(of) !== total) return match;
+      changed = true;
+      return `${prefix}${String(n).padStart(zeros.length + digits.length, '0')}${sep}${of}`;
+    }
+  );
+  return changed ? next : `${title} (${n}/${total})`;
 }

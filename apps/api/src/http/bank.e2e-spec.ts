@@ -524,7 +524,8 @@ describe('bancos (Meu Pluggy)', () => {
 
   describe('faturas do banco', () => {
     // O banco fecha no dia 28 (o cartão diz 25): a Farmácia do dia 27 é da fatura de setembro,
-    // paga no dia 7. A última parcela (3/3) vem datada pela fatura (novembro, mês do vencimento).
+    // paga no dia 7. A última parcela (3/3) vem datada pela fatura (novembro, mês do vencimento,
+    // longe da compra).
     const SEPTEMBER_BILL = {
       id: 'bill-set',
       dueDate: '2026-10-08T03:00:00.000Z',
@@ -547,7 +548,11 @@ describe('bancos (Meu Pluggy)', () => {
         amount: 60,
         date: '2026-11-04T03:00:00.000Z',
         status: 'PENDING',
-        creditCardMetadata: { installmentNumber: 3, totalInstallments: 3 },
+        creditCardMetadata: {
+          installmentNumber: 3,
+          totalInstallments: 3,
+          purchaseDate: '2026-09-04T03:00:00.000Z',
+        },
       });
       if (withDebit) addDebit();
     }
@@ -635,6 +640,103 @@ describe('bancos (Meu Pluggy)', () => {
       addDebit();
       await syncAllBanks();
       await expectRepaired(cardId);
+    });
+
+    it('fechamento pelo banco, cada parcela na fatura da sua data e sem parcela repetida', async () => {
+      // O banco fecha no dia 9 e vence no 19 (o cartão foi criado com 25 e 5).
+      pluggy.bills.set(CARD_ID, [
+        {
+          id: 'bill-out',
+          dueDate: '2026-10-19T03:00:00.000Z',
+          billClosingDate: '2026-10-09T03:00:00.000Z',
+          totalAmount: 0,
+          payments: [],
+        },
+      ]);
+      for (const [n, date] of [
+        [1, '2026-10-14'],
+        [2, '2026-11-14'],
+      ] as const) {
+        pluggy.add(CARD_ID, {
+          id: `jim-${n}`,
+          description: `Jim.Com* 54920013 Day ${n}/2`,
+          amount: 499,
+          date: `${date}T03:00:00.000Z`,
+          status: 'PENDING',
+          creditCardMetadata: { installmentNumber: n, totalInstallments: 2 },
+        });
+      }
+      const { cardBank } = await connect();
+      const linked = (await api.patch(`/bank/accounts/${cardBank}`, { create: true })).json();
+      const cardId = (linked as BankStatusResponse).items[0]!.accounts[1]!.accountId!;
+      expect(await prisma.account.findUniqueOrThrow({ where: { id: cardId } })).toMatchObject({
+        closingDay: 9,
+        dueDay: 19,
+      });
+
+      await api.post('/bank/movements/accept-all');
+      expect((await invoicesOf(cardId)).map((i) => [i[0], i[1], i[3], i[4]])).toEqual([
+        ['2026-11', 499_00, '2026-11-09', '2026-11-19'],
+        ['2026-12', 499_00, '2026-12-09', '2026-12-19'],
+      ]);
+
+      // Uma versão anterior lançou a 2/2 a partir da 1/2, além da que o banco mandou: ela sai.
+      const first = await prisma.transaction.findFirstOrThrow({
+        where: { accountId: cardId, description: { contains: '1/2' } },
+      });
+      await prisma.transaction.update({
+        where: { id: first.id },
+        data: { installmentGroupId: 'grupo', installmentNumber: 1, installmentTotal: 2 },
+      });
+      await prisma.transaction.create({
+        data: {
+          userId,
+          kind: 'EXPENSE',
+          amountCents: 499_00,
+          date: new Date('2026-11-14'),
+          accountId: cardId,
+          description: 'Jim.Com* 54920013 Day 1/2 (2/2)',
+          installmentGroupId: 'grupo',
+          installmentNumber: 2,
+          installmentTotal: 2,
+          invoiceId: first.invoiceId,
+        },
+      });
+      await syncAllBanks();
+      expect(await prisma.transaction.count({ where: { accountId: cardId } })).toBe(2);
+      expect((await invoicesOf(cardId)).map((i) => [i[0], i[1]])).toEqual([
+        ['2026-11', 499_00],
+        ['2026-12', 499_00],
+      ]);
+    });
+
+    it('mudar o fechamento do cartão refaz as faturas em aberto', async () => {
+      const card = (
+        await api.post('/accounts', {
+          name: 'Cartão',
+          type: 'CREDIT_CARD',
+          closingDay: 1,
+          dueDay: 19,
+        })
+      ).json() as AccountResponse;
+      for (const date of ['2026-10-05', '2026-11-05']) {
+        await api.post('/transactions', {
+          kind: 'EXPENSE',
+          amountCents: 100_00,
+          date,
+          accountId: card.id,
+          description: 'Compra',
+        });
+      }
+      expect((await invoicesOf(card.id)).map((i) => [i[0], i[1], i[3]])).toEqual([
+        ['2026-11', 100_00, '2026-11-01'],
+        ['2026-12', 100_00, '2026-12-01'],
+      ]);
+      await api.patch(`/accounts/${card.id}`, { closingDay: 9 });
+      expect((await invoicesOf(card.id)).map((i) => [i[0], i[1], i[3], i[4]])).toEqual([
+        ['2026-10', 100_00, '2026-10-09', '2026-10-19'],
+        ['2026-11', 100_00, '2026-11-09', '2026-11-19'],
+      ]);
     });
 
     it('o débito já lançado à mão vira o pagamento da fatura que o banco deu como paga', async () => {

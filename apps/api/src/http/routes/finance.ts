@@ -27,6 +27,7 @@ import {
   listAccounts,
   listInvoices,
   payInvoice,
+  redateOpenInvoices,
   updateTransaction,
 } from '@/services/finance';
 import { budgetStatuses, currentMonth, forecast, monthSummary } from '@/services/reports';
@@ -79,13 +80,19 @@ export async function financeRoutes(app: FastifyInstance) {
     if (body.paymentAccountId === id)
       throw new AppError(400, 'O cartão não pode pagar a si mesmo.');
 
-    await prisma.account.update({
+    const updated = await prisma.account.update({
       where: { id },
       data: {
         ...body,
         ...(archived === undefined ? {} : { archivedAt: archived ? new Date() : null }),
       },
     });
+    if (
+      updated.type === 'CREDIT_CARD' &&
+      (updated.closingDay !== account.closingDay || updated.dueDay !== account.dueDay)
+    ) {
+      await redateOpenInvoices(request.userId, updated);
+    }
     const accounts = await listAccounts(request.userId, true);
     return accounts.find((a) => a.id === id);
   });

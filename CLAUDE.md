@@ -73,8 +73,12 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   se apaga nem se renomeia (`movements.ts`, puro, com teste). Aceitar usa `createTransactions`
   (a fatura sai sozinha). No cartão, a fatura do banco vale mais que a data: o `billId` (só depois
   que a fatura fecha) dá vencimento e fechamento (`billDueDate`/`billClosingDate` no movimento), e
-  parcela 2+ datada pela fatura cai na que vence no mês da data; a parcela que o banco manda lança as que faltam
-  depois dela (`fillInstallments`, mesma série, e cada uma casa pelo número quando chega); a cada sincronização o lançamento
+  parcela 2+ datada pela fatura (só se sabe com a data da compra, longe da data) cai na que vence no mês
+  da data, e sem a data da compra vale a data; a parcela que o banco manda lança as que faltam depois
+  dela (`fillInstallments`: mesma compra pelo texto sem o "2/10", cada uma casa pelo número quando
+  chega, e a lançada repetida sai). O fechamento e o vencimento do cartão seguem a última fatura
+  fechada do banco (mais de 3 dias de diferença), e mudar esses dias refaz as faturas em aberto
+  (`redateOpenInvoices`); a cada sincronização o lançamento
   é movido para essa fatura. Fatura que o banco diz paga fica sempre paga e vira transferência da conta ligada onde o
   débito aparece (aceito, pendente ou já lançado como despesa); sem débito em conta ligada, foi
   paga por fora e fica paga sem tirar de conta nenhuma (e um pagamento sem débito numa conta
