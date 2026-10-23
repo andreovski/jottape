@@ -21,6 +21,7 @@ export function MonthView({
   onSelect,
   onCreate,
   loading,
+  wide,
 }: {
   date: string;
   today: string;
@@ -32,13 +33,15 @@ export function MonthView({
   onSelect: (event: EventOccurrence) => void;
   onCreate: () => void;
   loading?: boolean;
+  /** Tela larga: o dia escolhido vai numa coluna ao lado do mês. */
+  wide?: boolean;
 }) {
   const month = date.slice(0, 7);
   const dayEvents = byDay.get(date) ?? [];
 
   return (
-    <div>
-      <div className='bg-surface mb-6 overflow-hidden rounded-[var(--radius)]'>
+    <div className={cn(wide && 'grid grid-cols-[minmax(0,1fr)_20rem] items-start gap-8')}>
+      <div className={cn('bg-surface overflow-hidden rounded-[var(--radius)]', !wide && 'mb-6')}>
         <div className='flex items-center justify-between py-2 pr-2 pl-4'>
           <span className='text-headline'>{capitalize(monthTitle(month))}</span>
           <div className='flex'>
@@ -140,7 +143,10 @@ export function MonthView({
         </div>
       </div>
 
-      <Section header={capitalize(longDay(date))}>
+      <Section
+        header={capitalize(longDay(date))}
+        className={cn(wide && 'sticky top-[calc(env(safe-area-inset-top)+7rem)]')}
+      >
         {dayEvents.length ? (
           dayEvents.map((event) => (
             <EventRow

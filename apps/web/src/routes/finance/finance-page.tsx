@@ -4,7 +4,11 @@ import { ChevronRight, Inbox, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { AccountSheet } from '@/components/finance/account-sheet';
-import { AccountsSheet, AccountsStackIcon } from '@/components/finance/accounts-sheet';
+import {
+  AccountsSheet,
+  AccountsStackIcon,
+  AccountsWallet,
+} from '@/components/finance/accounts-sheet';
 import {
   availableBalance,
   forecastAt,
@@ -20,6 +24,7 @@ import { SettingsButton } from '@/components/settings-button';
 import { useBankStatus } from '@/features/bank';
 import { useAccounts, useForecast } from '@/features/finance';
 import { money, todayKey } from '@/lib/format';
+import { useIsWide } from '@/lib/use-desktop';
 import { cn } from '@/lib/utils';
 
 import { BudgetsTab } from './budgets-tab';
@@ -67,6 +72,7 @@ export function FinancePage() {
   const bar = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const accountsSheet = useSheetState<undefined>();
+  const wide = useIsWide();
   // Trocar de aba volta a lista para o topo.
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 });
@@ -89,6 +95,7 @@ export function FinancePage() {
     <div className='relative h-dvh'>
       <CompactBar
         ref={bar}
+        wide={wide}
         visible={compact}
         onAdd={addTransaction}
         onAccounts={openAccounts}
@@ -100,35 +107,60 @@ export function FinancePage() {
         onScroll={(event) => onScroll(event.currentTarget)}
         className='h-full overflow-y-auto overscroll-contain'
       >
-        <div ref={summary} className='pt-safe mx-auto max-w-3xl px-4 lg:px-8'>
-          <Summary onAdd={addTransaction} onAccounts={openAccounts} onAddAccount={addAccount} />
-          <ReviewBanner />
-        </div>
+        {/* Tela larga: a carteira fica fixa à direita, no lugar do botão de contas do topo. */}
+        <div className={cn(wide && WIDE_GRID)}>
+          <div className={cn(wide && 'min-w-0')}>
+            <div ref={summary} className={cn('pt-safe', wide ? 'pt-4' : COLUMN)}>
+              <Summary
+                onAdd={addTransaction}
+                onAccounts={openAccounts}
+                onAddAccount={addAccount}
+                hideAccounts={wide}
+              />
+              <ReviewBanner />
+            </div>
 
-        {/* As abas ficam presas logo abaixo da barra pequena. */}
-        <div
-          className={cn(
-            'bg-background sticky top-[calc(env(safe-area-inset-top)+52px)] z-10 transition-shadow duration-200',
-            compact && 'shadow-[inset_0_-0.5px_0_var(--separator)]'
-          )}
-        >
-          <div className='mx-auto max-w-3xl px-4 pb-3 lg:px-8'>
-            <Segmented value={tab} onChange={(value) => setSearch({ tab: value })} options={TABS} />
+            {/* As abas ficam presas logo abaixo da barra pequena. */}
+            <div
+              className={cn(
+                'bg-background sticky top-[calc(env(safe-area-inset-top)+52px)] z-10 transition-shadow duration-200',
+                compact && 'shadow-[inset_0_-0.5px_0_var(--separator)]'
+              )}
+            >
+              <div className={cn('pb-3', !wide && COLUMN)}>
+                <Segmented
+                  value={tab}
+                  onChange={(value) => setSearch({ tab: value })}
+                  options={TABS}
+                />
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                'pt-2 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-12',
+                !wide && COLUMN
+              )}
+            >
+              {tab === 'extrato' && (
+                <Statement
+                  month={month}
+                  onMonthChange={onMonthChange}
+                  onSelect={(tx) => txSheet.show(tx)}
+                  onCreate={addTransaction}
+                />
+              )}
+              {tab === 'previsao' && <ForecastTab onSelect={(tx) => txSheet.show(tx)} />}
+              {tab === 'resumo' && <SummaryTab month={month} onMonthChange={onMonthChange} />}
+              {tab === 'orcamentos' && <BudgetsTab month={month} onMonthChange={onMonthChange} />}
+            </div>
           </div>
-        </div>
 
-        <div className='mx-auto max-w-3xl px-4 pt-2 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
-          {tab === 'extrato' && (
-            <Statement
-              month={month}
-              onMonthChange={onMonthChange}
-              onSelect={(tx) => txSheet.show(tx)}
-              onCreate={addTransaction}
-            />
+          {wide && (
+            <aside aria-label='Contas' className='sticky top-0 pt-[5.25rem] pb-12'>
+              <WalletPanel onAddAccount={addAccount} />
+            </aside>
           )}
-          {tab === 'previsao' && <ForecastTab onSelect={(tx) => txSheet.show(tx)} />}
-          {tab === 'resumo' && <SummaryTab month={month} onMonthChange={onMonthChange} />}
-          {tab === 'orcamentos' && <BudgetsTab month={month} onMonthChange={onMonthChange} />}
         </div>
       </div>
 
@@ -154,6 +186,11 @@ export function FinancePage() {
     </div>
   );
 }
+
+/** A coluna das Finanças no celular e em telas médias. */
+const COLUMN = 'mx-auto max-w-3xl px-4 lg:px-8';
+/** Tela larga: lançamentos à esquerda, carteira à direita. */
+const WIDE_GRID = 'mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_21rem] items-start gap-8 px-8';
 
 /** Lançamentos do banco esperando revisão (Meu Pluggy). Some quando não há nenhum. */
 function ReviewBanner() {
@@ -223,10 +260,13 @@ function Summary({
   onAdd,
   onAccounts,
   onAddAccount,
+  hideAccounts,
 }: {
   onAdd: () => void;
   onAccounts: () => void;
   onAddAccount: () => void;
+  /** A carteira já está à vista ao lado (tela larga). */
+  hideAccounts?: boolean;
 }) {
   const { isLoading, accounts, endOfMonth } = useTotals();
   const cards = accounts.filter((a) => a.type === 'CREDIT_CARD').length;
@@ -265,6 +305,7 @@ function Summary({
         <button
           type='button'
           onClick={accounts.length ? onAccounts : onAddAccount}
+          hidden={hideAccounts}
           className='bg-surface mb-0.5 flex h-11 shrink-0 items-center gap-2 rounded-full pr-2.5 pl-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.06)] transition-transform duration-150 active:scale-[0.96] dark:shadow-none'
         >
           {isLoading ? (
@@ -305,12 +346,14 @@ function Summary({
  */
 function CompactBar({
   ref,
+  wide,
   visible,
   onAdd,
   onAccounts,
   onAddAccount,
 }: {
   ref: React.Ref<HTMLDivElement>;
+  wide: boolean;
   visible: boolean;
   onAdd: () => void;
   onAccounts: () => void;
@@ -329,7 +372,12 @@ function CompactBar({
           visible ? 'pointer-events-auto opacity-100' : '-translate-y-1 opacity-0'
         )}
       >
-        <div className='mx-auto flex h-[52px] max-w-3xl items-center gap-2.5 px-4 lg:px-8'>
+        <div
+          className={cn(
+            'flex h-[52px] items-center gap-2.5',
+            wide ? 'mx-auto max-w-6xl pr-[calc(21rem+4rem)] pl-8' : 'mx-auto max-w-3xl px-4 lg:px-8'
+          )}
+        >
           <div className='min-w-0 flex-1'>
             <div className='text-caption-2 text-label-2 font-medium'>Saldo disponível</div>
             <Balance compact />
@@ -337,6 +385,7 @@ function CompactBar({
           <button
             type='button'
             onClick={accounts.length ? onAccounts : onAddAccount}
+            hidden={wide}
             aria-label='Contas'
             className='bg-fill text-subhead flex h-8 shrink-0 items-center gap-1.5 rounded-full pr-2 pl-1.5 font-semibold active:opacity-60'
           >
@@ -356,6 +405,22 @@ function CompactBar({
         </div>
       </div>
     </div>
+  );
+}
+
+/** A carteira fixa ao lado (tela larga), com os mesmos totais do topo. */
+function WalletPanel({ onAddAccount }: { onAddAccount: () => void }) {
+  const { accounts, balance, endOfMonth } = useTotals();
+  return (
+    <>
+      <h2 className='text-title-3 mb-3 px-1'>Contas</h2>
+      <AccountsWallet
+        accounts={accounts}
+        balanceCents={balance}
+        endOfMonthCents={endOfMonth}
+        onAddAccount={onAddAccount}
+      />
+    </>
   );
 }
 

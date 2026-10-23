@@ -18,6 +18,11 @@ interface PageProps {
   accessory?: ReactNode;
   children: ReactNode;
   className?: string;
+  /**
+   * Coluna larga no computador (Hoje, Agenda, Tarefas): cabe uma segunda coluna ao lado. No
+   * celular não muda nada.
+   */
+  wide?: boolean;
 }
 
 /**
@@ -34,7 +39,9 @@ export function Page({
   accessory,
   children,
   className,
+  wide,
 }: PageProps) {
+  const column = cn('mx-auto max-w-3xl px-4 lg:px-8', wide && 'lg:max-w-6xl');
   const sentinel = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
 
@@ -53,7 +60,7 @@ export function Page({
       <div className='pt-safe sticky top-0 z-30 pb-4'>
         {/* Degradê do fundo da página: sem faixa sólida, o conteúdo some suave sob o título. */}
         <div aria-hidden className='top-scrim absolute inset-0' />
-        <div className='relative mx-auto flex h-12 max-w-3xl items-center gap-2 px-4 lg:px-8'>
+        <div className={cn(column, 'relative flex h-12 items-center gap-2')}>
           {leading}
           <div
             className={cn(
@@ -73,12 +80,12 @@ export function Page({
         {accessory && compact && (
           <div className='absolute inset-x-0 top-full -mt-4'>
             <div aria-hidden className='top-scrim absolute inset-x-0 top-0 -bottom-4' />
-            <div className='relative mx-auto max-w-3xl px-4 pb-2 lg:px-8'>{accessory}</div>
+            <div className={cn(column, 'relative pb-2')}>{accessory}</div>
           </div>
         )}
       </div>
 
-      <div className='mx-auto max-w-3xl px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:px-8 lg:pb-12'>
+      <div className={cn(column, 'pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-12')}>
         <header className='-mt-3 pt-1 pb-3'>
           {eyebrow && (
             <div className='text-footnote text-tint font-semibold uppercase'>{eyebrow}</div>
