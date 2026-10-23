@@ -216,6 +216,21 @@ describe('categorias', () => {
     ).toBe('nova');
     expect(suggestCategory(memory, { kind: 'EXPENSE', description: 'Mercado' })).toBeNull();
   });
+
+  it('aceita descrição que começa pela outra, mas não nome curto demais', () => {
+    const memory = categoryMemory([
+      { description: 'Rendimento', kind: 'INCOME', categoryId: 'investimentos' },
+      { description: 'Pix', kind: 'EXPENSE', categoryId: 'outros' },
+      { description: 'Uber Trip', kind: 'EXPENSE', categoryId: 'transporte' },
+    ]);
+    const suggest = (kind: 'INCOME' | 'EXPENSE', description: string) =>
+      suggestCategory(memory, { kind, description });
+    expect(suggest('INCOME', 'RENDIMENTO DA CONTA')).toBe('investimentos');
+    expect(suggest('INCOME', 'Rendimentos')).toBeNull();
+    expect(suggest('EXPENSE', 'Rendimento da conta')).toBeNull();
+    expect(suggest('EXPENSE', 'PIX ENVIADO Fulano')).toBeNull();
+    expect(suggest('EXPENSE', 'Uber')).toBeNull();
+  });
 });
 
 it('a parcela vai no fim da descrição', () => {

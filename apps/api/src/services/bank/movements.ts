@@ -186,13 +186,27 @@ export function categoryMemory(
   return memory;
 }
 
+/**
+ * Categoria sugerida para um lançamento do banco. Primeiro a descrição igual; senão, uma que comece
+ * pela outra ("Rendimento" e "Rendimento da conta"), a mais recente. Nome curto demais (como "Pix")
+ * não vale para o segundo caso: casaria com tudo.
+ */
 export function suggestCategory(
   memory: Map<string, string>,
   movement: Pick<ParsedMovement, 'kind' | 'description'>
 ): string | null {
   const key = normalize(movement.description);
   if (!key) return null;
-  return memory.get(`${movement.kind}:${key}`) ?? null;
+  const exact = memory.get(`${movement.kind}:${key}`);
+  if (exact) return exact;
+  const prefix = `${movement.kind}:`;
+  for (const [entry, categoryId] of memory) {
+    if (!entry.startsWith(prefix)) continue;
+    const other = entry.slice(prefix.length);
+    const [shorter, longer] = other.length < key.length ? [other, key] : [key, other];
+    if (shorter.length >= 5 && longer.startsWith(`${shorter} `)) return categoryId;
+  }
+  return null;
 }
 
 /** Descrição do lançamento importado: a parcela vai no fim, como "Loja (2/10)". */
