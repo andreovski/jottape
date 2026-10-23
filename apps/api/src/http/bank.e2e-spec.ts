@@ -222,6 +222,77 @@ describe('bancos (Meu Pluggy)', () => {
     expect((await api.post(`/bank/movements/${review[0]!.id}/accept`, {})).statusCode).toBe(404);
   });
 
+  it('a categoria de um lançado vale para os parecidos que ainda esperam revisão', async () => {
+    const { checkingBank } = await connect();
+    const income = (await prisma.category.findFirstOrThrow({ where: { userId, kind: 'INCOME' } }))
+      .id;
+    for (const [id, day] of [
+      ['r1', '06'],
+      ['r2', '13'],
+    ])
+      pluggy.add(CHECKING_ID, {
+        id,
+        description: 'RENDIMENTO DA CONTA',
+        amount: 1.23,
+        type: 'CREDIT',
+        date: `2026-10-${day}T03:00:00.000Z`,
+      });
+    await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+
+    // Sem histórico, chegam sem categoria.
+    const [first, second] = await pending();
+    expect([first!.suggestedCategoryId, second!.suggestedCategoryId]).toEqual([null, null]);
+
+    // Lançar um deles com categoria ensina o outro, mesmo sem sincronizar de novo.
+    await api.post(`/bank/movements/${first!.id}/accept`, {
+      categoryId: income,
+      description: 'Rendimento',
+    });
+    expect((await pending()).map((m) => [m.id, m.suggestedCategoryId])).toEqual([
+      [second!.id, income],
+    ]);
+    const accepted = await api.post('/bank/movements/accept-all');
+    expect(accepted.statusCode).toBe(200);
+    const imported = await prisma.transaction.findMany({
+      where: { userId, kind: 'INCOME' },
+      select: { categoryId: true },
+    });
+    expect(imported.map((t) => t.categoryId)).toEqual([income, income]);
+  });
+
+  it('Pix entra com o nome de quem recebeu e o texto do banco fica nas notas', async () => {
+    const { checkingBank } = await connect();
+    const raw = 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP';
+    pluggy.add(CHECKING_ID, {
+      id: 'p1',
+      description: raw,
+      amount: -50,
+      date: '2026-10-05T03:00:00.000Z',
+    });
+    await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+
+    const [movement] = await pending();
+    expect(movement).toMatchObject({ description: 'Josiane Cristina', bankDescription: raw });
+    const accepted = await api.post(`/bank/movements/${movement!.id}/accept`, {});
+    expect(
+      await prisma.transaction.findUniqueOrThrow({ where: { id: accepted.json().transactionId } })
+    ).toMatchObject({ description: 'Josiane Cristina', notes: raw });
+
+    // Notas mexidas na revisão valem no lugar do texto do banco.
+    pluggy.add(CHECKING_ID, {
+      id: 'p2',
+      description: raw,
+      amount: -30,
+      date: '2026-10-06T03:00:00.000Z',
+    });
+    await api.post('/bank/sync');
+    const [second] = await pending();
+    const edited = await api.post(`/bank/movements/${second!.id}/accept`, { notes: 'Faxina' });
+    expect(
+      await prisma.transaction.findUniqueOrThrow({ where: { id: edited.json().transactionId } })
+    ).toMatchObject({ notes: 'Faxina' });
+  });
+
   it('cartão novo: cria o cartão com fechamento e vencimento, ignora o pagamento e lança na fatura', async () => {
     const { checkingBank, cardBank } = await connect();
     await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });

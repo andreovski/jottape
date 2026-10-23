@@ -160,6 +160,38 @@ function plain(text: string): string {
     .toLowerCase();
 }
 
+const NAME_PARTICLES = new Set(['da', 'das', 'de', 'do', 'dos', 'e']);
+
+/** "JOSIANE CRISTINA DA SILVA" → "Josiane Cristina da Silva"; documento ou número, null. */
+function personName(text: string): string | null {
+  if (/[•*]|\d{3}/.test(text)) return null;
+  const words = text
+    .replace(/[^\p{L}\s'&.]/gu, ' ')
+    .split(/\s+/)
+    .filter((word) => /\p{L}/u.test(word));
+  const name = words
+    .map((word, i) => {
+      const lower = word.toLocaleLowerCase('pt-BR');
+      if (i > 0 && NAME_PARTICLES.has(plain(lower))) return lower;
+      return lower.charAt(0).toLocaleUpperCase('pt-BR') + lower.slice(1);
+    })
+    .join(' ');
+  return name.replace(/[\s.]/g, '').length >= 2 ? name : null;
+}
+
+/**
+ * Título do lançamento do banco. Muitos vêm como "o que foi|para quem|documento|banco"
+ * ("Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP"): o título
+ * é o nome depois do "|" (a pessoa ou o estabelecimento). Sem "|", fica como veio. O texto
+ * original vai nas notas do lançamento.
+ */
+export function shortDescription(raw: string): string {
+  const text = raw.trim();
+  const [, ...rest] = text.split(/\s*\|\s*/);
+  const name = rest.map(personName).find(Boolean);
+  return name ? name.slice(0, 120) : text;
+}
+
 /** Descrição comparável: sem acento, número e pontuação, só as três primeiras palavras. */
 export function normalize(description: string): string {
   return plain(description)
@@ -186,13 +218,27 @@ export function categoryMemory(
   return memory;
 }
 
+/**
+ * Categoria sugerida para um lançamento do banco. Primeiro a descrição igual; senão, uma que comece
+ * pela outra ("Rendimento" e "Rendimento da conta"), a mais recente. Nome curto demais (como "Pix")
+ * não vale para o segundo caso: casaria com tudo.
+ */
 export function suggestCategory(
   memory: Map<string, string>,
   movement: Pick<ParsedMovement, 'kind' | 'description'>
 ): string | null {
-  const key = normalize(movement.description);
+  const key = normalize(shortDescription(movement.description));
   if (!key) return null;
-  return memory.get(`${movement.kind}:${key}`) ?? null;
+  const exact = memory.get(`${movement.kind}:${key}`);
+  if (exact) return exact;
+  const prefix = `${movement.kind}:`;
+  for (const [entry, categoryId] of memory) {
+    if (!entry.startsWith(prefix)) continue;
+    const other = entry.slice(prefix.length);
+    const [shorter, longer] = other.length < key.length ? [other, key] : [key, other];
+    if (shorter.length >= 5 && longer.startsWith(`${shorter} `)) return categoryId;
+  }
+  return null;
 }
 
 /** Descrição do lançamento importado: a parcela vai no fim, como "Loja (2/10)". */
@@ -201,9 +247,10 @@ export function importedDescription(movement: {
   installmentNumber: number | null;
   installmentTotal: number | null;
 }): string {
-  if (!movement.installmentTotal || !movement.installmentNumber) return movement.description;
+  const title = shortDescription(movement.description);
+  if (!movement.installmentTotal || !movement.installmentNumber) return title;
   const suffix = ` (${movement.installmentNumber}/${movement.installmentTotal})`;
-  return movement.description.slice(0, 120 - suffix.length) + suffix;
+  return title.slice(0, 120 - suffix.length) + suffix;
 }
 
 // ---------------------------------------------------------------- faturas do cartão

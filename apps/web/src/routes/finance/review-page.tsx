@@ -8,7 +8,7 @@ import { CategoryIcon } from '@/components/finance/category-icon';
 import { CategoryPicker } from '@/components/finance/category-picker';
 import { categoryTree } from '@/components/finance/finance-utils';
 import { Button, EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
-import { FieldRow, TextInput } from '@/components/ios/fields';
+import { FieldRow, TextArea, TextInput } from '@/components/ios/fields';
 import { Row, Section } from '@/components/ios/list';
 import { Page } from '@/components/ios/page';
 import { Sheet } from '@/components/ios/sheet';
@@ -132,6 +132,10 @@ function ReviewSheet({
   const [kind, setKind] = useState(movement.kind);
   const [categoryId, setCategoryId] = useState(movement.suggestedCategoryId ?? '');
   const [description, setDescription] = useState(movement.description);
+  // O texto do banco vai nas notas quando o título é outro; dá para mudar ou apagar.
+  const [notes, setNotes] = useState(
+    movement.bankDescription !== movement.description ? movement.bankDescription : ''
+  );
   const [reporting, setReporting] = useState(false);
 
   async function save() {
@@ -143,6 +147,7 @@ function ReviewSheet({
         ...(description.trim() && description.trim() !== movement.description
           ? { description: description.trim() }
           : {}),
+        notes: notes.trim() || null,
       },
     });
     onClose();
@@ -193,6 +198,15 @@ function ReviewSheet({
             groups={categoryTree(categories, kind)}
             kind={kind}
             placeholder='Nenhuma'
+          />
+        </FieldRow>
+        <FieldRow>
+          <TextArea
+            placeholder='Notas'
+            aria-label='Notas'
+            value={notes}
+            maxLength={2000}
+            onChange={(event) => setNotes(event.target.value)}
           />
         </FieldRow>
       </Section>

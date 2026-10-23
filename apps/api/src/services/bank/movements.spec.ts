@@ -10,6 +10,7 @@ import {
   movementBill,
   normalize,
   parseMovement,
+  shortDescription,
   suggestCategory,
 } from './movements';
 
@@ -216,6 +217,21 @@ describe('categorias', () => {
     ).toBe('nova');
     expect(suggestCategory(memory, { kind: 'EXPENSE', description: 'Mercado' })).toBeNull();
   });
+
+  it('aceita descrição que começa pela outra, mas não nome curto demais', () => {
+    const memory = categoryMemory([
+      { description: 'Rendimento', kind: 'INCOME', categoryId: 'investimentos' },
+      { description: 'Pix', kind: 'EXPENSE', categoryId: 'outros' },
+      { description: 'Uber Trip', kind: 'EXPENSE', categoryId: 'transporte' },
+    ]);
+    const suggest = (kind: 'INCOME' | 'EXPENSE', description: string) =>
+      suggestCategory(memory, { kind, description });
+    expect(suggest('INCOME', 'RENDIMENTO DA CONTA')).toBe('investimentos');
+    expect(suggest('INCOME', 'Rendimentos')).toBeNull();
+    expect(suggest('EXPENSE', 'Rendimento da conta')).toBeNull();
+    expect(suggest('EXPENSE', 'PIX ENVIADO Fulano')).toBeNull();
+    expect(suggest('EXPENSE', 'Uber')).toBeNull();
+  });
 });
 
 it('a parcela vai no fim da descrição', () => {
@@ -225,4 +241,39 @@ it('a parcela vai no fim da descrição', () => {
   expect(
     importedDescription({ description: 'Loja', installmentNumber: null, installmentTotal: null })
   ).toBe('Loja');
+});
+
+describe('título do lançamento do banco', () => {
+  it('fica com o nome depois do "|"', () => {
+    expect(
+      shortDescription(
+        'Transferência enviada pelo Pix|JOSIANE CRISTINA DA SILVA|•••.123.456-••|NU PAGAMENTOS - IP'
+      )
+    ).toBe('Josiane Cristina da Silva');
+    expect(shortDescription('Transferência recebida|MARIA DE SOUZA|12.345.678/0001-90')).toBe(
+      'Maria de Souza'
+    );
+    // Sem nome depois do "|" (só documento), fica como veio.
+    expect(shortDescription('Pix enviado|•••.123.456-••')).toBe('Pix enviado|•••.123.456-••');
+  });
+
+  it('sem "|" fica como veio', () => {
+    expect(shortDescription('  Padaria Pão Quente ')).toBe('Padaria Pão Quente');
+    expect(shortDescription('Transferência enviada pelo Pix')).toBe(
+      'Transferência enviada pelo Pix'
+    );
+  });
+
+  it('a categoria sugerida olha o título: cada pessoa do Pix tem a sua', () => {
+    const memory = categoryMemory([
+      { description: 'Josiane Cristina', kind: 'EXPENSE', categoryId: 'casa' },
+      { description: 'Outra Pessoa', kind: 'EXPENSE', categoryId: 'outros' },
+    ]);
+    expect(
+      suggestCategory(memory, {
+        kind: 'EXPENSE',
+        description: 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••',
+      })
+    ).toBe('casa');
+  });
 });

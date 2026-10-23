@@ -45,6 +45,7 @@ import {
   billPayment,
   candidateRange,
   categoryMemory,
+  shortDescription,
   findMatch,
   importedDescription,
   invoiceForPayment,
@@ -766,7 +767,8 @@ export function toBankMovement(movement: MovementWithAccount): BankMovementRespo
     kind: movement.kind === 'INCOME' ? 'INCOME' : 'EXPENSE',
     amountCents: movement.amountCents,
     date: fromDbDate(movement.date),
-    description: movement.description,
+    description: shortDescription(movement.description),
+    bankDescription: movement.description,
     installmentNumber: movement.installmentNumber,
     installmentTotal: movement.installmentTotal,
     status: movement.status,
@@ -777,7 +779,38 @@ export function toBankMovement(movement: MovementWithAccount): BankMovementRespo
 
 const withAccount = { bankAccount: { select: { accountId: true } } } as const;
 
+/**
+ * Refaz a categoria sugerida dos que esperam revisão com o histórico de agora: o "Rendimento" que
+ * chegou antes de existir um categorizado ganha a categoria assim que um deles é lançado com ela.
+ */
+async function refreshSuggestions(userId: string) {
+  const pending = await prisma.bankMovement.findMany({
+    where: { userId, status: 'PENDING' },
+    select: { id: true, kind: true, description: true, suggestedCategoryId: true },
+  });
+  if (!pending.length) return;
+  const memory = await historyMemory(userId);
+  const changes = new Map<string, string[]>();
+  for (const movement of pending) {
+    const kind = movement.kind === 'INCOME' ? 'INCOME' : 'EXPENSE';
+    const suggestion = suggestCategory(memory, { kind, description: movement.description });
+    // Sem nada no histórico, fica a que já estava.
+    if (!suggestion || suggestion === movement.suggestedCategoryId) continue;
+    changes.set(suggestion, [...(changes.get(suggestion) ?? []), movement.id]);
+  }
+  if (!changes.size) return;
+  await prisma.$transaction(
+    [...changes].map(([categoryId, ids]) =>
+      prisma.bankMovement.updateMany({
+        where: { id: { in: ids }, userId, status: 'PENDING' },
+        data: { suggestedCategoryId: categoryId },
+      })
+    )
+  );
+}
+
 export async function listMovements(userId: string, status: BankMovement['status']) {
+  if (status === 'PENDING') await refreshSuggestions(userId);
   const movements = await prisma.bankMovement.findMany({
     where: {
       userId,
@@ -842,6 +875,13 @@ export async function acceptMovement(
         accountId,
         categoryId,
         description: body.description ?? importedDescription(movement),
+        // O texto como veio do banco fica nas notas quando o título é outro.
+        notes:
+          body.notes !== undefined
+            ? body.notes || null
+            : shortDescription(movement.description) !== movement.description
+              ? movement.description
+              : null,
         status: 'DONE',
       },
       { bill: storedBill(movement) ?? undefined }
