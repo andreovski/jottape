@@ -33,7 +33,7 @@ export const SYSTEM_CATEGORIES: {
   parent?: CategorySystemKey;
 }[] = [
   { key: 'TRANSFER', name: 'Transferência', icon: 'landmark', color: '#32ade6' },
-  { key: 'TRANSFER_PIX', name: 'Pix', icon: 'zap', parent: 'TRANSFER' },
+  { key: 'TRANSFER_PIX', name: 'Pix', icon: 'pix', parent: 'TRANSFER' },
   { key: 'TRANSFER_DEBIT', name: 'Débito', icon: 'wallet', parent: 'TRANSFER' },
   { key: 'TRANSFER_CREDIT', name: 'Crédito', icon: 'credit-card', parent: 'TRANSFER' },
 ];

@@ -1,9 +1,12 @@
+import type { Prisma } from '@prisma/client';
+
 import { getAnthropicConfig, getJevConfig } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
-import { assistantEnabled, HAIKU_INPUT, HAIKU_OUTPUT, JEV_INPUT } from '@/services/assistant';
+import { assistantEnabled } from '@/services/assistant';
 
-import { type AiCategory, type AiMovement, classifyWithHaiku, scoreWithJev } from './ai-model';
-import { decideAiCategory, looksLikeInvoicePayment, shortDescription } from './movements';
+import { categorizeBatch } from './ai-batch';
+import type { AiCategory, AiMovement } from './ai-model';
+import { looksLikeInvoicePayment, shortDescription } from './movements';
 
 // A IA na revisão do banco: depois da sincronização, os que esperam revisão sem sugestão do
 // histórico passam pelo Haiku e pelo Jev, uma vez só cada (`aiCheckedAt`). É do Jotta (a parte
@@ -13,22 +16,6 @@ import { decideAiCategory, looksLikeInvoicePayment, shortDescription } from './m
 const BATCH = 40;
 /** Teto de segurança: quantos lançamentos a IA olha por pessoa em 24 h. */
 export const AI_DAILY_LIMIT = 200;
-/** Perguntas ao Jev ao mesmo tempo. */
-const JEV_CONCURRENCY = 4;
-
-async function inParallel<T, R>(items: T[], limit: number, run: (item: T) => Promise<R>) {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await run(items[index]!);
-      }
-    })
-  );
-  return results;
-}
 
 /** Categorias como a pessoa vê: a subcategoria leva o nome da mãe ("Transferência › Pix"). */
 async function categoriesOf(userId: string): Promise<AiCategory[]> {
@@ -91,19 +78,12 @@ export async function suggestWithAi(userId: string): Promise<number> {
       card: m.bankAccount.type === 'CREDIT',
     }));
     try {
-      const [haiku, jev] = await Promise.all([
-        classifyWithHaiku(input, categories),
-        inParallel(input, JEV_CONCURRENCY, (m) =>
-          scoreWithJev(m, categories).catch((error) => {
-            console.error('[bank:ai] jev', error);
-            return null;
-          })
-        ),
-      ]);
+      const { items, usage } = await categorizeBatch(input, categories);
       const now = new Date();
       const updates = batch.map((movement, i) => {
-        const decision = decideAiCategory(haiku.picks[i] ?? null, jev[i]?.probabilities ?? null);
+        const { decision, trace } = items[i]!;
         if (decision) suggested++;
+        const checked = { aiCheckedAt: now, aiTrace: trace as unknown as Prisma.InputJsonValue };
         return prisma.bankMovement.updateMany({
           // Pode ter sido lançado ou ganhado sugestão do histórico enquanto a IA pensava.
           where: {
@@ -113,29 +93,24 @@ export async function suggestWithAi(userId: string): Promise<number> {
           },
           data: decision
             ? {
-                aiCheckedAt: now,
+                ...checked,
                 suggestedCategoryId: decision.categoryId,
                 suggestionSource: 'AI',
                 suggestionConfidence: decision.confidence,
               }
-            : { aiCheckedAt: now },
+            : checked,
         });
       });
-      const jevTokens = jev.reduce((sum, r) => sum + (r?.inputTokens ?? 0), 0);
       await prisma.$transaction([
         ...updates,
         prisma.assistantUsage.create({
           data: {
             userId,
             kind: 'BANK_CATEGORY',
-            jevInputTokens: jevTokens,
-            modelInputTokens: haiku.inputTokens,
-            modelOutputTokens: haiku.outputTokens,
-            costMicros: Math.round(
-              haiku.inputTokens * HAIKU_INPUT +
-                haiku.outputTokens * HAIKU_OUTPUT +
-                jevTokens * JEV_INPUT
-            ),
+            jevInputTokens: usage.jevInput,
+            modelInputTokens: usage.modelInput,
+            modelOutputTokens: usage.modelOutput,
+            costMicros: usage.costMicros,
           },
         }),
       ]);

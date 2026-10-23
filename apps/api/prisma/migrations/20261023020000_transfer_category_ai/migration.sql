@@ -9,6 +9,7 @@ ALTER TYPE "AssistantUsageKind" ADD VALUE 'BANK_CATEGORY';
 
 -- AlterTable
 ALTER TABLE "bank_movements" ADD COLUMN     "ai_checked_at" TIMESTAMP(3),
+ADD COLUMN     "ai_trace" JSONB,
 ADD COLUMN     "suggestion_confidence" DOUBLE PRECISION,
 ADD COLUMN     "suggestion_source" "CategorySuggestionSource";
 
@@ -60,7 +61,7 @@ WHERE c."id" = found."id";
 INSERT INTO "categories" ("id", "user_id", "name", "kind", "parent_id", "icon", "system_key", "created_at", "updated_at")
 SELECT gen_random_uuid()::text, parent."user_id", sub."name", parent."kind", parent."id", sub."icon", sub."key"::"CategorySystemKey", now(), now()
 FROM "categories" parent
-CROSS JOIN (VALUES ('TRANSFER_PIX', 'Pix', 'zap'), ('TRANSFER_DEBIT', 'Débito', 'wallet'), ('TRANSFER_CREDIT', 'Crédito', 'credit-card')) AS sub("key", "name", "icon")
+CROSS JOIN (VALUES ('TRANSFER_PIX', 'Pix', 'pix'), ('TRANSFER_DEBIT', 'Débito', 'wallet'), ('TRANSFER_CREDIT', 'Crédito', 'credit-card')) AS sub("key", "name", "icon")
 WHERE parent."system_key" = 'TRANSFER'
   AND NOT EXISTS (
     SELECT 1 FROM "categories" c

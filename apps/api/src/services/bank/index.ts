@@ -3,6 +3,7 @@ import type {
   AcceptBankMovementBody,
   BankConnectTokenResponse,
   BankMovementResponse,
+  BankAiTrace,
   BankStatusResponse,
   LinkBankAccountBody,
   SaveBankCredentialsBody,
@@ -20,6 +21,7 @@ import { encrypt } from '@/lib/crypto';
 import { fromDbDate, todayIn, toDbDate } from '@/lib/dates';
 import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
+import { isOwner } from '@/services/assistant';
 import {
   billReferenceMonth,
   createTransactions,
@@ -803,7 +805,8 @@ export async function syncAllBanks() {
 
 type MovementWithAccount = BankMovement & { bankAccount: Pick<BankAccount, 'accountId'> };
 
-export function toBankMovement(movement: MovementWithAccount): BankMovementResponse {
+/** `dev`: o dono vê o que a IA fez e quanto custou (modo dev). */
+export function toBankMovement(movement: MovementWithAccount, dev = false): BankMovementResponse {
   return {
     id: movement.id,
     bankAccountId: movement.bankAccountId,
@@ -819,6 +822,7 @@ export function toBankMovement(movement: MovementWithAccount): BankMovementRespo
     suggestedCategoryId: movement.suggestedCategoryId,
     suggestionSource: movement.suggestedCategoryId ? movement.suggestionSource : null,
     suggestionConfidence: movement.suggestionSource === 'AI' ? movement.suggestionConfidence : null,
+    ...(dev ? { aiTrace: (movement.aiTrace as BankAiTrace | null) ?? null } : {}),
     transactionId: movement.transactionId,
   };
 }
@@ -904,7 +908,8 @@ export async function listMovements(userId: string, status: BankMovement['status
     orderBy: [{ date: 'desc' }, { createdAt: 'asc' }],
     take: 500,
   });
-  return movements.map(toBankMovement);
+  const dev = await isOwner(userId);
+  return movements.map((movement) => toBankMovement(movement, dev));
 }
 
 export async function acceptMovement(

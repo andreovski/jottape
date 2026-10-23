@@ -358,6 +358,19 @@ describe('bancos (Meu Pluggy)', () => {
       suggestedCategoryId: transport,
       suggestionSource: 'AI',
       suggestionConfidence: 0.91,
+      // O dono vê no modo dev o que cada IA fez e quanto custou (o Haiku, a parte do lote).
+      aiTrace: {
+        haiku: {
+          pick: 'Transporte',
+          batchSize: 2,
+          inputTokens: 3000,
+          outputTokens: 400,
+          costMicros: 250,
+        },
+        jev: { top: 'Transporte', probability: 0.91, inputTokens: 300, costMicros: 13 },
+        decided: true,
+        costMicros: 263,
+      },
     });
     expect(byTitle['Josiane Cristina']).toMatchObject({
       suggestedCategoryId: pix,

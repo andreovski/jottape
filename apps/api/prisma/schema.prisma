@@ -609,6 +609,8 @@ model BankMovement {
   suggestionConfidence Float?                    @map("suggestion_confidence")
   /// Quando a IA já olhou o movimento (uma vez só, decidindo ou não).
   aiCheckedAt          DateTime?                 @map("ai_checked_at")
+  /// O que cada IA respondeu e quanto custou (o modo dev do dono mostra).
+  aiTrace              Json?                     @map("ai_trace")
   transactionId        String?                   @map("transaction_id")
   /// Aceito na revisão com tipo, categoria ou descrição trocados (mede a categoria sugerida).
   edited               Boolean                   @default(false)
