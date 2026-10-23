@@ -24,10 +24,14 @@ function fmt(options: Intl.DateTimeFormatOptions, zone = timeZone) {
 
 export const money = (cents: number) => formatCents(cents);
 
-/** Valor com sinal explícito, para extratos ("+ R$ 10,00"). */
-export function signedMoney(cents: number) {
-  if (cents === 0) return money(0);
-  return `${cents > 0 ? '+' : '−'} ${money(Math.abs(cents))}`;
+/**
+ * Cor de um valor que entra ou sai: verde entrada, vermelho saída (sem "+" nem "−" no texto).
+ * Previsto (ainda não lançado) usa a mesma cor, mais transparente. Zero fica neutro.
+ */
+export function amountTone(cents: number, planned = false) {
+  if (cents > 0) return planned ? 'text-green/60' : 'text-green';
+  if (cents < 0) return planned ? 'text-red/60' : 'text-red';
+  return planned ? 'text-label-2' : undefined;
 }
 
 /** "AAAA-MM-DD" de um instante, no fuso do app. */

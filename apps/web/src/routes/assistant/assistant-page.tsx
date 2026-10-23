@@ -12,6 +12,7 @@ import { TextArea } from '@/components/ios/fields';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet, Sheet } from '@/components/ios/sheet';
 import { JottaIcon } from '@/components/jotta-icon';
+import { SettingsButton } from '@/components/settings-button';
 import { fillValues } from '@/components/today/briefing-card';
 import {
   useAssistant,
@@ -172,11 +173,14 @@ export function AssistantPage() {
       titleClassName={JOTTA_TITLE}
       subtitle={usage && <StatusLine used={usage.used} limit={usage.limit} voice={Boolean(mode)} />}
       actions={
-        messages.length > 0 && (
-          <BarButton label='Nova conversa' onClick={() => setMenu(true)}>
-            <SquarePen strokeWidth={2.2} />
-          </BarButton>
-        )
+        <>
+          <SettingsButton />
+          {messages.length > 0 && (
+            <BarButton label='Nova conversa' onClick={() => setMenu(true)}>
+              <SquarePen strokeWidth={2.2} />
+            </BarButton>
+          )}
+        </>
       }
     >
       {state.isPending ? (

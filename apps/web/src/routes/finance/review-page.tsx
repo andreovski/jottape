@@ -208,10 +208,10 @@ export function ReviewPage() {
                         <span
                           className={cn(
                             'font-rounded numeric text-body',
-                            movement.kind === 'INCOME' && 'text-green'
+                            movement.kind === 'INCOME' ? 'text-green' : 'text-red'
                           )}
                         >
-                          {movement.kind === 'INCOME' ? '+' : '−'} {money(movement.amountCents)}
+                          {money(movement.amountCents)}
                         </span>
                       }
                     />

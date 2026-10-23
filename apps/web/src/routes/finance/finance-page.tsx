@@ -20,6 +20,7 @@ import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { useSheetState } from '@/components/finance/use-sheet-state';
 import { Segmented, Skeleton } from '@/components/ios/controls';
 import { BarButton } from '@/components/ios/page';
+import { SettingsButton } from '@/components/settings-button';
 import { useBankStatus } from '@/features/bank';
 import { useAccounts, useForecast } from '@/features/finance';
 import { money, todayKey } from '@/lib/format';
@@ -275,9 +276,13 @@ function Summary({
     <div>
       <div className='flex h-12 items-center justify-between'>
         <h1 className='text-title-1 font-bold'>Finanças</h1>
-        <BarButton label='Novo lançamento' onClick={onAdd}>
-          <Plus strokeWidth={2.25} />
-        </BarButton>
+        {/* Só no topo: a barra recolhida já está cheia (saldo, contas e "+"). */}
+        <div className='flex items-center gap-1'>
+          <SettingsButton />
+          <BarButton label='Novo lançamento' onClick={onAdd}>
+            <Plus strokeWidth={2.25} />
+          </BarButton>
+        </div>
       </div>
       <div className='mb-3 flex items-end justify-between gap-3'>
         <div className='min-w-0'>
