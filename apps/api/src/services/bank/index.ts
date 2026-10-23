@@ -3,16 +3,25 @@ import type {
   AcceptBankMovementBody,
   BankConnectTokenResponse,
   BankMovementResponse,
+  BankAiTrace,
   BankStatusResponse,
   LinkBankAccountBody,
   SaveBankCredentialsBody,
 } from '@jottape/schemas';
-import type { Account, AccountType, BankAccount, BankMovement, Prisma } from '@prisma/client';
+import type {
+  Account,
+  AccountType,
+  BankAccount,
+  BankMovement,
+  CategorySuggestionSource,
+  Prisma,
+} from '@prisma/client';
 
 import { encrypt } from '@/lib/crypto';
 import { fromDbDate, todayIn, toDbDate } from '@/lib/dates';
 import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
+import { isOwner } from '@/services/assistant';
 import {
   billReferenceMonth,
   createTransactions,
@@ -23,6 +32,7 @@ import {
 } from '@/services/finance';
 
 import { allowedUserIds } from './admin';
+import { suggestWithAi } from './ai';
 
 import {
   authenticatePluggy,
@@ -44,6 +54,7 @@ import {
   billDates,
   billPayment,
   candidateRange,
+  type CategoryMemory,
   categoryMemory,
   shortDescription,
   findMatch,
@@ -53,7 +64,9 @@ import {
   MATCH_WINDOW_DAYS,
   movementBill,
   parseMovement,
+  ruleCategory,
   suggestCategory,
+  type SystemCategoryIds,
 } from './movements';
 
 // Bancos pelo Meu Pluggy. Cada sincronização lê as contas dos bancos conectados e, nas ligadas a
@@ -207,6 +220,7 @@ export async function addItem(userId: string, itemId: string) {
     create: { userId, itemId, name: remote.connector?.name ?? 'Banco' },
   });
   await friendly(() => syncItem(userId, item.id, { remote }));
+  await suggestCategories(userId);
   return bankStatus(userId);
 }
 
@@ -307,7 +321,8 @@ export async function linkAccount(userId: string, id: string, body: LinkBankAcco
   });
 
   try {
-    await importMovements(userId, linked, timeZone, await historyMemory(userId));
+    await importMovements(userId, linked, timeZone, await suggester(userId));
+    await suggestCategories(userId);
   } catch (error) {
     await prisma.pluggyItem.update({
       where: { id: bankAccount.itemId },
@@ -333,15 +348,45 @@ export async function linkAccount(userId: string, id: string, body: LinkBankAcco
 
 // ---------------------------------------------------------------- sincronização
 
-/** Categoria do lançamento mais recente com a mesma descrição, para sugerir na revisão. */
-async function historyMemory(userId: string) {
-  const history = await prisma.transaction.findMany({
-    where: { userId, categoryId: { not: null } },
-    select: { description: true, kind: true, categoryId: true },
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-    take: 3000,
-  });
-  return categoryMemory(history);
+/** O que sugere a categoria na revisão sem IA: o histórico e as categorias fixas. */
+interface Suggester {
+  memory: CategoryMemory;
+  system: SystemCategoryIds;
+}
+
+async function suggester(userId: string): Promise<Suggester> {
+  const [history, system] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, categoryId: { not: null } },
+      select: { description: true, notes: true, kind: true, categoryId: true },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      take: 3000,
+    }),
+    prisma.category.findMany({
+      where: { userId, systemKey: { not: null } },
+      select: { id: true, kind: true, systemKey: true },
+    }),
+  ]);
+  return {
+    memory: categoryMemory(history),
+    system: new Map(system.map((c) => [`${c.kind}:${c.systemKey}`, c.id])),
+  };
+}
+
+/** A sugestão sem IA: o histórico; sem ele, a regra fixa (Pix → Transferência › Pix). */
+function suggestionFor(
+  { memory, system }: Suggester,
+  movement: { kind: 'INCOME' | 'EXPENSE'; description: string },
+  accountType: 'BANK' | 'CREDIT'
+): { suggestedCategoryId: string | null; suggestionSource: CategorySuggestionSource | null } {
+  const history = suggestCategory(memory, movement);
+  if (history) return { suggestedCategoryId: history, suggestionSource: 'HISTORY' };
+  // Pagamento de fatura vira transferência para o cartão ao aceitar: não leva categoria.
+  if (movement.kind === 'EXPENSE' && looksLikeInvoicePayment(movement.description)) {
+    return { suggestedCategoryId: null, suggestionSource: null };
+  }
+  const rule = ruleCategory(movement, accountType, system);
+  return { suggestedCategoryId: rule, suggestionSource: rule ? 'RULE' : null };
 }
 
 /** Lê os lançamentos novos de uma conta ligada e casa ou põe em revisão. */
@@ -349,7 +394,7 @@ async function importMovements(
   userId: string,
   bankAccount: BankAccount,
   timeZone: string,
-  memory: Map<string, string>
+  suggest: Suggester
 ) {
   if (!bankAccount.accountId) return 0;
   const accountId = bankAccount.accountId;
@@ -444,7 +489,7 @@ async function importMovements(
       rows.push({
         ...base,
         status: 'PENDING',
-        suggestedCategoryId: suggestCategory(memory, movement),
+        ...suggestionFor(suggest, movement, bankAccount.type),
       });
     }
   }
@@ -672,7 +717,7 @@ async function dropPaymentWithoutDebit(
 async function syncItem(
   userId: string,
   id: string,
-  context: { remote?: PluggyItem; timeZone?: string; memory?: Map<string, string> } = {}
+  context: { remote?: PluggyItem; timeZone?: string; suggest?: Suggester } = {}
 ) {
   const item = await prisma.pluggyItem.findUniqueOrThrow({ where: { id } });
   const remote = context.remote ?? (await fetchItem(userId, item.itemId));
@@ -697,8 +742,8 @@ async function syncItem(
   });
   if (linked.length) {
     const timeZone = context.timeZone ?? (await userTimezone(userId));
-    const memory = context.memory ?? (await historyMemory(userId));
-    for (const bankAccount of linked) await importMovements(userId, bankAccount, timeZone, memory);
+    const suggest = context.suggest ?? (await suggester(userId));
+    for (const bankAccount of linked) await importMovements(userId, bankAccount, timeZone, suggest);
   }
 
   await prisma.pluggyItem.update({
@@ -719,12 +764,12 @@ export async function syncUser(userId: string) {
   if (!credential) return;
   const items = await prisma.pluggyItem.findMany({ where: { userId } });
   const timeZone = await userTimezone(userId);
-  const memory = await historyMemory(userId);
+  const suggest = await suggester(userId);
   let lastError: string | null = null;
 
   for (const item of items) {
     try {
-      await syncItem(userId, item.id, { timeZone, memory });
+      await syncItem(userId, item.id, { timeZone, suggest });
     } catch (error) {
       if (!(error instanceof AppError || error instanceof PluggyApiError)) throw error;
       lastError = errorText(error);
@@ -738,6 +783,7 @@ export async function syncUser(userId: string) {
     where: { userId },
     data: { syncedAt: new Date(), lastError },
   });
+  await suggestCategories(userId);
 }
 
 /** Job: o Meu Pluggy atualiza os bancos uma vez por dia; aqui passamos a cada poucas horas. */
@@ -759,7 +805,8 @@ export async function syncAllBanks() {
 
 type MovementWithAccount = BankMovement & { bankAccount: Pick<BankAccount, 'accountId'> };
 
-export function toBankMovement(movement: MovementWithAccount): BankMovementResponse {
+/** `dev`: o dono vê o que a IA fez e quanto custou (modo dev). */
+export function toBankMovement(movement: MovementWithAccount, dev = false): BankMovementResponse {
   return {
     id: movement.id,
     bankAccountId: movement.bankAccountId,
@@ -773,6 +820,9 @@ export function toBankMovement(movement: MovementWithAccount): BankMovementRespo
     installmentTotal: movement.installmentTotal,
     status: movement.status,
     suggestedCategoryId: movement.suggestedCategoryId,
+    suggestionSource: movement.suggestedCategoryId ? movement.suggestionSource : null,
+    suggestionConfidence: movement.suggestionSource === 'AI' ? movement.suggestionConfidence : null,
+    ...(dev ? { aiTrace: (movement.aiTrace as BankAiTrace | null) ?? null } : {}),
     transactionId: movement.transactionId,
   };
 }
@@ -782,31 +832,68 @@ const withAccount = { bankAccount: { select: { accountId: true } } } as const;
 /**
  * Refaz a categoria sugerida dos que esperam revisão com o histórico de agora: o "Rendimento" que
  * chegou antes de existir um categorizado ganha a categoria assim que um deles é lançado com ela.
+ * O histórico vence a IA; sem histórico, fica a da IA ou, sem nada, a regra fixa.
  */
 async function refreshSuggestions(userId: string) {
   const pending = await prisma.bankMovement.findMany({
     where: { userId, status: 'PENDING' },
-    select: { id: true, kind: true, description: true, suggestedCategoryId: true },
+    select: {
+      id: true,
+      kind: true,
+      description: true,
+      suggestedCategoryId: true,
+      suggestionSource: true,
+      bankAccount: { select: { type: true } },
+    },
   });
   if (!pending.length) return;
-  const memory = await historyMemory(userId);
-  const changes = new Map<string, string[]>();
+  const suggest = await suggester(userId);
+  const changes = new Map<
+    string,
+    { data: Prisma.BankMovementUpdateManyMutationInput; ids: string[] }
+  >();
   for (const movement of pending) {
     const kind = movement.kind === 'INCOME' ? 'INCOME' : 'EXPENSE';
-    const suggestion = suggestCategory(memory, { kind, description: movement.description });
-    // Sem nada no histórico, fica a que já estava.
-    if (!suggestion || suggestion === movement.suggestedCategoryId) continue;
-    changes.set(suggestion, [...(changes.get(suggestion) ?? []), movement.id]);
+    const next = suggestionFor(
+      suggest,
+      { kind, description: movement.description },
+      movement.bankAccount.type
+    );
+    // Sem histórico, a da IA fica; e uma sugestão antiga (de antes da fonte) também.
+    if (next.suggestionSource !== 'HISTORY') {
+      if (movement.suggestionSource === 'AI') continue;
+      if (movement.suggestedCategoryId && movement.suggestionSource !== 'RULE') continue;
+      if (!next.suggestedCategoryId && !movement.suggestedCategoryId) continue;
+    }
+    if (
+      next.suggestedCategoryId === movement.suggestedCategoryId &&
+      next.suggestionSource === movement.suggestionSource
+    ) {
+      continue;
+    }
+    const key = `${next.suggestionSource}:${next.suggestedCategoryId}`;
+    const change = changes.get(key) ?? {
+      data: { ...next, suggestionConfidence: null },
+      ids: [],
+    };
+    change.ids.push(movement.id);
+    changes.set(key, change);
   }
   if (!changes.size) return;
   await prisma.$transaction(
-    [...changes].map(([categoryId, ids]) =>
+    [...changes.values()].map(({ data, ids }) =>
       prisma.bankMovement.updateMany({
         where: { id: { in: ids }, userId, status: 'PENDING' },
-        data: { suggestedCategoryId: categoryId },
+        data,
       })
     )
   );
+}
+
+/** Depois de importar: histórico e regra, e então a IA nos que ficaram sem histórico. */
+async function suggestCategories(userId: string) {
+  await refreshSuggestions(userId);
+  await suggestWithAi(userId);
 }
 
 export async function listMovements(userId: string, status: BankMovement['status']) {
@@ -821,7 +908,8 @@ export async function listMovements(userId: string, status: BankMovement['status
     orderBy: [{ date: 'desc' }, { createdAt: 'asc' }],
     take: 500,
   });
-  return movements.map(toBankMovement);
+  const dev = await isOwner(userId);
+  return movements.map((movement) => toBankMovement(movement, dev));
 }
 
 export async function acceptMovement(

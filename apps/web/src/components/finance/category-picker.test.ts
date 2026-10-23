@@ -10,6 +10,7 @@ const cat = (id: string): CategoryResponse => ({
   parentId: null,
   icon: null,
   color: null,
+  systemKey: null,
 });
 
 describe('seletor de categoria', () => {

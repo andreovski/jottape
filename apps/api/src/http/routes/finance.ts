@@ -169,6 +169,14 @@ export async function financeRoutes(app: FastifyInstance) {
     const category = await prisma.category.findFirst({ where: { id, userId: request.userId } });
     if (!category) throw notFound('Categoria');
     if (body.parentId === id) throw new AppError(400, 'A categoria não pode ser mãe de si mesma.');
+    // Fixa: muda cor e ícone, mas não o nome nem o lugar.
+    if (
+      category.systemKey &&
+      ((body.name !== undefined && body.name !== category.name) ||
+        (body.parentId !== undefined && body.parentId !== category.parentId))
+    ) {
+      throw new AppError(409, 'Esta categoria é fixa do app: dá para mudar só a cor e o ícone.');
+    }
     return toCategory(await prisma.category.update({ where: { id }, data: body }));
   });
 
@@ -176,6 +184,8 @@ export async function financeRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     const category = await prisma.category.findFirst({ where: { id, userId: request.userId } });
     if (!category) throw notFound('Categoria');
+    if (category.systemKey)
+      throw new AppError(409, 'Esta categoria é fixa do app e não pode ser apagada.');
     // Os lançamentos ficam sem categoria (onDelete: SetNull).
     await prisma.category.delete({ where: { id } });
     return reply.status(204).send();

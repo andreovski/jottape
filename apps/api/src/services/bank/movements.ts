@@ -202,43 +202,110 @@ export function normalize(description: string): string {
     .join(' ');
 }
 
+/** Texto inteiro comparável (para as notas, que guardam o texto do banco como veio). */
+function noteKey(text: string): string {
+  return plain(text).replace(/\s+/g, ' ').trim();
+}
+
+/** O que o histórico ensina: a categoria por descrição e por nota, a mais recente de cada. */
+export interface CategoryMemory {
+  byDescription: Map<string, string>;
+  byNote: Map<string, string>;
+}
+
 /**
- * Categoria aprendida do histórico: a do lançamento mais recente com a mesma descrição e o mesmo
- * tipo. `history` vem do mais novo para o mais antigo.
+ * Categoria aprendida do histórico: a do lançamento mais recente com o mesmo tipo e a mesma
+ * descrição ou a mesma nota (desde a importação com título curto, a nota traz o texto do banco).
+ * `history` vem do mais novo para o mais antigo.
  */
 export function categoryMemory(
-  history: { description: string; kind: string; categoryId: string | null }[]
-): Map<string, string> {
-  const memory = new Map<string, string>();
+  history: { description: string; notes?: string | null; kind: string; categoryId: string | null }[]
+): CategoryMemory {
+  const memory: CategoryMemory = { byDescription: new Map(), byNote: new Map() };
   for (const tx of history) {
     if (!tx.categoryId || tx.kind === 'TRANSFER') continue;
     const key = `${tx.kind}:${normalize(tx.description)}`;
-    if (!memory.has(key)) memory.set(key, tx.categoryId);
+    if (!memory.byDescription.has(key)) memory.byDescription.set(key, tx.categoryId);
+    const note = tx.notes ? noteKey(tx.notes) : '';
+    if (note && !memory.byNote.has(`${tx.kind}:${note}`)) {
+      memory.byNote.set(`${tx.kind}:${note}`, tx.categoryId);
+    }
   }
   return memory;
 }
 
 /**
- * Categoria sugerida para um lançamento do banco. Primeiro a descrição igual; senão, uma que comece
- * pela outra ("Rendimento" e "Rendimento da conta"), a mais recente. Nome curto demais (como "Pix")
- * não vale para o segundo caso: casaria com tudo.
+ * Categoria sugerida para um lançamento do banco (`description` é o texto como veio). Primeiro a
+ * descrição igual; depois a nota igual ao texto do banco (o título pode ter sido trocado ao
+ * lançar); por fim uma descrição que comece pela outra ("Rendimento" e "Rendimento da conta"), a
+ * mais recente. Nome curto demais (como "Pix") não vale para o último caso: casaria com tudo.
  */
 export function suggestCategory(
-  memory: Map<string, string>,
+  memory: CategoryMemory,
   movement: Pick<ParsedMovement, 'kind' | 'description'>
 ): string | null {
   const key = normalize(shortDescription(movement.description));
-  if (!key) return null;
-  const exact = memory.get(`${movement.kind}:${key}`);
-  if (exact) return exact;
   const prefix = `${movement.kind}:`;
-  for (const [entry, categoryId] of memory) {
+  const exact = key ? memory.byDescription.get(prefix + key) : undefined;
+  if (exact) return exact;
+  const byNote = memory.byNote.get(prefix + noteKey(movement.description));
+  if (byNote) return byNote;
+  if (!key) return null;
+  for (const [entry, categoryId] of memory.byDescription) {
     if (!entry.startsWith(prefix)) continue;
     const other = entry.slice(prefix.length);
     const [shorter, longer] = other.length < key.length ? [other, key] : [key, other];
     if (shorter.length >= 5 && longer.startsWith(`${shorter} `)) return categoryId;
   }
   return null;
+}
+
+// ---------------------------------------------------------------- categoria fixa e IA
+
+export type TransferKey = 'TRANSFER' | 'TRANSFER_PIX' | 'TRANSFER_DEBIT' | 'TRANSFER_CREDIT';
+
+/** As categorias fixas do usuário, por `${tipo}:${chave}`. */
+export type SystemCategoryIds = Map<string, string>;
+
+/**
+ * A regra fixa, quando nem o histórico nem a IA decidem: a forma de pagamento. Pix vai para
+ * Transferência › Pix; compra no débito, Débito; compra no cartão, Crédito; TED, DOC e outras
+ * transferências, a própria Transferência. O resto fica sem categoria.
+ */
+export function ruleCategory(
+  movement: Pick<ParsedMovement, 'kind' | 'description'>,
+  accountType: 'BANK' | 'CREDIT',
+  ids: SystemCategoryIds
+): string | null {
+  const text = plain(movement.description);
+  let key: TransferKey | null = null;
+  if (/\bpix\b/.test(text)) key = 'TRANSFER_PIX';
+  else if (/\b(debito|deb)\b/.test(text)) key = 'TRANSFER_DEBIT';
+  // No cartão, só a compra: estorno e crédito na fatura não são forma de pagamento.
+  else if (accountType === 'CREDIT') key = movement.kind === 'EXPENSE' ? 'TRANSFER_CREDIT' : null;
+  else if (/\b(ted|doc|transferencia|transf)\b/.test(text)) key = 'TRANSFER';
+  return key ? (ids.get(`${movement.kind}:${key}`) ?? null) : null;
+}
+
+/** Abaixo disso o Jev não convence: vale a regra fixa. */
+export const AI_MIN_CONFIDENCE = 0.6;
+
+/**
+ * A sugestão da IA: o Haiku escolhe pelo nome e o Jev dá a probabilidade de cada categoria. Só
+ * vale quando a mais provável do Jev passa do mínimo e é a mesma do Haiku; sem o Jev, discordando
+ * ou com pouca confiança, null (fica a regra fixa).
+ */
+export function decideAiCategory(
+  haiku: string | null,
+  jev: Map<string, number> | null
+): { categoryId: string; confidence: number } | null {
+  if (!haiku || !jev) return null;
+  let best: { categoryId: string; confidence: number } | null = null;
+  for (const [categoryId, confidence] of jev) {
+    if (!best || confidence > best.confidence) best = { categoryId, confidence };
+  }
+  if (!best || best.categoryId !== haiku || best.confidence < AI_MIN_CONFIDENCE) return null;
+  return best;
 }
 
 /** Descrição do lançamento importado: a parcela vai no fim, como "Loja (2/10)". */

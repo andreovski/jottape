@@ -366,15 +366,17 @@ enum CategoryKind {
 }
 
 model Category {
-  id        String       @id @default(uuid())
-  userId    String       @map("user_id")
+  id        String             @id @default(uuid())
+  userId    String             @map("user_id")
   name      String
   kind      CategoryKind
-  parentId  String?      @map("parent_id")
+  parentId  String?            @map("parent_id")
   icon      String?
   color     String?
-  createdAt DateTime     @default(now()) @map("created_at")
-  updatedAt DateTime     @updatedAt @map("updated_at")
+  /// Categoria fixa do app (Transferência e as suas): não se apaga nem se renomeia. Uma por tipo.
+  systemKey CategorySystemKey? @map("system_key")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   parent        Category?      @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
@@ -383,7 +385,15 @@ model Category {
   budgets       Budget[]
   bankMovements BankMovement[]
 
+  @@unique([userId, kind, systemKey])
   @@map("categories")
+}
+
+enum CategorySystemKey {
+  TRANSFER
+  TRANSFER_PIX
+  TRANSFER_DEBIT
+  TRANSFER_CREDIT
 }
 
 enum TransactionKind {
@@ -561,6 +571,13 @@ model BankAccount {
   @@map("bank_accounts")
 }
 
+/// De onde veio a categoria sugerida na revisão.
+enum CategorySuggestionSource {
+  HISTORY
+  AI
+  RULE
+}
+
 enum BankMovementStatus {
   PENDING
   MATCHED
@@ -572,26 +589,33 @@ enum BankMovementStatus {
 /// existia; IMPORTED virou lançamento; IGNORED foi dispensado (ou é o pagamento da fatura no cartão).
 /// Nunca é apagado enquanto a conta do banco existe: é o que impede importar duas vezes.
 model BankMovement {
-  id                  String             @id @default(uuid())
-  userId              String             @map("user_id")
-  bankAccountId       String             @map("bank_account_id")
-  externalId          String             @map("external_id")
-  kind                TransactionKind
-  amountCents         Int                @map("amount_cents")
-  date                DateTime           @db.Date
-  description         String
-  installmentNumber   Int?               @map("installment_number")
-  installmentTotal    Int?               @map("installment_total")
+  id                   String                    @id @default(uuid())
+  userId               String                    @map("user_id")
+  bankAccountId        String                    @map("bank_account_id")
+  externalId           String                    @map("external_id")
+  kind                 TransactionKind
+  amountCents          Int                       @map("amount_cents")
+  date                 DateTime                  @db.Date
+  description          String
+  installmentNumber    Int?                      @map("installment_number")
+  installmentTotal     Int?                      @map("installment_total")
   /// A fatura do cartão em que o banco pôs o movimento (vencimento e fechamento do banco).
-  billDueDate         DateTime?          @map("bill_due_date") @db.Date
-  billClosingDate     DateTime?          @map("bill_closing_date") @db.Date
-  status              BankMovementStatus
-  suggestedCategoryId String?            @map("suggested_category_id")
-  transactionId       String?            @map("transaction_id")
+  billDueDate          DateTime?                 @map("bill_due_date") @db.Date
+  billClosingDate      DateTime?                 @map("bill_closing_date") @db.Date
+  status               BankMovementStatus
+  suggestedCategoryId  String?                   @map("suggested_category_id")
+  suggestionSource     CategorySuggestionSource? @map("suggestion_source")
+  /// Confiança da IA (probabilidade do Jev) quando a sugestão veio dela.
+  suggestionConfidence Float?                    @map("suggestion_confidence")
+  /// Quando a IA já olhou o movimento (uma vez só, decidindo ou não).
+  aiCheckedAt          DateTime?                 @map("ai_checked_at")
+  /// O que cada IA respondeu e quanto custou (o modo dev do dono mostra).
+  aiTrace              Json?                     @map("ai_trace")
+  transactionId        String?                   @map("transaction_id")
   /// Aceito na revisão com tipo, categoria ou descrição trocados (mede a categoria sugerida).
-  edited              Boolean            @default(false)
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
+  edited               Boolean                   @default(false)
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
 
   user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   bankAccount       BankAccount  @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
@@ -716,6 +740,8 @@ enum AssistantUsageKind {
   INSIGHT
   /// Teste de acerto rodado pelo dono no painel (não conta no limite).
   BENCHMARK
+  /// Categoria sugerida pela IA na revisão do banco (não conta no limite).
+  BANK_CATEGORY
 }
 
 /// Uma linha por comando ou transcrição: conta o limite do mês e o custo. Sem o texto.

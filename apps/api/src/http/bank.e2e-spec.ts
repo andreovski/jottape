@@ -11,9 +11,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { app } from '@/app';
 import { prisma } from '@/lib/prisma';
 import { syncAllBanks } from '@/services/bank';
+import { classifyWithHaiku, scoreWithJev } from '@/services/bank/ai-model';
 import { hashPassword } from '@/services/owner';
 import { FakePluggy } from '@/test/fake-pluggy';
 import { client, loginAsOwner, resetDatabase } from '@/test/helpers';
+
+vi.mock('@/services/bank/ai-model', () => ({ classifyWithHaiku: vi.fn(), scoreWithJev: vi.fn() }));
 
 // 18/10/2026, meio-dia em São Paulo.
 const NOW = new Date('2026-10-18T15:00:00Z');
@@ -39,6 +42,8 @@ describe('bancos (Meu Pluggy)', () => {
   beforeEach(async () => {
     vi.stubEnv('OWNER_EMAIL', 'andre@example.com');
     vi.useFakeTimers({ toFake: ['Date'], now: NOW });
+    vi.mocked(classifyWithHaiku).mockReset();
+    vi.mocked(scoreWithJev).mockReset();
     await resetDatabase();
     pluggy = new FakePluggy().install();
     const session = await loginAsOwner(app);
@@ -291,6 +296,131 @@ describe('bancos (Meu Pluggy)', () => {
     expect(
       await prisma.transaction.findUniqueOrThrow({ where: { id: edited.json().transactionId } })
     ).toMatchObject({ notes: 'Faxina' });
+  });
+
+  it('sem histórico, a IA sugere; sem a IA, a regra fixa; e o histórico vence os dois', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
+    vi.stubEnv('JEV_API_KEY', 'test-key');
+    const { checkingBank } = await connect();
+    const transport = (
+      await prisma.category.findFirstOrThrow({ where: { userId, name: 'Transporte' } })
+    ).id;
+    const pix = (
+      await prisma.category.findFirstOrThrow({
+        where: { userId, kind: 'EXPENSE', systemKey: 'TRANSFER_PIX' },
+      })
+    ).id;
+    await api.post('/transactions', {
+      kind: 'EXPENSE',
+      amountCents: 12_00,
+      date: '2026-09-20',
+      accountId: checking.id,
+      categoryId: groceries,
+      description: 'Padaria Pão Quente',
+    });
+    const raw = 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP';
+    pluggy.add(CHECKING_ID, {
+      id: 'u1',
+      description: 'UBER *TRIP',
+      amount: -35,
+      date: '2026-10-05T15:00:00.000Z',
+    });
+    pluggy.add(CHECKING_ID, {
+      id: 'p1',
+      description: raw,
+      amount: -50,
+      date: '2026-10-06T15:00:00.000Z',
+    });
+    pluggy.add(CHECKING_ID, {
+      id: 'h1',
+      description: 'PADARIA PAO QUENTE',
+      amount: -9,
+      date: '2026-10-07T15:00:00.000Z',
+    });
+    vi.mocked(classifyWithHaiku).mockImplementation(async (movements) => ({
+      picks: movements.map((m) => (m.title.startsWith('UBER') ? transport : null)),
+      inputTokens: 3000,
+      outputTokens: 400,
+    }));
+    vi.mocked(scoreWithJev).mockImplementation(async (m) => ({
+      probabilities: new Map([[transport, m.title.startsWith('UBER') ? 0.91 : 0.2]]),
+      inputTokens: 300,
+    }));
+    await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+
+    // O que o histórico já sabe nem vai para a IA.
+    expect(vi.mocked(classifyWithHaiku).mock.calls[0]![0].map((m) => m.title)).toEqual([
+      'Josiane Cristina',
+      'UBER *TRIP',
+    ]);
+    const byTitle = Object.fromEntries((await pending()).map((m) => [m.description, m]));
+    expect(byTitle['UBER *TRIP']).toMatchObject({
+      suggestedCategoryId: transport,
+      suggestionSource: 'AI',
+      suggestionConfidence: 0.91,
+      // O dono vê no modo dev o que cada IA fez e quanto custou (o Haiku, a parte do lote).
+      aiTrace: {
+        haiku: {
+          pick: 'Transporte',
+          batchSize: 2,
+          inputTokens: 3000,
+          outputTokens: 400,
+          costMicros: 250,
+        },
+        jev: { top: 'Transporte', probability: 0.91, inputTokens: 300, costMicros: 13 },
+        decided: true,
+        costMicros: 263,
+      },
+    });
+    expect(byTitle['Josiane Cristina']).toMatchObject({
+      suggestedCategoryId: pix,
+      suggestionSource: 'RULE',
+      suggestionConfidence: null,
+    });
+    expect(byTitle['PADARIA PAO QUENTE']).toMatchObject({
+      suggestedCategoryId: groceries,
+      suggestionSource: 'HISTORY',
+    });
+    const usage = await prisma.assistantUsage.findMany({
+      where: { userId, kind: 'BANK_CATEGORY' },
+    });
+    expect(usage).toMatchObject([{ modelInputTokens: 3000, jevInputTokens: 600 }]);
+
+    // Cada um passa pela IA uma vez só.
+    await api.post('/bank/sync');
+    expect(classifyWithHaiku).toHaveBeenCalledTimes(1);
+
+    // Lançado com outra categoria, o Uber vira histórico e vence a IA no próximo.
+    await api.post(`/bank/movements/${byTitle['UBER *TRIP']!.id}/accept`, {
+      categoryId: groceries,
+    });
+    pluggy.add(CHECKING_ID, {
+      id: 'u2',
+      description: 'UBER *TRIP',
+      amount: -20,
+      date: '2026-10-08T15:00:00.000Z',
+    });
+    await api.post('/bank/sync');
+    expect((await pending()).find((m) => m.description === 'UBER *TRIP')).toMatchObject({
+      suggestedCategoryId: groceries,
+      suggestionSource: 'HISTORY',
+    });
+  });
+
+  it('sem o Jotta, a IA não é chamada', async () => {
+    const { checkingBank } = await connect();
+    pluggy.add(CHECKING_ID, {
+      id: 'u1',
+      description: 'UBER *TRIP',
+      amount: -35,
+      date: '2026-10-05T15:00:00.000Z',
+    });
+    await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+    expect(classifyWithHaiku).not.toHaveBeenCalled();
+    expect((await pending())[0]).toMatchObject({
+      suggestedCategoryId: null,
+      suggestionSource: null,
+    });
   });
 
   it('cartão novo: cria o cartão com fechamento e vencimento, ignora o pagamento e lança na fatura', async () => {

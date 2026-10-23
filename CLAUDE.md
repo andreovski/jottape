@@ -63,7 +63,14 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   importar duas vezes): casa com um lançamento existente do mesmo valor e sentido em até 4 dias
   (parcela pelo número, até 45 dias; previsto vira efetivado) → MATCHED; pagamento de fatura visto
   no cartão → IGNORED; o resto fica PENDING em "A revisar" com a categoria do lançamento mais
-  recente de descrição igual (`movements.ts`, puro, com teste). Aceitar usa `createTransactions`
+  recente de mesmo tipo com descrição ou nota igual (a nota guarda o texto do banco); sem
+  histórico, quem tem o Jotta recebe a da IA (Haiku num lote + Jev por item, só se concordam com
+  Jev ≥ 0,6; `bank/ai.ts` e `ai-batch.ts`, uma vez por movimento, `aiCheckedAt`, custo
+  `BANK_CATEGORY` fora do limite; `aiTrace` com tokens e custo de cada IA vai só para o dono, no
+  modo dev; teste de acerto em `bank/benchmark.ts`, job "Teste de acerto da categoria do banco") e, por fim, vale a regra fixa da forma de pagamento (Pix, Débito, Crédito do cartão).
+  Fonte em `suggestionSource`; o histórico sempre vence. **Transferência** (com Pix, Débito e
+  Crédito) é categoria fixa (`Category.systemKey`), uma árvore por tipo, criada para todos: não
+  se apaga nem se renomeia (`movements.ts`, puro, com teste). Aceitar usa `createTransactions`
   (a fatura sai sozinha). No cartão, a fatura do banco vale mais que a data: o `billId` (só depois
   que a fatura fecha) dá vencimento e fechamento (`billDueDate`/`billClosingDate` no movimento), e
   parcela 2+ datada pela fatura cai na que vence no mês da data; a cada sincronização o lançamento

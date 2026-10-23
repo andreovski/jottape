@@ -1,4 +1,9 @@
-import type { AccountResponse, InvoiceResponse, TransactionResponse } from '@jottape/schemas';
+import type {
+  AccountResponse,
+  CategoryResponse,
+  InvoiceResponse,
+  TransactionResponse,
+} from '@jottape/schemas';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { app } from '@/app';
@@ -48,6 +53,43 @@ describe('finanças', () => {
 
   const accounts = async () => (await api.get('/accounts')).json() as AccountResponse[];
   const byId = async (id: string) => (await accounts()).find((a) => a.id === id)!;
+
+  it('Transferência é fixa: Pix, Débito e Crédito em entradas e saídas, sem apagar nem renomear', async () => {
+    const categories = (await api.get('/categories')).json() as CategoryResponse[];
+    const fixed = categories.filter((c) => c.systemKey);
+    expect(fixed).toHaveLength(8);
+    for (const kind of ['INCOME', 'EXPENSE'] as const) {
+      const parent = fixed.find((c) => c.kind === kind && c.systemKey === 'TRANSFER')!;
+      expect(parent).toMatchObject({ name: 'Transferência', parentId: null });
+      expect(
+        fixed
+          .filter((c) => c.parentId === parent.id)
+          .map((c) => c.name)
+          .sort()
+      ).toEqual(['Crédito', 'Débito', 'Pix']);
+    }
+    const pix = fixed.find((c) => c.kind === 'EXPENSE' && c.systemKey === 'TRANSFER_PIX')!;
+    expect((await api.delete(`/categories/${pix.id}`)).statusCode).toBe(409);
+    expect((await api.patch(`/categories/${pix.id}`, { name: 'Pix enviado' })).statusCode).toBe(
+      409
+    );
+    expect((await api.patch(`/categories/${pix.id}`, { parentId: null })).statusCode).toBe(409);
+    const recolored = await api.patch(`/categories/${pix.id}`, {
+      name: 'Pix',
+      color: '#ff9500',
+      icon: 'coins',
+    });
+    expect(recolored.json()).toMatchObject({ name: 'Pix', color: '#ff9500', icon: 'coins' });
+    // Dentro dela dá para criar outras.
+    const parent = fixed.find((c) => c.kind === 'EXPENSE' && c.systemKey === 'TRANSFER')!;
+    const own = await api.post('/categories', {
+      name: 'Boleto',
+      kind: 'EXPENSE',
+      parentId: parent.id,
+    });
+    expect(own.statusCode).toBe(201);
+    expect((await api.delete(`/categories/${own.json().id}`)).statusCode).toBe(204);
+  });
 
   it('valida o cartão sem dias de fechamento', async () => {
     const response = await api.post('/accounts', { name: 'X', type: 'CREDIT_CARD' });

@@ -85,6 +85,33 @@ export type BankConnectTokenResponse = z.infer<typeof bankConnectTokenResponseSc
 export const bankMovementStatusSchema = z.enum(['PENDING', 'MATCHED', 'IMPORTED', 'IGNORED']);
 export type BankMovementStatus = z.infer<typeof bankMovementStatusSchema>;
 
+/** O que a IA fez com um lançamento do banco e quanto custou (só no modo dev do dono). */
+export const bankAiTraceSchema = z.object({
+  haiku: z.object({
+    /** A categoria que o Haiku escolheu, pelo nome ("Transferência › Pix"). */
+    pick: z.string().nullable(),
+    /** O Haiku olha o lote inteiro: tokens do lote, custo da parte deste lançamento. */
+    batchSize: z.number().int(),
+    inputTokens: z.number().int(),
+    outputTokens: z.number().int(),
+    costMicros: z.number().int(),
+    ms: z.number().int(),
+  }),
+  jev: z
+    .object({
+      top: z.string().nullable(),
+      probability: z.number().nullable(),
+      inputTokens: z.number().int(),
+      costMicros: z.number().int(),
+      ms: z.number().int(),
+    })
+    .nullable(),
+  /** A IA decidiu (os dois concordaram com confiança). */
+  decided: z.boolean(),
+  costMicros: z.number().int(),
+});
+export type BankAiTrace = z.infer<typeof bankAiTraceSchema>;
+
 export const bankMovementResponseSchema = z.object({
   id: z.string(),
   bankAccountId: z.string(),
@@ -101,6 +128,12 @@ export const bankMovementResponseSchema = z.object({
   installmentTotal: z.number().int().nullable(),
   status: bankMovementStatusSchema,
   suggestedCategoryId: z.string().nullable(),
+  /** De onde veio a sugestão: o histórico, a IA ou a regra fixa (Pix → Transferência › Pix). */
+  suggestionSource: z.enum(['HISTORY', 'AI', 'RULE']).nullable(),
+  /** Confiança da IA, de 0 a 1 (só quando a sugestão veio dela). */
+  suggestionConfidence: z.number().nullable(),
+  /** Só para o dono (modo dev). */
+  aiTrace: bankAiTraceSchema.nullable().optional(),
   transactionId: z.string().nullable(),
 });
 export type BankMovementResponse = z.infer<typeof bankMovementResponseSchema>;

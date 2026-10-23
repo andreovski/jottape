@@ -1,6 +1,6 @@
 import type { CategoryKind, CategoryResponse } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronLeft, Plus } from 'lucide-react';
+import { ChevronLeft, Lock, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { CATEGORY_ICONS, CategoryIcon } from '@/components/finance/category-icon';
@@ -148,6 +148,8 @@ function CategorySheet({
   onClose: () => void;
 }) {
   const existing = editing?.category;
+  // Fixa do app (Transferência e as suas): muda cor e ícone, não o nome, e não se apaga.
+  const fixed = Boolean(existing?.systemKey);
   const [name, setName] = useState(existing?.name ?? '');
   const [color, setColor] = useState<string | null>(
     existing?.color ?? (existing ? null : SWATCHES[6])
@@ -172,6 +174,7 @@ function CategorySheet({
     parentId,
     icon,
     color,
+    systemKey: existing?.systemKey ?? null,
   } satisfies CategoryResponse;
 
   async function save() {
@@ -210,6 +213,7 @@ function CategorySheet({
               aria-label='Nome da categoria'
               aria-invalid={Boolean(errors.name)}
               value={name}
+              readOnly={fixed}
               onChange={(event) => setName(event.target.value)}
               placeholder='Nome da categoria'
               maxLength={60}
@@ -219,6 +223,12 @@ function CategorySheet({
               )}
             />
             <FieldError message={errors.name} className='mt-2 justify-center' />
+            {fixed && (
+              <p className='text-footnote text-label-2 mt-2 flex items-center justify-center gap-1'>
+                <Lock className='size-3.5' strokeWidth={2.4} />
+                Categoria fixa do app: dá para mudar a cor e o ícone.
+              </p>
+            )}
           </div>
         </div>
 
@@ -230,7 +240,7 @@ function CategorySheet({
           <IconPicker value={icon} onChange={setIcon} startAtValue={Boolean(existing)} />
         </Section>
 
-        {existing && (
+        {existing && !fixed && (
           <Button variant='destructive' className='w-full' onClick={() => setConfirmDelete(true)}>
             {parentId ? 'Apagar Subcategoria' : 'Apagar Categoria'}
           </Button>
@@ -257,6 +267,12 @@ function CategorySheet({
         ]}
       />
     </>
+  );
+}
+
+function FixedMark() {
+  return (
+    <Lock aria-label='Fixa do app' className='text-label-3 size-3.5 shrink-0' strokeWidth={2.4} />
   );
 }
 
@@ -317,7 +333,12 @@ export function CategoriesPage() {
               chevron
               onClick={() => setEditing({ category: parent })}
               leading={<CategoryIcon category={parent} kind={kind} />}
-              title={<span className='font-semibold'>{parent.name}</span>}
+              title={
+                <span className='flex items-center gap-1.5 font-semibold'>
+                  {parent.name}
+                  {parent.systemKey && <FixedMark />}
+                </span>
+              }
               detail={children.length > 0 ? children.length : undefined}
             />
             {children.map((child) => (
@@ -327,7 +348,12 @@ export function CategoriesPage() {
                 className='pl-8'
                 onClick={() => setEditing({ category: child })}
                 leading={<CategoryIcon category={child} kind={kind} size='sm' />}
-                title={child.name}
+                title={
+                  <span className='flex items-center gap-1.5'>
+                    {child.name}
+                    {child.systemKey && <FixedMark />}
+                  </span>
+                }
               />
             ))}
             <Row

@@ -5,6 +5,15 @@ import { colorSchema, idSchema } from './common';
 export const categoryKindSchema = z.enum(['INCOME', 'EXPENSE']);
 export type CategoryKind = z.infer<typeof categoryKindSchema>;
 
+/** Categorias fixas do app (Transferência e as suas): não se apagam nem se renomeiam. */
+export const categorySystemKeySchema = z.enum([
+  'TRANSFER',
+  'TRANSFER_PIX',
+  'TRANSFER_DEBIT',
+  'TRANSFER_CREDIT',
+]);
+export type CategorySystemKey = z.infer<typeof categorySystemKeySchema>;
+
 export const createCategoryBodySchema = z.object({
   name: z.string().trim().min(1, 'Informe o nome.').max(60),
   kind: categoryKindSchema,
@@ -24,5 +33,6 @@ export const categoryResponseSchema = z.object({
   parentId: z.string().nullable(),
   icon: z.string().nullable(),
   color: z.string().nullable(),
+  systemKey: categorySystemKeySchema.nullable(),
 });
 export type CategoryResponse = z.infer<typeof categoryResponseSchema>;
