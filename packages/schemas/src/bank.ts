@@ -93,7 +93,10 @@ export const bankMovementResponseSchema = z.object({
   kind: z.enum(['INCOME', 'EXPENSE']),
   amountCents: z.number().int(),
   date: isoDateSchema,
+  /** Título curto ("Pix - Josiane Cristina"). */
   description: z.string(),
+  /** O texto como veio do banco (vai nas notas do lançamento quando difere do título). */
+  bankDescription: z.string(),
   installmentNumber: z.number().int().nullable(),
   installmentTotal: z.number().int().nullable(),
   status: bankMovementStatusSchema,

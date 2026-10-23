@@ -260,7 +260,7 @@ describe('bancos (Meu Pluggy)', () => {
     expect(imported.map((t) => t.categoryId)).toEqual([income, income]);
   });
 
-  it('Pix chega como "Pix - Nome", e o que já esperava revisão também muda', async () => {
+  it('Pix entra como "Pix - Nome" e o texto do banco fica nas notas', async () => {
     const { checkingBank } = await connect();
     const raw = 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP';
     pluggy.add(CHECKING_ID, {
@@ -270,16 +270,13 @@ describe('bancos (Meu Pluggy)', () => {
       date: '2026-10-05T03:00:00.000Z',
     });
     await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
-    expect((await prisma.bankMovement.findFirstOrThrow()).description).toBe(
-      'Pix - Josiane Cristina'
-    );
 
-    // Como ficou guardado antes desta regra: a lista já mostra (e guarda) o título curto.
-    await prisma.bankMovement.updateMany({ data: { description: raw } });
-    expect((await pending()).map((m) => m.description)).toEqual(['Pix - Josiane Cristina']);
-    expect((await prisma.bankMovement.findFirstOrThrow()).description).toBe(
-      'Pix - Josiane Cristina'
-    );
+    const [movement] = await pending();
+    expect(movement).toMatchObject({ description: 'Pix - Josiane Cristina', bankDescription: raw });
+    const accepted = await api.post(`/bank/movements/${movement!.id}/accept`, {});
+    expect(
+      await prisma.transaction.findUniqueOrThrow({ where: { id: accepted.json().transactionId } })
+    ).toMatchObject({ description: 'Pix - Josiane Cristina', notes: raw });
   });
 
   it('cartão novo: cria o cartão com fechamento e vencimento, ignora o pagamento e lança na fatura', async () => {

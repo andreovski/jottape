@@ -73,12 +73,9 @@ export function parseMovement(
     }
   }
 
-  const counterpart =
-    kind === 'EXPENSE' ? tx.paymentData?.receiver?.name : tx.paymentData?.payer?.name;
-  const description = cleanDescription(
-    tx.description || tx.descriptionRaw || 'Lançamento do banco',
-    counterpart
-  );
+  const description = (tx.description || tx.descriptionRaw || 'Lançamento do banco')
+    .trim()
+    .slice(0, 120);
   return {
     externalId: tx.id,
     kind,
@@ -164,19 +161,13 @@ function plain(text: string): string {
 }
 
 const PIX = /\bpix\b/;
-/** Palavras que só dizem que é um Pix (ficam antes do nome em "PIX ENVIADO FULANO"). */
-const PIX_WORDS = new Set(
-  'transferencia transf enviada enviado recebida recebido pelo pela via pix de para qr code cod'.split(
-    ' '
-  )
-);
 const NAME_PARTICLES = new Set(['da', 'das', 'de', 'do', 'dos', 'e']);
 
-/** "JOSIANE CRISTINA DA SILVA" → "Josiane Cristina da Silva"; sem letras suficientes, null. */
-function personName(text: string | null | undefined): string | null {
-  const words = (text ?? '')
+/** "JOSIANE CRISTINA DA SILVA" → "Josiane Cristina da Silva"; documento ou número, null. */
+function personName(text: string): string | null {
+  if (/[•*]|\d{3}/.test(text)) return null;
+  const words = text
     .replace(/[^\p{L}\s'&.]/gu, ' ')
-    .replace(/\.(?=\s|$)/g, ' ')
     .split(/\s+/)
     .filter((word) => /\p{L}/u.test(word));
   const name = words
@@ -186,44 +177,22 @@ function personName(text: string | null | undefined): string | null {
       return lower.charAt(0).toLocaleUpperCase('pt-BR') + lower.slice(1);
     })
     .join(' ');
-  return name.replace(/\s/g, '').length >= 2 ? name : null;
+  return name.replace(/[\s.]/g, '').length >= 2 ? name : null;
 }
 
 /**
- * Pix com o texto longo do banco ("Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|
- * NU PAGAMENTOS") vira "Pix - Josiane Cristina". O nome vem do `paymentData` da Pluggy quando ela
- * manda; senão, do pedaço do texto logo depois do "Pix". Não sendo Pix, null.
+ * Título do lançamento do banco. Muitos vêm como "o que foi|para quem|documento|banco"
+ * ("Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP"): o título
+ * é o nome depois do "|", com "Pix - " na frente quando foi Pix. Sem "|", fica como veio. O texto
+ * original vai nas notas do lançamento.
  */
-export function pixDescription(raw: string, counterpart?: string | null): string | null {
-  if (!PIX.test(plain(raw))) return null;
-  let name = personName(counterpart);
-  if (!name) {
-    const parts = raw
-      .split(/\s*\|\s*|\s+-\s+|\s*:\s+/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    const at = parts.findIndex((part) => PIX.test(plain(part)));
-    // "PIX ENVIADO FULANO": o nome está no mesmo pedaço, depois das palavras do Pix.
-    const rest = parts[at]!.split(/\s+/)
-      .filter((word) => !PIX_WORDS.has(plain(word).replace(/[^a-z]/g, '')))
-      .join(' ');
-    // Documento (•••.123.456-••) e número não são nome.
-    const looksLikeName = (part: string) => !/[•*]|\d{3}/.test(part) && personName(part);
-    name =
-      looksLikeName(rest) ||
-      parts
-        .slice(at + 1)
-        .map(looksLikeName)
-        .find(Boolean) ||
-      null;
-  }
-  return name ? `Pix - ${name}`.slice(0, 120) : null;
-}
-
-/** Descrição que o Jottape guarda: Pix vira "Pix - Nome"; o resto fica como o banco mandou. */
-export function cleanDescription(raw: string, counterpart?: string | null): string {
+export function shortDescription(raw: string): string {
   const text = raw.trim();
-  return (pixDescription(text, counterpart) ?? text).slice(0, 120);
+  const [what, ...rest] = text.split(/\s*\|\s*/);
+  if (!rest.length) return text;
+  const name = rest.map(personName).find(Boolean);
+  if (!name) return text;
+  return (PIX.test(plain(what!)) ? `Pix - ${name}` : name).slice(0, 120);
 }
 
 /** Descrição comparável: sem acento, número e pontuação, só as três primeiras palavras. */
@@ -261,7 +230,7 @@ export function suggestCategory(
   memory: Map<string, string>,
   movement: Pick<ParsedMovement, 'kind' | 'description'>
 ): string | null {
-  const key = normalize(movement.description);
+  const key = normalize(shortDescription(movement.description));
   if (!key) return null;
   const exact = memory.get(`${movement.kind}:${key}`);
   if (exact) return exact;
@@ -281,9 +250,10 @@ export function importedDescription(movement: {
   installmentNumber: number | null;
   installmentTotal: number | null;
 }): string {
-  if (!movement.installmentTotal || !movement.installmentNumber) return movement.description;
+  const title = shortDescription(movement.description);
+  if (!movement.installmentTotal || !movement.installmentNumber) return title;
   const suffix = ` (${movement.installmentNumber}/${movement.installmentTotal})`;
-  return movement.description.slice(0, 120 - suffix.length) + suffix;
+  return title.slice(0, 120 - suffix.length) + suffix;
 }
 
 // ---------------------------------------------------------------- faturas do cartão

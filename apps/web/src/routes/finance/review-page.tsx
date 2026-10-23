@@ -177,7 +177,13 @@ function ReviewSheet({
           { value: 'INCOME', label: 'Receita' },
         ]}
       />
-      <Section footer={`${capitalize(relativeDay(movement.date))}, como veio do banco.`}>
+      <Section
+        footer={
+          movement.bankDescription !== movement.description
+            ? `${capitalize(relativeDay(movement.date))} · Do banco veio "${movement.bankDescription}", que fica nas notas.`
+            : `${capitalize(relativeDay(movement.date))}, como veio do banco.`
+        }
+      >
         <FieldRow>
           <TextInput
             placeholder='Descrição'

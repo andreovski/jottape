@@ -4,13 +4,13 @@ import type { PluggyTransaction } from './client';
 import {
   billPayment,
   categoryMemory,
-  cleanDescription,
   findMatch,
   importedDescription,
   type MatchCandidate,
   movementBill,
   normalize,
   parseMovement,
+  shortDescription,
   suggestCategory,
 } from './movements';
 
@@ -243,31 +243,37 @@ it('a parcela vai no fim da descrição', () => {
   ).toBe('Loja');
 });
 
-describe('título do Pix', () => {
-  it('troca o texto longo do banco por "Pix - Nome"', () => {
+describe('título do lançamento do banco', () => {
+  it('fica com o nome depois do "|", com "Pix - " quando foi Pix', () => {
     expect(
-      cleanDescription(
+      shortDescription(
         'Transferência enviada pelo Pix|JOSIANE CRISTINA DA SILVA|•••.123.456-••|NU PAGAMENTOS - IP'
       )
     ).toBe('Pix - Josiane Cristina da Silva');
-    expect(
-      cleanDescription('Transferência recebida pelo Pix - MARIA DE SOUZA - 12.345.678/0001-90')
-    ).toBe('Pix - Maria de Souza');
-    expect(cleanDescription('PIX ENVIADO JOAO PEDRO')).toBe('Pix - Joao Pedro');
-    expect(cleanDescription('Pix recebido: Ana Clara')).toBe('Pix - Ana Clara');
+    expect(shortDescription('Transferência recebida|MARIA DE SOUZA|12.345.678/0001-90')).toBe(
+      'Maria de Souza'
+    );
+    // Sem nome depois do "|" (só documento), fica como veio.
+    expect(shortDescription('Pix enviado|•••.123.456-••')).toBe('Pix enviado|•••.123.456-••');
   });
 
-  it('prefere o nome que a Pluggy manda no paymentData', () => {
-    expect(
-      cleanDescription('Transferência enviada pelo Pix|JOSIANE CRIST', 'JOSIANE CRISTINA ALVES')
-    ).toBe('Pix - Josiane Cristina Alves');
-  });
-
-  it('o resto fica como veio, e Pix sem nome também', () => {
-    expect(cleanDescription('  Padaria Pão Quente ')).toBe('Padaria Pão Quente');
-    expect(cleanDescription('Transferência enviada pelo Pix')).toBe(
+  it('sem "|" fica como veio', () => {
+    expect(shortDescription('  Padaria Pão Quente ')).toBe('Padaria Pão Quente');
+    expect(shortDescription('Transferência enviada pelo Pix')).toBe(
       'Transferência enviada pelo Pix'
     );
-    expect(cleanDescription('Pix - Josiane Cristina')).toBe('Pix - Josiane Cristina');
+  });
+
+  it('a categoria sugerida olha o título: cada pessoa do Pix tem a sua', () => {
+    const memory = categoryMemory([
+      { description: 'Pix - Josiane Cristina', kind: 'EXPENSE', categoryId: 'casa' },
+      { description: 'Pix - Outra Pessoa', kind: 'EXPENSE', categoryId: 'outros' },
+    ]);
+    expect(
+      suggestCategory(memory, {
+        kind: 'EXPENSE',
+        description: 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••',
+      })
+    ).toBe('casa');
   });
 });
