@@ -26,11 +26,12 @@ import { isOwner } from '@/services/assistant';
 import {
   completeInstallments,
   createTransactions,
-  ensureBillInvoice,
   findBillInvoice,
   invoiceTotal,
   listInvoices,
   payInvoice,
+  placeCardItems,
+  redateOpenInvoices,
   turnIntoInvoicePayment,
   userTimezone,
 } from '@/services/finance';
@@ -63,7 +64,8 @@ import {
   shortDescription,
   findMatch,
   importedDescription,
-  lastKnownInstallments,
+  installmentSeries,
+  installmentTitle,
   invoiceForPayment,
   looksLikeBoleto,
   looksLikeInvoicePayment,
@@ -416,12 +418,13 @@ async function importMovements(
 
   // No cartão, as faturas fechadas do banco dizem em que fatura cada lançamento caiu e se ela
   // foi paga. Sem elas (o banco não informa), vale a data.
-  const card =
+  const linkedCard =
     bankAccount.type === 'CREDIT'
       ? await prisma.account.findFirst({ where: { id: accountId, userId, type: 'CREDIT_CARD' } })
       : null;
-  const pluggyBills = card ? await fetchBillsOrNone(userId, bankAccount.externalId) : [];
+  const pluggyBills = linkedCard ? await fetchBillsOrNone(userId, bankAccount.externalId) : [];
   const bills = new Map(pluggyBills.map((bill) => [bill.id, billDates(bill, timeZone)]));
+  const card = linkedCard && (await cardDaysFromBank(userId, linkedCard, [...bills.values()]));
 
   const parsed = remote
     .map((tx) => parseMovement(tx, bankAccount.type, timeZone))
@@ -436,9 +439,20 @@ async function importMovements(
     ).map((m) => [m.externalId, m])
   );
   // A fatura chega depois do lançamento (quando fecha): guarda nos que já tínhamos.
+  // Sem `billId`, a fatura guardada era um palpite pela data (de antes): sai, e vale a data.
   for (const movement of parsed) {
     const stored = known.get(movement.externalId);
-    if (!stored || !movement.bill || sameBill(stored, movement.bill)) continue;
+    if (!stored) continue;
+    if (!movement.bill) {
+      if (!movement.billId && stored.billDueDate) {
+        await prisma.bankMovement.update({
+          where: { id: stored.id },
+          data: { billDueDate: null, billClosingDate: null },
+        });
+      }
+      continue;
+    }
+    if (sameBill(stored, movement.bill)) continue;
     await prisma.bankMovement.update({
       where: { id: stored.id },
       data: billColumns(movement.bill),
@@ -572,8 +586,10 @@ const storedBill = (m: Pick<BankMovement, 'billDueDate' | 'billClosingDate'>): B
     : null;
 
 /**
- * O banco manda a parcela de uma compra antiga só quando a fatura dela fecha: lança as que faltam
- * depois da última que chegou, para o cartão (e o limite usado) já contar com elas.
+ * Compras parceladas no cartão. O banco pode mandar só a parcela da fatura atual: lança as que
+ * faltam depois da última que chegou, para o cartão (e o limite usado) já contar com elas. A
+ * parcela que o banco manda depois casa com a lançada; e a lançada que ficou repetida (o banco
+ * mandou a mesma parcela, lançada à parte) sai.
  */
 async function fillInstallments(userId: string, bankAccountId: string) {
   const pieces = await prisma.bankMovement.findMany({
@@ -582,19 +598,21 @@ async function fillInstallments(userId: string, bankAccountId: string) {
       kind: 'EXPENSE',
       installmentNumber: { not: null },
       installmentTotal: { not: null },
-      // A pendente conta: enquanto a última parcela espera revisão, nada é lançado.
       status: { not: 'IGNORED' },
     },
     select: {
+      id: true,
+      status: true,
       description: true,
       amountCents: true,
       date: true,
       installmentNumber: true,
       installmentTotal: true,
       transactionId: true,
+      transaction: { select: { installmentGroupId: true, description: true } },
     },
   });
-  const last = lastKnownInstallments(
+  const series = installmentSeries(
     pieces.map((m) => ({
       ...m,
       date: fromDbDate(m.date),
@@ -602,44 +620,113 @@ async function fillInstallments(userId: string, bankAccountId: string) {
       installmentTotal: m.installmentTotal!,
     }))
   );
-  for (const piece of last) {
+  for (const parts of series) {
+    const groups = [
+      ...new Set(parts.map((p) => p.transaction?.installmentGroupId).filter((g) => g != null)),
+    ];
+    const linked = new Set(parts.map((p) => p.transactionId).filter((id) => id !== null));
+    const launched = groups.length
+      ? await prisma.transaction.findMany({
+          where: { userId, installmentGroupId: { in: groups } },
+          select: { id: true, installmentNumber: true, description: true },
+        })
+      : [];
+    for (const part of parts) {
+      const twin = launched.find(
+        (tx) => tx.installmentNumber === part.installmentNumber && !linked.has(tx.id)
+      );
+      if (!twin) continue;
+      if (part.status === 'PENDING') {
+        // Esperando revisão, mas a parcela já está lançada: casa com ela.
+        await prisma.bankMovement.update({
+          where: { id: part.id },
+          data: { status: 'MATCHED', transactionId: twin.id },
+        });
+        part.status = 'MATCHED';
+        part.transactionId = twin.id;
+        linked.add(twin.id);
+      } else if (part.transactionId) {
+        await prisma.transaction.delete({ where: { id: twin.id } });
+        launched.splice(launched.indexOf(twin), 1);
+      }
+    }
+
+    // Enquanto a última parcela espera revisão, nada é lançado.
+    const last = parts.reduce((a, b) => (b.installmentNumber > a.installmentNumber ? b : a));
+    if (!last.transactionId || last.installmentNumber >= last.installmentTotal) continue;
+    const title = (n: number) =>
+      installmentTitle(
+        last.transaction?.description ?? importedDescription(last),
+        last.installmentNumber,
+        last.installmentTotal,
+        n
+      );
     await completeInstallments(
       userId,
-      piece.transactionId!,
-      piece.installmentNumber,
-      piece.installmentTotal
+      last.transactionId,
+      last.installmentNumber,
+      last.installmentTotal,
+      title
     );
+    // As que já foram lançadas antes levam o título certo ("Loja 3/10", não "Loja 2/10 (3/10)").
+    for (const tx of launched) {
+      if (linked.has(tx.id) || !tx.installmentNumber) continue;
+      if (tx.installmentNumber <= last.installmentNumber) continue;
+      const expected = title(tx.installmentNumber);
+      // Só o título que o Jottape deu (a pessoa pode ter trocado).
+      const generated = tx.description.endsWith(
+        ` (${tx.installmentNumber}/${last.installmentTotal})`
+      );
+      if (generated && tx.description !== expected) {
+        await prisma.transaction.update({ where: { id: tx.id }, data: { description: expected } });
+      }
+    }
   }
 }
 
+/** Distância entre dois dias do mês, dando a volta (dia 30 e dia 1 estão a 1 ou 2 dias). */
+const dayDistance = (a: number, b: number) => Math.min(Math.abs(a - b), 31 - Math.abs(a - b));
+
 /**
- * Põe cada lançamento do cartão na fatura em que o banco o pôs (o Jottape decide pela data, e o
- * banco pode datar a parcela pela fatura). Fatura paga não muda; a que ficar vazia sai.
+ * O fechamento e o vencimento do cartão seguem a última fatura fechada do banco (o banco muda o
+ * dia em fim de semana, então só uma diferença de mais de 3 dias conta). As faturas em aberto
+ * passam às datas novas.
+ */
+async function cardDaysFromBank(userId: string, card: Account, bills: BillDates[]) {
+  const last = bills
+    .filter((bill) => bill.closingDate)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .at(-1);
+  if (!last) return card;
+  const closingDay = Number(last.closingDate!.slice(8, 10));
+  const dueDay = Number(last.dueDate.slice(8, 10));
+  if (
+    card.closingDay &&
+    card.dueDay &&
+    dayDistance(card.closingDay, closingDay) <= 3 &&
+    dayDistance(card.dueDay, dueDay) <= 3
+  ) {
+    return card;
+  }
+  const updated = await prisma.account.update({
+    where: { id: card.id },
+    data: { closingDay, dueDay },
+  });
+  await redateOpenInvoices(userId, updated);
+  return updated;
+}
+
+/**
+ * Põe cada lançamento do cartão em aberto na fatura em que o banco o pôs (o Jottape decide pela
+ * data, e o banco pode datar a parcela pela fatura); sem ela, na do ciclo da data.
  */
 async function alignInvoices(userId: string, bankAccountId: string, card: Account) {
   const movements = await prisma.bankMovement.findMany({
     where: { bankAccountId, billDueDate: { not: null }, transactionId: { not: null } },
-    include: {
-      transaction: {
-        select: { id: true, invoiceId: true, paysInvoiceId: true, invoice: true },
-      },
-    },
+    select: { transactionId: true, billDueDate: true, billClosingDate: true },
   });
-  const emptied = new Set<string>();
-  for (const movement of movements) {
-    const tx = movement.transaction;
-    const bill = storedBill(movement);
-    if (!tx || !bill || tx.paysInvoiceId || tx.invoice?.paidAt) continue;
-    const target = await ensureBillInvoice(prisma, userId, card, bill);
-    if (target.id === tx.invoiceId || target.paidAt) continue;
-    await prisma.transaction.update({ where: { id: tx.id }, data: { invoiceId: target.id } });
-    if (tx.invoiceId) emptied.add(tx.invoiceId);
-  }
-  if (emptied.size) {
-    await prisma.creditCardInvoice.deleteMany({
-      where: { id: { in: [...emptied] }, paidAt: null, items: { none: {} }, payment: null },
-    });
-  }
+  const bills = new Map(movements.map((m) => [m.transactionId!, storedBill(m)!]));
+  await placeCardItems(userId, card, bills);
 }
 
 /**

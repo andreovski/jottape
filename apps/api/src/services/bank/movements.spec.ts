@@ -9,7 +9,8 @@ import {
   findMatch,
   importedDescription,
   type InstallmentPiece,
-  lastKnownInstallments,
+  installmentSeries,
+  installmentTitle,
   type MatchCandidate,
   movementBill,
   normalize,
@@ -92,15 +93,31 @@ describe('parseMovement', () => {
     });
   });
 
-  it('parcela já datada no mês certo fica como veio', () => {
+  it('parcela datada pela fatura (compra longe da data) fica como veio', () => {
     const third = tx({
       amount: 100,
       date: '2026-10-07T03:00:00.000Z',
-      creditCardMetadata: { installmentNumber: 3, totalInstallments: 10 },
+      creditCardMetadata: {
+        installmentNumber: 3,
+        totalInstallments: 10,
+        purchaseDate: '2026-08-20T03:00:00.000Z',
+      },
     });
     expect(parseMovement(third, 'CREDIT', TZ)).toMatchObject({
       date: '2026-10-07',
       datedByBill: true,
+    });
+  });
+
+  it('parcela sem a data da compra vale pela data', () => {
+    const second = tx({
+      amount: 100,
+      date: '2026-11-14T03:00:00.000Z',
+      creditCardMetadata: { installmentNumber: 2, totalInstallments: 2 },
+    });
+    expect(parseMovement(second, 'CREDIT', TZ)).toMatchObject({
+      date: '2026-11-14',
+      datedByBill: false,
     });
   });
 });
@@ -348,45 +365,53 @@ describe('categoria pela nota, regra fixa e IA', () => {
   });
 });
 
-describe('parcelas que faltam', () => {
-  const piece = (over: Partial<InstallmentPiece>): InstallmentPiece => ({
+describe('parcelas da mesma compra', () => {
+  const piece = (over: Partial<InstallmentPiece> & { id: string }) => ({
     description: 'LOJA X',
     amountCents: 10_000,
     date: '2026-10-05',
     installmentNumber: 2,
     installmentTotal: 5,
-    transactionId: 'tx',
     ...over,
   });
+  const ids = (series: { id: string }[][]) => series.map((s) => s.map((p) => p.id));
 
-  it('devolve a última parcela de cada compra', () => {
-    const last = lastKnownInstallments([
-      piece({ installmentNumber: 2, date: '2026-09-05', transactionId: 'a' }),
-      piece({ installmentNumber: 3, date: '2026-10-05', transactionId: 'b', amountCents: 10_002 }),
-      piece({
-        description: 'OUTRA',
-        installmentNumber: 1,
-        installmentTotal: 3,
-        transactionId: 'c',
-      }),
-    ]);
-    expect(last.map((p) => p.transactionId)).toEqual(['b', 'c']);
+  it('junta pelo texto sem a parcela e pela data da compra', () => {
+    expect(
+      ids(
+        installmentSeries([
+          piece({
+            id: 'a',
+            description: 'Jim.Com* 549 Day 1/2',
+            installmentNumber: 1,
+            installmentTotal: 2,
+            date: '2026-10-14',
+          }),
+          piece({
+            id: 'b',
+            description: 'Jim.Com* 549 Day 2/2',
+            installmentNumber: 2,
+            installmentTotal: 2,
+            date: '2026-11-14',
+            amountCents: 10_001,
+          }),
+          piece({ id: 'c', description: 'OUTRA', installmentNumber: 1, installmentTotal: 3 }),
+        ])
+      )
+    ).toEqual([['a', 'b'], ['c']]);
   });
 
   it('separa duas compras iguais feitas em meses diferentes', () => {
-    const last = lastKnownInstallments([
-      piece({ installmentNumber: 2, date: '2026-10-05', transactionId: 'a' }),
-      piece({ installmentNumber: 4, date: '2026-10-05', transactionId: 'b' }),
-    ]);
-    expect(last.map((p) => p.transactionId)).toEqual(['a', 'b']);
+    expect(
+      ids(installmentSeries([piece({ id: 'a' }), piece({ id: 'b', installmentNumber: 4 })]))
+    ).toEqual([['a'], ['b']]);
   });
 
-  it('pula a compra completa ou cuja última parcela não foi lançada', () => {
-    expect(
-      lastKnownInstallments([
-        piece({ installmentNumber: 5 }),
-        piece({ description: 'B', installmentNumber: 2, transactionId: null }),
-      ])
-    ).toEqual([]);
+  it('troca a parcela no título, ou põe no fim', () => {
+    expect(installmentTitle('Bwt Operadora 7/10 (7/10)', 7, 10, 8)).toBe(
+      'Bwt Operadora 8/10 (8/10)'
+    );
+    expect(installmentTitle('Loja PARC 03/10', 3, 10, 4)).toBe('Loja PARC 04/10');
+    expect(installmentTitle('Loja', 3, 10, 4)).toBe('Loja (4/10)');
   });
 });

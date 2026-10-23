@@ -153,6 +153,65 @@ export async function ensureBillInvoice(db: Db, userId: string, card: Account, b
   });
 }
 
+/**
+ * O fechamento ou o vencimento do cartão mudou: as faturas em aberto passam às datas novas e cada
+ * lançamento delas vai para a fatura do ciclo da sua data (`placeCardItems`).
+ */
+export async function redateOpenInvoices(userId: string, card: Account) {
+  if (!card.closingDay || !card.dueDay) return;
+  const open = await prisma.creditCardInvoice.findMany({
+    where: { accountId: card.id, paidAt: null, payment: null },
+  });
+  for (const invoice of open) {
+    const cycle = invoiceCycleForMonth(
+      fromDbDate(invoice.referenceMonth).slice(0, 7),
+      card.closingDay,
+      card.dueDay
+    );
+    await prisma.creditCardInvoice.update({
+      where: { id: invoice.id },
+      data: { closingDate: toDbDate(cycle.closingDate), dueDate: toDbDate(cycle.dueDate) },
+    });
+  }
+  await placeCardItems(userId, card);
+}
+
+/**
+ * Põe cada lançamento das faturas em aberto do cartão na fatura certa: a que o banco disse
+ * (`bills`, por lançamento) ou, sem ela, a do ciclo da data. Fatura paga não muda; a aberta que
+ * ficar vazia sai.
+ */
+export async function placeCardItems(
+  userId: string,
+  card: Account,
+  bills: Map<string, BankBill> = new Map()
+) {
+  if (!card.closingDay || !card.dueDay) return;
+  const items = await prisma.transaction.findMany({
+    where: {
+      accountId: card.id,
+      paysInvoiceId: null,
+      OR: [{ invoiceId: null }, { invoice: { paidAt: null, payment: null } }],
+    },
+    select: { id: true, date: true, invoiceId: true },
+  });
+  const emptied = new Set<string>();
+  for (const tx of items) {
+    const bill = bills.get(tx.id);
+    const target = bill
+      ? await ensureBillInvoice(prisma, userId, card, bill)
+      : await ensureInvoice(prisma, userId, card, fromDbDate(tx.date));
+    if (target.id === tx.invoiceId || target.paidAt) continue;
+    await prisma.transaction.update({ where: { id: tx.id }, data: { invoiceId: target.id } });
+    if (tx.invoiceId) emptied.add(tx.invoiceId);
+  }
+  if (emptied.size) {
+    await prisma.creditCardInvoice.deleteMany({
+      where: { id: { in: [...emptied] }, paidAt: null, items: { none: {} }, payment: null },
+    });
+  }
+}
+
 /** Lançamento no cartão (compra, estorno, saque) entra na fatura do ciclo; pagamento não. */
 async function invoiceIdFor(
   db: Db,
@@ -280,14 +339,16 @@ export async function completeInstallments(
   userId: string,
   transactionId: string,
   number: number,
-  total: number
-): Promise<number> {
+  total: number,
+  /** O título da parcela `n`. */
+  title: (n: number) => string
+): Promise<string[]> {
   return prisma.$transaction(async (db) => {
     const tx = await db.transaction.findFirst({
       where: { id: transactionId, userId, kind: 'EXPENSE', recurrenceId: null },
       include: { account: true },
     });
-    if (!tx || tx.account.type !== 'CREDIT_CARD' || number >= total) return 0;
+    if (!tx || tx.account.type !== 'CREDIT_CARD' || number >= total) return [];
     if (tx.installmentGroupId) {
       const later = await db.transaction.count({
         where: {
@@ -296,7 +357,7 @@ export async function completeInstallments(
           installmentNumber: { gt: number },
         },
       });
-      if (later) return 0;
+      if (later) return [];
     }
     const groupId = tx.installmentGroupId ?? randomUUID();
     await db.transaction.update({
@@ -304,20 +365,18 @@ export async function completeInstallments(
       data: { installmentGroupId: groupId, installmentNumber: number, installmentTotal: total },
     });
     const start = fromDbDate(tx.date);
-    // A importação põe a parcela no fim do título, como "Loja (2/10)".
-    const suffix = ` (${number}/${total})`;
-    const title = tx.description.endsWith(suffix) ? tx.description.slice(0, -suffix.length) : null;
-    const rows: Prisma.TransactionUncheckedCreateInput[] = [];
+    const rows: (Prisma.TransactionUncheckedCreateInput & { id: string })[] = [];
     for (let n = number + 1; n <= total; n++) {
       const date = addMonthsClamped(start, n - number);
       rows.push({
+        id: randomUUID(),
         userId,
         kind: 'EXPENSE',
         amountCents: tx.amountCents,
         date: toDbDate(date),
         accountId: tx.accountId,
         categoryId: tx.categoryId,
-        description: title === null ? tx.description : `${title} (${n}/${total})`,
+        description: title(n),
         notes: tx.notes,
         status: 'DONE',
         installmentGroupId: groupId,
@@ -327,7 +386,7 @@ export async function completeInstallments(
       });
     }
     await db.transaction.createMany({ data: rows });
-    return rows.length;
+    return rows.map((row) => row.id);
   });
 }
 
