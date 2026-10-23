@@ -73,9 +73,12 @@ export function parseMovement(
     }
   }
 
-  const description = (tx.description || tx.descriptionRaw || 'Lançamento do banco')
-    .trim()
-    .slice(0, 120);
+  const counterpart =
+    kind === 'EXPENSE' ? tx.paymentData?.receiver?.name : tx.paymentData?.payer?.name;
+  const description = cleanDescription(
+    tx.description || tx.descriptionRaw || 'Lançamento do banco',
+    counterpart
+  );
   return {
     externalId: tx.id,
     kind,
@@ -158,6 +161,69 @@ function plain(text: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+const PIX = /\bpix\b/;
+/** Palavras que só dizem que é um Pix (ficam antes do nome em "PIX ENVIADO FULANO"). */
+const PIX_WORDS = new Set(
+  'transferencia transf enviada enviado recebida recebido pelo pela via pix de para qr code cod'.split(
+    ' '
+  )
+);
+const NAME_PARTICLES = new Set(['da', 'das', 'de', 'do', 'dos', 'e']);
+
+/** "JOSIANE CRISTINA DA SILVA" → "Josiane Cristina da Silva"; sem letras suficientes, null. */
+function personName(text: string | null | undefined): string | null {
+  const words = (text ?? '')
+    .replace(/[^\p{L}\s'&.]/gu, ' ')
+    .replace(/\.(?=\s|$)/g, ' ')
+    .split(/\s+/)
+    .filter((word) => /\p{L}/u.test(word));
+  const name = words
+    .map((word, i) => {
+      const lower = word.toLocaleLowerCase('pt-BR');
+      if (i > 0 && NAME_PARTICLES.has(plain(lower))) return lower;
+      return lower.charAt(0).toLocaleUpperCase('pt-BR') + lower.slice(1);
+    })
+    .join(' ');
+  return name.replace(/\s/g, '').length >= 2 ? name : null;
+}
+
+/**
+ * Pix com o texto longo do banco ("Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|
+ * NU PAGAMENTOS") vira "Pix - Josiane Cristina". O nome vem do `paymentData` da Pluggy quando ela
+ * manda; senão, do pedaço do texto logo depois do "Pix". Não sendo Pix, null.
+ */
+export function pixDescription(raw: string, counterpart?: string | null): string | null {
+  if (!PIX.test(plain(raw))) return null;
+  let name = personName(counterpart);
+  if (!name) {
+    const parts = raw
+      .split(/\s*\|\s*|\s+-\s+|\s*:\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const at = parts.findIndex((part) => PIX.test(plain(part)));
+    // "PIX ENVIADO FULANO": o nome está no mesmo pedaço, depois das palavras do Pix.
+    const rest = parts[at]!.split(/\s+/)
+      .filter((word) => !PIX_WORDS.has(plain(word).replace(/[^a-z]/g, '')))
+      .join(' ');
+    // Documento (•••.123.456-••) e número não são nome.
+    const looksLikeName = (part: string) => !/[•*]|\d{3}/.test(part) && personName(part);
+    name =
+      looksLikeName(rest) ||
+      parts
+        .slice(at + 1)
+        .map(looksLikeName)
+        .find(Boolean) ||
+      null;
+  }
+  return name ? `Pix - ${name}`.slice(0, 120) : null;
+}
+
+/** Descrição que o Jottape guarda: Pix vira "Pix - Nome"; o resto fica como o banco mandou. */
+export function cleanDescription(raw: string, counterpart?: string | null): string {
+  const text = raw.trim();
+  return (pixDescription(text, counterpart) ?? text).slice(0, 120);
 }
 
 /** Descrição comparável: sem acento, número e pontuação, só as três primeiras palavras. */

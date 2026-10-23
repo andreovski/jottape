@@ -56,6 +56,12 @@ export interface PluggyTransaction {
     /** A fatura do lançamento; só vem depois que ela fecha. */
     billId?: string | null;
   } | null;
+  /** Pix e transferências: quem pagou e quem recebeu (nem todo banco manda). */
+  paymentData?: {
+    paymentMethod?: string | null;
+    payer?: { name?: string | null } | null;
+    receiver?: { name?: string | null } | null;
+  } | null;
 }
 
 export interface PluggyBill {

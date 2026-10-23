@@ -4,6 +4,7 @@ import type { PluggyTransaction } from './client';
 import {
   billPayment,
   categoryMemory,
+  cleanDescription,
   findMatch,
   importedDescription,
   type MatchCandidate,
@@ -240,4 +241,33 @@ it('a parcela vai no fim da descrição', () => {
   expect(
     importedDescription({ description: 'Loja', installmentNumber: null, installmentTotal: null })
   ).toBe('Loja');
+});
+
+describe('título do Pix', () => {
+  it('troca o texto longo do banco por "Pix - Nome"', () => {
+    expect(
+      cleanDescription(
+        'Transferência enviada pelo Pix|JOSIANE CRISTINA DA SILVA|•••.123.456-••|NU PAGAMENTOS - IP'
+      )
+    ).toBe('Pix - Josiane Cristina da Silva');
+    expect(
+      cleanDescription('Transferência recebida pelo Pix - MARIA DE SOUZA - 12.345.678/0001-90')
+    ).toBe('Pix - Maria de Souza');
+    expect(cleanDescription('PIX ENVIADO JOAO PEDRO')).toBe('Pix - Joao Pedro');
+    expect(cleanDescription('Pix recebido: Ana Clara')).toBe('Pix - Ana Clara');
+  });
+
+  it('prefere o nome que a Pluggy manda no paymentData', () => {
+    expect(
+      cleanDescription('Transferência enviada pelo Pix|JOSIANE CRIST', 'JOSIANE CRISTINA ALVES')
+    ).toBe('Pix - Josiane Cristina Alves');
+  });
+
+  it('o resto fica como veio, e Pix sem nome também', () => {
+    expect(cleanDescription('  Padaria Pão Quente ')).toBe('Padaria Pão Quente');
+    expect(cleanDescription('Transferência enviada pelo Pix')).toBe(
+      'Transferência enviada pelo Pix'
+    );
+    expect(cleanDescription('Pix - Josiane Cristina')).toBe('Pix - Josiane Cristina');
+  });
 });

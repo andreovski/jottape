@@ -260,6 +260,28 @@ describe('bancos (Meu Pluggy)', () => {
     expect(imported.map((t) => t.categoryId)).toEqual([income, income]);
   });
 
+  it('Pix chega como "Pix - Nome", e o que já esperava revisão também muda', async () => {
+    const { checkingBank } = await connect();
+    const raw = 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP';
+    pluggy.add(CHECKING_ID, {
+      id: 'p1',
+      description: raw,
+      amount: -50,
+      date: '2026-10-05T03:00:00.000Z',
+    });
+    await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
+    expect((await prisma.bankMovement.findFirstOrThrow()).description).toBe(
+      'Pix - Josiane Cristina'
+    );
+
+    // Como ficou guardado antes desta regra: a lista já mostra (e guarda) o título curto.
+    await prisma.bankMovement.updateMany({ data: { description: raw } });
+    expect((await pending()).map((m) => m.description)).toEqual(['Pix - Josiane Cristina']);
+    expect((await prisma.bankMovement.findFirstOrThrow()).description).toBe(
+      'Pix - Josiane Cristina'
+    );
+  });
+
   it('cartão novo: cria o cartão com fechamento e vencimento, ignora o pagamento e lança na fatura', async () => {
     const { checkingBank, cardBank } = await connect();
     await api.patch(`/bank/accounts/${checkingBank}`, { accountId: checking.id });
