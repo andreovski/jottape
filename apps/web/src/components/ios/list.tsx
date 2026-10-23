@@ -109,7 +109,11 @@ export function Row({
     </>
   );
 
-  const classes = cn('group/row flex w-full items-center gap-3 pl-4 text-left', className);
+  // No computador, a linha tocável clareia sob o mouse (também quando um link a envolve).
+  const classes = cn(
+    'group/row flex w-full items-center gap-3 pl-4 text-left lg:transition-colors lg:[a:hover>&]:bg-fill/50',
+    className
+  );
 
   if (onClick) {
     return (
@@ -119,7 +123,7 @@ export function Row({
         disabled={disabled}
         className={cn(
           classes,
-          'active:bg-fill transition-colors duration-75 disabled:cursor-default'
+          'active:bg-fill lg:hover:bg-fill/50 transition-colors duration-75 disabled:cursor-default lg:disabled:hover:bg-transparent'
         )}
       >
         {content}

@@ -17,17 +17,21 @@ import { CalendarsSheet } from '@/components/agenda/calendars-sheet';
 import { EventDetailSheet } from '@/components/agenda/event-detail-sheet';
 import { newEventForm } from '@/components/agenda/event-form-model';
 import { type EventFormMode, EventFormSheet } from '@/components/agenda/event-form-sheet';
+import { EventRow } from '@/components/agenda/event-row';
 import { loadLastView, saveLastView } from '@/components/agenda/last-view';
 import { listDayTitle, ListView } from '@/components/agenda/list-view';
+import { MiniMonth } from '@/components/agenda/mini-month';
 import { MonthView } from '@/components/agenda/month-view';
 import { AllDayChip, TimeGrid } from '@/components/agenda/time-grid';
 import { useNow } from '@/components/agenda/use-now';
 import { StripArrow, WeekStrip } from '@/components/agenda/week-strip';
 import { Segmented, Skeleton } from '@/components/ios/controls';
+import { Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { useEvents } from '@/features/agenda';
 import { useMe } from '@/features/auth';
 import { appTimeZone, capitalize, dayKey, monthName, shortDay, startOfDay } from '@/lib/format';
+import { useIsWide } from '@/lib/use-desktop';
 import { cn } from '@/lib/utils';
 
 type View = 'dia' | 'semana' | 'mes' | 'lista';
@@ -154,9 +158,11 @@ export function AgendaPage() {
 
   const loading = events.isPending;
   const month = date.slice(0, 7);
+  const wide = useIsWide();
 
   return (
     <Page
+      wide
       title={capitalize(monthName(month))}
       eyebrow={date.slice(0, 4)}
       actions={
@@ -182,7 +188,9 @@ export function AgendaPage() {
         </>
       }
       accessory={
-        <Segmented value={view} onChange={(value) => go({ view: value })} options={VIEWS} />
+        <div className='lg:max-w-md'>
+          <Segmented value={view} onChange={(value) => go({ view: value })} options={VIEWS} />
+        </div>
       }
     >
       {view === 'dia' && (
@@ -196,11 +204,12 @@ export function AgendaPage() {
           onDate={setDate}
           onSelect={openDetail}
           onCreateAt={openCreate}
+          wide={wide}
         />
       )}
 
       {view === 'semana' && (
-        <div className='lg:relative lg:left-1/2 lg:w-[min(calc(100vw-20rem),76rem)] lg:-translate-x-1/2'>
+        <div>
           <div className='mb-2 flex items-center justify-between'>
             <span className='text-headline numeric pl-1'>
               {shortDay(days[0])} – {shortDay(days[6])}
@@ -244,6 +253,7 @@ export function AgendaPage() {
           onShiftMonth={(months) => setDate(addMonthsClamped(date, months))}
           onSelect={openDetail}
           onCreate={() => openCreate()}
+          wide={wide}
         />
       )}
 
@@ -251,14 +261,17 @@ export function AgendaPage() {
         (loading ? (
           <ListSkeleton />
         ) : (
-          <ListView
-            days={days}
-            today={today}
-            byDay={byDay}
-            colorOf={colorOf}
-            onSelect={openDetail}
-            onCreate={() => openCreate()}
-          />
+          // A lista não precisa da coluna larga: fica no meio, na largura de leitura.
+          <div className='lg:mx-auto lg:max-w-3xl'>
+            <ListView
+              days={days}
+              today={today}
+              byDay={byDay}
+              colorOf={colorOf}
+              onSelect={openDetail}
+              onCreate={() => openCreate()}
+            />
+          </div>
         ))}
 
       <CalendarsSheet open={calendarsOpen} onOpenChange={setCalendarsOpen} />
@@ -294,10 +307,13 @@ function DayView({
   onDate,
   onSelect,
   onCreateAt,
+  wide,
 }: {
   date: string;
   today: string;
   weekStartsOn: number;
+  /** Tela larga: o mês pequeno e a lista do dia numa coluna à direita. */
+  wide?: boolean;
   byDay: Map<string, EventOccurrence[]>;
   loading: boolean;
   colorOf: ReturnType<typeof useCalendars>['colorOf'];
@@ -312,7 +328,7 @@ function DayView({
     [byDay]
   );
 
-  return (
+  const timeline = (
     <div>
       <div className='bg-surface mb-2 rounded-[var(--radius)] px-1 py-1'>
         <WeekStrip
@@ -353,6 +369,34 @@ function DayView({
           className='h-[max(20rem,calc(100dvh-24rem))] lg:h-[max(24rem,calc(100dvh-21rem))]'
         />
       )}
+    </div>
+  );
+
+  if (!wide) return timeline;
+  const dayEvents = byDay.get(date) ?? [];
+  return (
+    <div className='grid grid-cols-[minmax(0,1fr)_20rem] items-start gap-8'>
+      {timeline}
+      <aside className='sticky top-[calc(env(safe-area-inset-top)+7rem)]'>
+        <MiniMonth date={date} today={today} weekStartsOn={weekStartsOn} onChange={onDate} />
+        <Section header={capitalize(listDayTitle(date, today))} className='mt-6'>
+          {dayEvents.length ? (
+            dayEvents.map((event) => (
+              <EventRow
+                key={occurrenceKey(event)}
+                event={event}
+                day={date}
+                color={colorOf(event)}
+                onSelect={onSelect}
+              />
+            ))
+          ) : (
+            <p className='text-body text-label-2 px-4 py-2.5'>
+              {loading ? 'Carregando…' : 'Nenhum evento'}
+            </p>
+          )}
+        </Section>
+      </aside>
     </div>
   );
 }

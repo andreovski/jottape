@@ -25,6 +25,22 @@ de template: nada de cartões com borda cinza, sombras genéricas ou gradientes 
 - **Toque**: alvos de pelo menos 44 px, `active:opacity-*`/`active:bg-fill` no toque, sem hover
   pesado. Folhas sobem de baixo e fecham arrastando.
 
+## Computador (web)
+
+O celular é a referência e não muda: tudo do computador fica atrás de `lg:` / `xl:` ou dos hooks
+de `src/lib/use-desktop.ts`, que usam os mesmos cortes.
+
+- **A partir de `lg` (1024 px)**: barra lateral no lugar das abas, com a pessoa e os Ajustes no pé.
+  `Sheet` vira uma janela no centro (Radix Dialog, fecha no Esc ou clicando fora, sem arrastar) e
+  `ActionSheet` vira um alerta pequeno no centro. Linhas tocáveis clareiam sob o mouse.
+- **A partir de `xl` (1280 px)**: telas com `Page wide` ganham uma segunda coluna. Hoje: briefing,
+  agenda e contas à esquerda, números, tarefas e próximos dias à direita. Tarefas: listas
+  inteligentes, listas e etiquetas à esquerda (a faixa de filtros some). Finanças: a carteira fixa à
+  direita. Agenda: mês pequeno e lista do dia ao lado da visão Dia; lista do dia ao lado do Mês.
+- Coluna de leitura (`max-w-3xl`) para Ajustes, Jotta e listas; `wide` vai a `max-w-6xl`.
+- Arranjo diferente na tela larga é montado com `useIsWide()` a partir dos mesmos blocos, para o
+  celular continuar com a mesma árvore de antes.
+
 ## Peças (`src/components/ios`)
 
 | Peça                                                                                                                     | Para quê                                                                                                                             |
@@ -33,7 +49,7 @@ de template: nada de cartões com borda cinza, sombras genéricas ou gradientes 
 | `Section`, `SectionTitle`                                                                                                | Grupo de linhas e título grande de grupo ("Minhas listas").                                                                          |
 | `Row`, `IconChip`                                                                                                        | Linha com ícone colorido, título, subtítulo, valor cinza, chevron.                                                                   |
 | `Segmented`, `Switch`, `CheckCircle`, `Button`, `Pill`, `Spinner`, `EmptyState`, `Skeleton`                              | Controles do iOS.                                                                                                                    |
-| `Sheet`, `ActionSheet`                                                                                                   | Folha "Cancelar · Título · OK" e menu de ações com "Cancelar" separado.                                                              |
+| `Sheet`, `ActionSheet`                                                                                                   | Folha "Cancelar · Título · OK" e menu de ações com "Cancelar" separado (no computador, janela e alerta no centro).                   |
 | `FieldRow`, `TextInput`, `TextArea`, `SelectInput`, `DateInput`, `TimeInput`, `AmountInput`, `MoneyField`, `ColorPicker` | Formulários em grupos, valor grande estilo Apple Cash, cores do sistema.                                                             |
 
 ## Dados e formatos

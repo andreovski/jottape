@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 
 import { JottaIcon } from '@/components/jotta-icon';
 import { useAssistant } from '@/features/assistant';
+import { useCurrentUser } from '@/features/auth';
 import { cn } from '@/lib/utils';
 
 export const SECTIONS = [
@@ -35,19 +36,21 @@ export function AppShell() {
   const assistant = useAssistant().data?.enabled ?? false;
   const sections = SECTIONS.filter((s) => assistant || s.to !== '/assistente');
   const tabs = sections.filter((s) => !assistant || s.to !== '/ajustes');
+  // Na barra lateral, Ajustes fica embaixo, junto da pessoa (como no Mac).
+  const sideNav = sections.filter((s) => s.to !== '/ajustes');
 
   return (
     <div
       className='bg-background text-foreground min-h-dvh lg:flex'
       style={{ '--tint': current.tint } as CSSProperties}
     >
-      <aside className='bg-surface/60 hairline-r sticky top-0 hidden h-dvh w-64 shrink-0 flex-col px-3 pt-6 lg:flex dark:bg-[#161617]'>
+      <aside className='bg-surface/60 hairline-r sticky top-0 hidden h-dvh w-64 shrink-0 flex-col px-3 pt-6 pb-3 lg:flex dark:bg-[#161617]'>
         <div className='mb-6 flex items-center gap-2.5 px-3'>
           <img src='/icons/icon-192.png' alt='' className='size-8 rounded-[8px]' />
           <span className='text-title-3'>Jottape</span>
         </div>
         <nav aria-label='Seções' className='flex flex-col gap-0.5'>
-          {sections.map(({ to, label, icon: Icon, tint }) => {
+          {sideNav.map(({ to, label, icon: Icon, tint }) => {
             const active = current.to === to;
             return (
               <Link
@@ -69,6 +72,7 @@ export function AppShell() {
             );
           })}
         </nav>
+        <SidebarProfile active={current.to === '/ajustes'} />
       </aside>
 
       <main className='min-w-0 flex-1'>
@@ -101,5 +105,42 @@ export function AppShell() {
         </ul>
       </nav>
     </div>
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('');
+}
+
+/** Pé da barra lateral: quem está usando e o caminho para os Ajustes. */
+function SidebarProfile({ active }: { active: boolean }) {
+  const me = useCurrentUser();
+  return (
+    <Link
+      to='/ajustes'
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'mt-auto flex items-center gap-3 rounded-[12px] px-2.5 py-2 transition-colors',
+        active ? 'bg-fill' : 'hover:bg-fill/60'
+      )}
+    >
+      <span className='font-rounded flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-[#a5a5ab] to-[#86868b] text-[15px] font-semibold text-white'>
+        {initials(me.name)}
+      </span>
+      <span className='min-w-0 flex-1'>
+        <span className='text-subhead block truncate font-semibold'>{me.name}</span>
+        <span className='text-footnote text-label-2 block truncate'>{me.email}</span>
+      </span>
+      <Settings
+        className={cn('size-[18px] shrink-0', active ? 'text-blue' : 'text-label-2')}
+        strokeWidth={2.1}
+        aria-label='Ajustes'
+      />
+    </Link>
   );
 }

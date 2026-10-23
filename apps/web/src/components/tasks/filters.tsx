@@ -156,30 +156,40 @@ export function FilterBar({
 export function FilterSheet({
   open,
   onOpenChange,
-  value,
-  lists,
-  counts,
-  onChange,
-  onNewList,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  ...props
+}: FilterPanelProps & { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title='Filtrar' cancelLabel='Fechar'>
+      <FilterPanel
+        {...props}
+        onChange={(next) => {
+          props.onChange(next);
+          onOpenChange(false);
+        }}
+      />
+    </Sheet>
+  );
+}
+
+interface FilterPanelProps {
   value: TaskFilter;
   lists: TaskListResponse[] | undefined;
   counts: Record<string, number | undefined>;
   onChange: (next: TaskFilter) => void;
   onNewList: () => void;
-}) {
+}
+
+/**
+ * O conteúdo dos filtros: dentro da folha no celular e, na tela larga, sempre à vista numa coluna
+ * à esquerda (como a barra lateral do Lembretes no Mac).
+ */
+export function FilterPanel({ value, lists, counts, onChange, onNewList }: FilterPanelProps) {
   const tags = useTags();
   const day = Number(todayKey().slice(8, 10));
-
-  function pick(next: TaskFilter) {
-    onChange(next);
-    onOpenChange(false);
-  }
+  const pick = onChange;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title='Filtrar' cancelLabel='Fechar'>
+    <>
       <div className='mb-7 grid grid-cols-2 gap-3'>
         {SMART_VIEWS.map((meta) => {
           const selected = !value.tag && value.filtro === meta.slug;
@@ -288,6 +298,6 @@ export function FilterSheet({
           </div>
         </Section>
       )}
-    </Sheet>
+    </>
   );
 }

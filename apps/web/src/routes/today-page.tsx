@@ -44,6 +44,7 @@ import {
   todayKey,
 } from '@/lib/format';
 import { useHiddenMoney } from '@/lib/hidden-money';
+import { useIsWide } from '@/lib/use-desktop';
 import { cn } from '@/lib/utils';
 
 import { eventDay, greeting, nextUpcoming, sortUndated, taskProgress } from './today';
@@ -453,6 +454,7 @@ export function TodayPage() {
   });
 
   const { hidden, toggle: toggleHidden, format } = useHiddenMoney();
+  const wide = useIsWide();
   const upcomingTasks = useTasks({ view: 'next7' });
   const undatedTasks = useTasks({ view: 'nodate' });
 
@@ -481,35 +483,16 @@ export function TodayPage() {
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(0, 4);
   }, [week.data]);
 
-  return (
-    <Page
-      title='Hoje'
-      eyebrow={longDay(today)}
-      actions={
-        <>
-          {/* No celular, Ajustes sai da barra de abas quando o Assistente entra nela. */}
-          {assistantOn && (
-            <BarButton
-              label='Ajustes'
-              className='lg:hidden'
-              onClick={() => navigate({ to: '/ajustes' })}
-            >
-              <Settings strokeWidth={2.2} />
-            </BarButton>
-          )}
-          <BarButton label='Adicionar' onClick={() => setMenu(true)}>
-            <Plus strokeWidth={2.4} />
-          </BarButton>
-        </>
-      }
-    >
-      <p className='text-subhead text-label-2 -mt-2 mb-5'>
-        {greeting(now.getHours())}, {me.name.split(' ')[0]}.
-      </p>
-
+  // Cada bloco uma vez só: no celular (e em telas médias) vão um embaixo do outro, como sempre; na
+  // tela larga, o resumo e a agenda à esquerda, os números e as tarefas à direita.
+  const briefingBlock = (
+    <>
       <BriefingCard format={format} />
-
-      <div className='mb-7 grid grid-cols-2 gap-3 lg:grid-cols-4'>
+    </>
+  );
+  const widgetsBlock = (
+    <>
+      <div className={cn('mb-7 grid grid-cols-2 gap-3', !wide && 'lg:grid-cols-4')}>
         <BalanceWidget format={format} hidden={hidden} onToggleHidden={toggleHidden} />
         <NextEventWidget
           events={data?.events}
@@ -525,7 +508,10 @@ export function TodayPage() {
         />
         <TasksWidget open={data?.tasks} />
       </div>
-
+    </>
+  );
+  const agendaBlock = (
+    <>
       <Section header='Agenda' action={<Link to='/agenda'>Ver agenda</Link>}>
         {!data ? (
           <div className='space-y-2 p-4'>
@@ -600,7 +586,10 @@ export function TodayPage() {
           </>
         )}
       </Section>
-
+    </>
+  );
+  const tasksBlock = (
+    <>
       <Section header='Tarefas' action={<Link to='/tarefas'>Ver todas</Link>}>
         {!data ? (
           <div className='p-4'>
@@ -639,7 +628,10 @@ export function TodayPage() {
           </>
         )}
       </Section>
-
+    </>
+  );
+  const billsBlock = (
+    <>
       {data && (data.bills.length > 0 || data.invoices.length > 0) && (
         <Section header='Contas do dia'>
           {data.invoices.map((invoice) => (
@@ -676,7 +668,10 @@ export function TodayPage() {
           ))}
         </Section>
       )}
-
+    </>
+  );
+  const upcomingBlock = (
+    <>
       {week.data && (upcomingDays.length > 0 || week.data.bills.length > 0) && (
         <Section header='Próximos dias'>
           {upcomingDays.map(([key, count]) => (
@@ -712,6 +707,59 @@ export function TodayPage() {
             </Link>
           )}
         </Section>
+      )}
+    </>
+  );
+
+  return (
+    <Page
+      wide
+      title='Hoje'
+      eyebrow={longDay(today)}
+      actions={
+        <>
+          {/* No celular, Ajustes sai da barra de abas quando o Assistente entra nela. */}
+          {assistantOn && (
+            <BarButton
+              label='Ajustes'
+              className='lg:hidden'
+              onClick={() => navigate({ to: '/ajustes' })}
+            >
+              <Settings strokeWidth={2.2} />
+            </BarButton>
+          )}
+          <BarButton label='Adicionar' onClick={() => setMenu(true)}>
+            <Plus strokeWidth={2.4} />
+          </BarButton>
+        </>
+      }
+    >
+      <p className='text-subhead text-label-2 -mt-2 mb-5'>
+        {greeting(now.getHours())}, {me.name.split(' ')[0]}.
+      </p>
+
+      {wide ? (
+        <div className='grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] items-start gap-x-8'>
+          <div>
+            {briefingBlock}
+            {agendaBlock}
+            {billsBlock}
+          </div>
+          <div>
+            {widgetsBlock}
+            {tasksBlock}
+            {upcomingBlock}
+          </div>
+        </div>
+      ) : (
+        <>
+          {briefingBlock}
+          {widgetsBlock}
+          {agendaBlock}
+          {tasksBlock}
+          {billsBlock}
+          {upcomingBlock}
+        </>
       )}
 
       {data && data.events.length === 0 && data.tasks.length === 0 && data.bills.length === 0 && (
