@@ -10,7 +10,6 @@ import {
   MapPin,
   Plus,
   Receipt,
-  Settings,
   TrendingDown,
   Wallet,
 } from 'lucide-react';
@@ -25,10 +24,10 @@ import { CheckCircle, EmptyState, Skeleton } from '@/components/ios/controls';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { SettingsButton } from '@/components/settings-button';
 import { TaskGroupLabel } from '@/components/tasks/task-row';
 import { BriefingCard } from '@/components/today/briefing-card';
 import { useAgenda } from '@/features/agenda';
-import { useAssistant } from '@/features/assistant';
 import { useCurrentUser } from '@/features/auth';
 import { useNextEvent } from '@/features/briefing';
 import { useAccounts, useCategories, useForecast, useUpdateTransaction } from '@/features/finance';
@@ -446,7 +445,6 @@ export function TodayPage() {
   const agenda = useAgenda(range.start, range.end);
   const week = useAgenda(range.end, range.weekEnd);
   const navigate = useNavigate();
-  const assistantOn = useAssistant().data?.enabled ?? false;
   const [menu, setMenu] = useState(false);
   const [txSheet, setTxSheet] = useState<{ open: boolean; tx?: TransactionResponse }>({
     open: false,
@@ -487,16 +485,7 @@ export function TodayPage() {
       eyebrow={longDay(today)}
       actions={
         <>
-          {/* No celular, Ajustes sai da barra de abas quando o Assistente entra nela. */}
-          {assistantOn && (
-            <BarButton
-              label='Ajustes'
-              className='lg:hidden'
-              onClick={() => navigate({ to: '/ajustes' })}
-            >
-              <Settings strokeWidth={2.2} />
-            </BarButton>
-          )}
+          <SettingsButton />
           <BarButton label='Adicionar' onClick={() => setMenu(true)}>
             <Plus strokeWidth={2.4} />
           </BarButton>

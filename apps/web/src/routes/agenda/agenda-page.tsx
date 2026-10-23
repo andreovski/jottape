@@ -25,6 +25,7 @@ import { useNow } from '@/components/agenda/use-now';
 import { StripArrow, WeekStrip } from '@/components/agenda/week-strip';
 import { Segmented, Skeleton } from '@/components/ios/controls';
 import { BarButton, Page } from '@/components/ios/page';
+import { SettingsButton } from '@/components/settings-button';
 import { useEvents } from '@/features/agenda';
 import { useMe } from '@/features/auth';
 import { appTimeZone, capitalize, dayKey, monthName, shortDay, startOfDay } from '@/lib/format';
@@ -161,6 +162,7 @@ export function AgendaPage() {
       eyebrow={date.slice(0, 4)}
       actions={
         <>
+          <SettingsButton />
           <button
             type='button'
             onClick={() => setDate(today)}

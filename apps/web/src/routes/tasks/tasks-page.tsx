@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/ios/controls';
 import { Row } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { SettingsButton } from '@/components/settings-button';
 import {
   FilterBar,
   FilterSheet,
@@ -271,6 +272,7 @@ export function TasksPage() {
         title='Tarefas'
         actions={
           <>
+            <SettingsButton />
             {menuActions.length > 0 && (
               <BarButton label='Mais opções' onClick={() => setMenuOpen(true)}>
                 <span className='border-tint flex size-[22px] items-center justify-center rounded-full border-[1.75px]'>
