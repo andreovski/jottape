@@ -31,7 +31,7 @@ export function EventRow({
     <button
       type='button'
       onClick={() => onSelect(event)}
-      className='group/row active:bg-fill flex w-full items-stretch gap-3 pl-4 text-left transition-colors duration-75'
+      className='group/row active:bg-fill lg:hover:bg-fill/50 flex w-full items-stretch gap-3 pl-4 text-left transition-colors duration-75'
     >
       <div className='flex min-w-0 flex-1 items-stretch gap-3 py-2.5 pr-4 shadow-[inset_0_-0.5px_0_var(--separator)] group-last/row:shadow-none'>
         <div className='numeric flex w-[52px] shrink-0 flex-col justify-center text-right'>

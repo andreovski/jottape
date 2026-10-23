@@ -9,6 +9,7 @@ import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
 import {
   FilterBar,
+  FilterPanel,
   FilterSheet,
   type TaskFilter,
   useSmartCounts,
@@ -35,6 +36,7 @@ import { TaskCard, TaskGroupLabel, TaskRow, useToggleTask } from '@/components/t
 import { TaskSheet, type TaskSheetDefaults } from '@/components/tasks/task-sheet';
 import { useClearCompleted, useDeleteTaskList, useTaskLists, useTasks } from '@/features/tasks';
 import { todayKey } from '@/lib/format';
+import { useIsWide } from '@/lib/use-desktop';
 
 interface Confirm {
   title: string;
@@ -50,6 +52,7 @@ interface Confirm {
 export function TasksPage() {
   const { filtro = 'todas', tag, novo } = useSearch({ from: '/app/tarefas' });
   const navigate = useNavigate();
+  const wide = useIsWide();
   const lists = useTaskLists();
   const counts = useSmartCounts(lists.data);
   const target = resolveListParam(filtro, tag);
@@ -268,6 +271,7 @@ export function TasksPage() {
   return (
     <div className={ALL_COLOR_CLASS} style={{ '--tint': color } as CSSProperties}>
       <Page
+        wide
         title='Tarefas'
         actions={
           <>
@@ -284,20 +288,46 @@ export function TasksPage() {
           </>
         }
       >
-        <div className='mb-3'>
-          <SearchField value={search} onChange={setSearch} />
-        </div>
-        {!deferredSearch && (
-          <FilterBar
-            value={{ filtro, tag }}
-            lists={lists.data}
-            counts={counts}
-            onChange={setFilter}
-            onOpenSheet={() => setFilterOpen(true)}
-          />
-        )}
+        {wide ? (
+          // Tela larga: os filtros ficam à vista numa coluna, e a busca vai com os lembretes.
+          <div className='grid grid-cols-[18rem_minmax(0,1fr)] items-start gap-8'>
+            <aside
+              aria-label='Listas'
+              className='sticky top-[calc(env(safe-area-inset-top)+4.5rem)]'
+            >
+              <FilterPanel
+                value={{ filtro, tag }}
+                lists={lists.data}
+                counts={counts}
+                onChange={setFilter}
+                onNewList={() => listSheet.show(null)}
+              />
+            </aside>
+            <div className='min-w-0'>
+              <div className='mb-4'>
+                <SearchField value={search} onChange={setSearch} />
+              </div>
+              {body}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className='mb-3'>
+              <SearchField value={search} onChange={setSearch} />
+            </div>
+            {!deferredSearch && (
+              <FilterBar
+                value={{ filtro, tag }}
+                lists={lists.data}
+                counts={counts}
+                onChange={setFilter}
+                onOpenSheet={() => setFilterOpen(true)}
+              />
+            )}
 
-        {body}
+            {body}
+          </>
+        )}
       </Page>
 
       <FilterSheet

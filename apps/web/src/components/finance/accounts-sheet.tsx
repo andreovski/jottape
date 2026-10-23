@@ -21,18 +21,35 @@ const signed = (cents: number) => (cents < 0 ? `−${money(-cents)}` : money(cen
 export function AccountsSheet({
   open,
   onOpenChange,
-  accounts,
-  balanceCents,
-  endOfMonthCents,
-  onAddAccount,
+  ...props
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+} & AccountsWalletProps) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title='Contas' cancelLabel='Fechar'>
+      <AccountsWallet {...props} onOpen={() => onOpenChange(false)} />
+    </Sheet>
+  );
+}
+
+interface AccountsWalletProps {
   accounts: AccountResponse[];
   balanceCents: number;
   endOfMonthCents?: number;
   onAddAccount: () => void;
-}) {
+  /** Antes de abrir uma conta (a folha fecha). */
+  onOpen?: () => void;
+}
+
+/** A carteira em si: na folha do celular e, na tela larga, fixa ao lado das Finanças. */
+export function AccountsWallet({
+  accounts,
+  balanceCents,
+  endOfMonthCents,
+  onAddAccount,
+  onOpen,
+}: AccountsWalletProps) {
   const navigate = useNavigate();
   const invoices = accounts
     .filter((a) => a.type === 'CREDIT_CARD')
@@ -44,7 +61,7 @@ export function AccountsSheet({
   ];
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title='Contas' cancelLabel='Fechar'>
+    <>
       <div className='mb-4 flex justify-between gap-3 px-1'>
         {totals.map((total, i) => (
           <div key={total.label} className={cn('min-w-0', i === totals.length - 1 && 'text-right')}>
@@ -74,7 +91,7 @@ export function AccountsSheet({
               // é relativa à largura, e a altura do cartão é a largura / 1,586).
               style={i ? { marginTop: `calc(${PEEK}px - 100% / 1.586)` } : undefined}
               onClick={() => {
-                onOpenChange(false);
+                onOpen?.();
                 void navigate({
                   to: '/financas/contas/$accountId',
                   params: { accountId: account.id },
@@ -88,12 +105,12 @@ export function AccountsSheet({
       <button
         type='button'
         onClick={onAddAccount}
-        className='bg-surface text-tint text-headline mt-5 flex h-[50px] w-full items-center justify-center gap-1.5 rounded-[14px] active:opacity-60'
+        className='bg-surface text-tint text-headline mt-5 flex h-[50px] w-full items-center justify-center gap-1.5 rounded-[14px] active:opacity-60 lg:hover:opacity-80'
       >
         <Plus className='size-5' strokeWidth={2.5} />
         Adicionar conta
       </button>
-    </Sheet>
+    </>
   );
 }
 
