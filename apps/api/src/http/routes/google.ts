@@ -1,6 +1,8 @@
 import {
+  addIcsCalendarBodySchema,
   type GoogleStatusResponse,
   updateGoogleCalendarsBodySchema,
+  updateIcsCalendarBodySchema,
   updateGoogleTasksAccountBodySchema,
 } from '@jottape/schemas';
 import type { GoogleConnection } from '@prisma/client';
@@ -29,6 +31,7 @@ import {
   REVOKE_URL,
 } from '@/services/google/client';
 import { syncTasks, unlinkTasksOps } from '@/services/google/tasks';
+import { addIcsCalendar, updateIcsCalendar } from '@/services/ics';
 import { forgetMicrosoftAccessToken } from '@/services/microsoft/client';
 
 import { authenticate, sessionUserId, startSession } from '../session';
@@ -55,7 +58,8 @@ export async function googleStatus(userId: string): Promise<GoogleStatusResponse
     .filter((c) => order.has(c.connectionId))
     .sort((x, y) => order.get(x.connectionId)! - order.get(y.connectionId)!);
   const tasksAccount = accounts.find((a) => a.syncTasks) ?? null;
-  const main = tasksAccount ?? accounts[0] ?? null;
+  const main = tasksAccount ?? accounts.find((a) => a.provider !== 'ICS') ?? null;
+  const readOnly = new Set(accounts.filter((a) => a.provider === 'ICS').map((a) => a.id));
 
   return {
     configured: Boolean(getGoogleConfig()),
@@ -78,12 +82,15 @@ export async function googleStatus(userId: string): Promise<GoogleStatusResponse
       colorOverride: c.colorOverride,
       primary: c.primary,
       selected: c.selected,
+      readOnly: readOnly.has(c.connectionId),
       syncedAt: c.syncedAt?.toISOString() ?? null,
       alsoIn: visible
         .filter((o) => o.googleCalendarId === c.googleCalendarId && o.id !== c.id)
         .map((o) => o.id),
     })),
-    defaultCalendarId: visible.some((c) => c.id === user.defaultCalendarId)
+    defaultCalendarId: visible.some(
+      (c) => c.id === user.defaultCalendarId && !readOnly.has(c.connectionId)
+    )
       ? user.defaultCalendarId
       : null,
     tasksAccountId: tasksAccount?.id ?? null,
@@ -278,10 +285,16 @@ export async function googleRoutes(app: FastifyInstance) {
     privateRoutes.put('/google/calendars', async (request) => {
       const body = updateGoogleCalendarsBodySchema.parse(request.body);
       const userId = request.userId;
-      const calendars = await prisma.googleCalendar.findMany({ where: { userId } });
-      const ids = new Set(calendars.map((c) => c.id));
-      if (body.defaultCalendarId && !ids.has(body.defaultCalendarId)) {
+      const calendars = await prisma.googleCalendar.findMany({
+        where: { userId },
+        include: { connection: { select: { provider: true } } },
+      });
+      const fallback = calendars.find((c) => c.id === body.defaultCalendarId);
+      if (body.defaultCalendarId && !fallback) {
         throw new AppError(404, 'Calendário não encontrado.');
+      }
+      if (fallback?.connection.provider === 'ICS') {
+        throw new AppError(400, 'Uma agenda por link é só de leitura e não pode ser a padrão.');
       }
       for (const calendar of calendars) {
         const selected = body.selectedIds.includes(calendar.id);
@@ -331,6 +344,20 @@ export async function googleRoutes(app: FastifyInstance) {
       ]);
       if (accountId) await syncTasks(userId);
       return googleStatus(userId);
+    });
+
+    // Agenda por link (ICS/webcal): lê o link na hora; remover é o DELETE /google/accounts/:id.
+    privateRoutes.post('/google/ics', async (request, reply) => {
+      const body = addIcsCalendarBodySchema.parse(request.body);
+      await addIcsCalendar(request.userId, body);
+      return reply.status(201).send(await googleStatus(request.userId));
+    });
+
+    privateRoutes.patch('/google/ics/:id', async (request) => {
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const body = updateIcsCalendarBodySchema.parse(request.body);
+      await updateIcsCalendar(request.userId, id, body);
+      return googleStatus(request.userId);
     });
 
     privateRoutes.post('/google/sync', async (request) => {

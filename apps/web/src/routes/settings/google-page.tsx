@@ -32,17 +32,8 @@ import {
 } from '@/features/google';
 import { cn } from '@/lib/utils';
 
+import { ago, IcsSection } from './ics-calendars';
 import { GoogleGlyph, MicrosoftGlyph } from './settings-page';
-
-function ago(iso: string | null) {
-  if (!iso) return 'nunca';
-  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (minutes < 1) return 'agora';
-  if (minutes < 60) return `há ${minutes} min`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `há ${hours} h`;
-  return new Date(iso).toLocaleDateString('pt-BR');
-}
 
 const ERRORS: Record<string, string> = {
   'conta-em-uso': 'Essa conta Google já está ligada a outro usuário do Jottape.',
@@ -88,10 +79,13 @@ export function GooglePage() {
   const data = status.data;
   const emailOf = (accountId: string | null | undefined) =>
     data?.accounts.find((a) => a.id === accountId)?.email;
+  // Google e Microsoft têm uma seção por conta; as agendas por link ficam juntas na delas.
+  const accounts = data?.accounts.filter((a) => a.provider !== 'ICS') ?? [];
+  const writable = data?.calendars.filter((c) => !c.readOnly) ?? [];
 
   return (
     <Page
-      title='Google'
+      title='Agendas'
       leading={back}
       actions={
         data?.connected && (
@@ -109,57 +103,56 @@ export function GooglePage() {
         <div className='text-label-2 flex justify-center py-16'>
           <Spinner />
         </div>
-      ) : !data.configured && !data.microsoftConfigured ? (
-        <Section footer='Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET (ou MICROSOFT_CLIENT_ID e MICROSOFT_CLIENT_SECRET) na API (veja docs/deploy/railway.md).'>
-          <Row
-            leading={
-              <IconChip color='var(--orange)'>
-                <TriangleAlert />
-              </IconChip>
-            }
-            title='Google não configurado no servidor'
-          />
-        </Section>
       ) : !data.connected ? (
-        <div className='bg-surface flex flex-col items-center rounded-[var(--radius)] px-6 py-8 text-center'>
-          <span className='mb-4 flex gap-3'>
+        <>
+          <div className='bg-surface mb-7 flex flex-col items-center rounded-[var(--radius)] px-6 py-8 text-center'>
+            <span className='mb-4 flex gap-3'>
+              {data.configured && (
+                <span className='bg-background flex size-16 items-center justify-center rounded-[18px]'>
+                  <GoogleGlyph className='size-9' />
+                </span>
+              )}
+              {data.microsoftConfigured && (
+                <span className='bg-background flex size-16 items-center justify-center rounded-[18px]'>
+                  <MicrosoftGlyph className='size-8' />
+                </span>
+              )}
+            </span>
+            <h2 className='text-title-2'>Conectar suas agendas</h2>
+            <p className='text-subhead text-label-2 mt-2 max-w-sm'>
+              Seus compromissos do Google Agenda{data.microsoftConfigured && ' e do Outlook'}{' '}
+              aparecem aqui e o que você criar no Jottape vai para lá.
+              {data.configured &&
+                ' As listas do Google Tasks viram listas de tarefas, nos dois sentidos.'}{' '}
+              Dá para conectar mais de uma conta.
+            </p>
             {data.configured && (
-              <span className='bg-background flex size-16 items-center justify-center rounded-[18px]'>
-                <GoogleGlyph className='size-9' />
-              </span>
+              <Button className='mt-6 w-full max-w-xs' onClick={() => startGoogle('connect')}>
+                Conectar conta Google
+              </Button>
             )}
             {data.microsoftConfigured && (
-              <span className='bg-background flex size-16 items-center justify-center rounded-[18px]'>
-                <MicrosoftGlyph className='size-8' />
-              </span>
+              <Button
+                variant={data.configured ? 'gray' : 'filled'}
+                className={cn('w-full max-w-xs', data.configured ? 'mt-3' : 'mt-6')}
+                onClick={startMicrosoft}
+              >
+                Conectar conta Microsoft
+              </Button>
             )}
-          </span>
-          <h2 className='text-title-2'>Conectar suas agendas</h2>
-          <p className='text-subhead text-label-2 mt-2 max-w-sm'>
-            Seus compromissos do Google Agenda{data.microsoftConfigured && ' e do Outlook'} aparecem
-            aqui e o que você criar no Jottape vai para lá.
-            {data.configured &&
-              ' As listas do Google Tasks viram listas de tarefas, nos dois sentidos.'}{' '}
-            Dá para conectar mais de uma conta.
-          </p>
-          {data.configured && (
-            <Button className='mt-6 w-full max-w-xs' onClick={() => startGoogle('connect')}>
-              Conectar conta Google
-            </Button>
-          )}
-          {data.microsoftConfigured && (
-            <Button
-              variant={data.configured ? 'gray' : 'filled'}
-              className={cn('w-full max-w-xs', data.configured ? 'mt-3' : 'mt-6')}
-              onClick={startMicrosoft}
-            >
-              Conectar conta Microsoft
-            </Button>
-          )}
-        </div>
+            {!data.configured && !data.microsoftConfigured && (
+              <p className='text-footnote text-label-2 mt-4 max-w-sm'>
+                Google e Microsoft não estão configurados no servidor (GOOGLE_CLIENT_ID e
+                MICROSOFT_CLIENT_ID, veja docs/deploy/railway.md). A agenda por link funciona sem
+                eles.
+              </p>
+            )}
+          </div>
+          <IcsSection data={data} onPaint={setPainting} />
+        </>
       ) : (
         <>
-          {data.accounts.map((account) => {
+          {accounts.map((account) => {
             const calendars = data.calendars.filter((c) => c.accountId === account.id);
             return (
               <Section
@@ -230,57 +223,63 @@ export function GooglePage() {
             );
           })}
 
-          <Section>
-            {data.configured && (
-              <Row
-                leading={
-                  <IconChip color='var(--blue)'>
-                    <Plus />
-                  </IconChip>
-                }
-                action
-                title='Adicionar conta Google'
-                onClick={() => startGoogle('connect')}
-              />
-            )}
-            {data.microsoftConfigured && (
-              <Row
-                leading={
-                  <IconChip color='var(--blue)'>
-                    <Plus />
-                  </IconChip>
-                }
-                action
-                title='Adicionar conta Microsoft'
-                onClick={startMicrosoft}
-              />
-            )}
-          </Section>
-
-          <Section footer='Os calendários ligados aparecem na Agenda. Eventos novos vão para o calendário padrão.'>
-            <Row
-              leading={
-                <IconChip color='var(--red)'>
-                  <CalendarDays />
-                </IconChip>
-              }
-              title='Calendário padrão'
-              trailing={
-                <SelectInput
-                  value={data.defaultCalendarId ?? ''}
-                  onChange={(value) =>
-                    update.mutate(calendarsBody(data, { defaultCalendarId: value || null }))
+          {(data.configured || data.microsoftConfigured) && (
+            <Section>
+              {data.configured && (
+                <Row
+                  leading={
+                    <IconChip color='var(--blue)'>
+                      <Plus />
+                    </IconChip>
                   }
-                  placeholder='Só no Jottape'
-                  options={data.calendars.map((c) => ({
-                    value: c.id,
-                    label: c.name,
-                    group: emailOf(c.accountId),
-                  }))}
+                  action
+                  title='Adicionar conta Google'
+                  onClick={() => startGoogle('connect')}
                 />
-              }
-            />
-          </Section>
+              )}
+              {data.microsoftConfigured && (
+                <Row
+                  leading={
+                    <IconChip color='var(--blue)'>
+                      <Plus />
+                    </IconChip>
+                  }
+                  action
+                  title='Adicionar conta Microsoft'
+                  onClick={startMicrosoft}
+                />
+              )}
+            </Section>
+          )}
+
+          <IcsSection data={data} onPaint={setPainting} />
+
+          {writable.length > 0 && (
+            <Section footer='Os calendários ligados aparecem na Agenda. Eventos novos vão para o calendário padrão.'>
+              <Row
+                leading={
+                  <IconChip color='var(--red)'>
+                    <CalendarDays />
+                  </IconChip>
+                }
+                title='Calendário padrão'
+                trailing={
+                  <SelectInput
+                    value={data.defaultCalendarId ?? ''}
+                    onChange={(value) =>
+                      update.mutate(calendarsBody(data, { defaultCalendarId: value || null }))
+                    }
+                    placeholder='Só no Jottape'
+                    options={writable.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                      group: emailOf(c.accountId),
+                    }))}
+                  />
+                }
+              />
+            </Section>
+          )}
 
           {data.configured && (
             <Section
@@ -363,7 +362,13 @@ export function GooglePage() {
             title={painting?.name ?? 'Cor'}
             cancelLabel='OK'
           >
-            <Section footer='A cor vale só no Jottape; no Google fica a de lá.'>
+            <Section
+              footer={
+                painting?.readOnly
+                  ? 'A cor da agenda na Agenda do Jottape.'
+                  : 'A cor vale só no Jottape; no Google fica a de lá.'
+              }
+            >
               <ColorPicker
                 value={painting?.colorOverride ?? null}
                 onChange={(color) => {
@@ -375,7 +380,7 @@ export function GooglePage() {
               {painting?.colorOverride && (
                 <Row
                   action
-                  title='Usar a cor do Google'
+                  title={painting.readOnly ? 'Usar a cor padrão' : 'Usar a cor do Google'}
                   onClick={() => {
                     update.mutate(calendarsBody(data, { color: { id: painting.id, color: null } }));
                     setPainting(null);

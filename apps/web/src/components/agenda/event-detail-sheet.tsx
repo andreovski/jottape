@@ -79,6 +79,8 @@ export function EventDetailSheet({
   };
 
   const [dateLine, timeLine] = event ? whenLines(event) : ['', ''];
+  // Agenda por link (ICS) só se lê: muda-se na agenda de origem.
+  const readOnly = event?.source === 'ICS';
 
   return (
     <>
@@ -87,7 +89,7 @@ export function EventDetailSheet({
         onOpenChange={onOpenChange}
         title='Detalhes do Evento'
         cancelLabel='Fechar'
-        confirmLabel='Editar'
+        confirmLabel={readOnly ? undefined : 'Editar'}
         onConfirm={() => event && onEdit(event)}
       >
         {event && (
@@ -126,14 +128,16 @@ export function EventDetailSheet({
                   </span>
                 </span>
               </DetailRow>
-              <DetailRow icon={<Bell />} label='Alerta'>
-                {event.reminders.length
-                  ? [...event.reminders]
-                      .sort((a, b) => a - b)
-                      .map(alertLabel)
-                      .join(', ')
-                  : 'Nenhum'}
-              </DetailRow>
+              {!readOnly && (
+                <DetailRow icon={<Bell />} label='Alerta'>
+                  {event.reminders.length
+                    ? [...event.reminders]
+                        .sort((a, b) => a - b)
+                        .map(alertLabel)
+                        .join(', ')
+                    : 'Nenhum'}
+                </DetailRow>
+              )}
               {event.location && (
                 <DetailRow icon={<MapPin />} label='Local'>
                   <a
@@ -156,14 +160,21 @@ export function EventDetailSheet({
               </Section>
             )}
 
-            <Button
-              variant='destructive'
-              className='w-full'
-              loading={remove.isPending}
-              onClick={() => setConfirming(true)}
-            >
-              Apagar evento
-            </Button>
+            {readOnly ? (
+              <p className='text-footnote text-label-2 px-4 text-center'>
+                Este evento vem de uma agenda por link e é só de leitura. Para mudar, use a agenda
+                de origem (no Outlook, por exemplo): a mudança chega aqui em alguns minutos.
+              </p>
+            ) : (
+              <Button
+                variant='destructive'
+                className='w-full'
+                loading={remove.isPending}
+                onClick={() => setConfirming(true)}
+              >
+                Apagar evento
+              </Button>
+            )}
           </div>
         )}
       </Sheet>

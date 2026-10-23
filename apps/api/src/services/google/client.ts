@@ -184,10 +184,10 @@ export function configuredProviders(): ConnectionProvider[] {
   ];
 }
 
-/** Contas de agenda do usuário (Google e Microsoft), só dos provedores configurados. */
+/** Contas de agenda do usuário (Google e Microsoft só se configurados; agendas por link sempre). */
 export async function connectionsOf(userId: string) {
   return prisma.googleConnection.findMany({
-    where: { userId, provider: { in: configuredProviders() } },
+    where: { userId, provider: { in: [...configuredProviders(), 'ICS'] } },
     orderBy: { createdAt: 'asc' },
   });
 }

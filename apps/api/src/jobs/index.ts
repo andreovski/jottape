@@ -8,6 +8,7 @@ import { runInsights } from '@/services/briefing/insights';
 import { extendRecurrences } from '@/services/finance';
 import { syncAllCalendars } from '@/services/google/calendar';
 import { syncTasks } from '@/services/google/tasks';
+import { syncAllIcs } from '@/services/ics';
 
 import { runDailySummaries, runReminders } from './reminders';
 
@@ -53,6 +54,11 @@ export function startJobs() {
   cron.schedule(
     '*/5 * * * *',
     guarded('tasks', () => eachGoogleUser(syncTasks))
+  );
+  // Agenda por link (ICS): sem webhook, então lê o link a cada 5 minutos (com ETag quando dá).
+  cron.schedule(
+    '2-59/5 * * * *',
+    guarded('ics', () => syncAllIcs())
   );
   // Insights de IA: no máximo um por usuário por dia, a partir das 5h no fuso dele.
   cron.schedule(

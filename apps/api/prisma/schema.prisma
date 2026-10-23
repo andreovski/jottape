@@ -86,10 +86,14 @@ model LoginAttempt {
 enum ConnectionProvider {
   GOOGLE
   MICROSOFT
+  /// Agenda publicada por link (ICS/webcal), só de leitura.
+  ICS
 }
 
 // Uma conta de agenda conectada (Google ou Microsoft; o nome do modelo é da época só do Google).
-// googleSub/googleEmail guardam o id e o e-mail da conta no provedor.
+// googleSub/googleEmail guardam o id e o e-mail da conta no provedor. Na agenda por link (ICS),
+// googleEmail é o domínio do link, refreshTokenEncrypted guarda o link cifrado (quem tem o link vê
+// a agenda) e há um GoogleCalendar só, com o nome dado pela pessoa.
 // Uma conta Google conectada. O usuário pode ter várias; só uma (syncTasks) sincroniza o Google
 // Tasks, garantido por um índice único parcial na migration.
 model GoogleConnection {
@@ -151,6 +155,7 @@ enum EventSource {
   LOCAL
   GOOGLE
   MICROSOFT
+  ICS
 }
 
 enum EventStatus {

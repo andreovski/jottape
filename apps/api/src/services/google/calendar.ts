@@ -3,6 +3,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 
 import { getAppUrl, getJwtSecret } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
+import { syncIcsConnection } from '@/services/ics';
 import {
   deleteEventFromMicrosoft,
   ensureMicrosoftWatch,
@@ -279,7 +280,10 @@ export async function pushEventToGoogle(eventId: string): Promise<string | undef
   if (!event?.calendar || !(await isConnectionActive(event.calendar.connectionId))) return;
   const connectionId = event.calendar.connectionId;
 
-  if ((await providerOf(event.calendar)) === 'MICROSOFT') {
+  const provider = await providerOf(event.calendar);
+  // Agenda por link é só de leitura: nada sobe.
+  if (provider === 'ICS') return;
+  if (provider === 'MICROSOFT') {
     try {
       return await pushEventToMicrosoft(event.id);
     } catch (error) {
@@ -348,7 +352,9 @@ export async function deleteEventFromGoogle(event: Event): Promise<void> {
   const calendar = await prisma.googleCalendar.findUnique({ where: { id: event.calendarId } });
   if (!calendar || !(await isConnectionActive(calendar.connectionId))) return;
   try {
-    if ((await providerOf(calendar)) === 'MICROSOFT') {
+    const provider = await providerOf(calendar);
+    if (provider === 'ICS') return;
+    if (provider === 'MICROSOFT') {
       await deleteEventFromMicrosoft(event, calendar);
       return;
     }
@@ -414,6 +420,11 @@ export async function syncAccount(connectionId: string) {
     where: { id: connectionId },
     data: { lastError: null },
   });
+  if (connection.provider === 'ICS') {
+    // Agenda por link: só leitura, sem lista de calendários, webhook nem pendências.
+    await syncIcsConnection(connectionId).catch((error) => recordError(connectionId, error));
+    return;
+  }
   const microsoft = connection.provider === 'MICROSOFT';
   try {
     if (microsoft) {
