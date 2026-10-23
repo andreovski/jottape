@@ -137,13 +137,20 @@ export function totalsOf(transactions: TransactionResponse[], accountId?: Accoun
   return totals;
 }
 
-/** Filtros da folha do extrato: tipo e "só previstos" (combinam entre si). */
+/**
+ * Chips de tipo da folha do extrato, que se combinam: cada lançamento cai em um só. Previsto é
+ * previsto (entrada ou saída); entradas e saídas são as já efetivadas.
+ */
 export interface StatementFilters {
-  kind: 'all' | 'income' | 'expense';
+  income: boolean;
+  expense: boolean;
   planned: boolean;
 }
 
-export const NO_FILTERS: StatementFilters = { kind: 'all', planned: false };
+export const NO_FILTERS: StatementFilters = { income: true, expense: true, planned: true };
+
+const allKinds = (filters: StatementFilters) =>
+  filters.income && filters.expense && filters.planned;
 
 /** Período personalizado do extrato (dias inclusive). */
 export interface Period {
@@ -153,7 +160,7 @@ export interface Period {
 
 /** Quantos filtros da folha estão ligados (o número no botão). */
 export const activeFilterCount = (filters: StatementFilters, period: Period | null) =>
-  (filters.kind !== 'all' ? 1 : 0) + (filters.planned ? 1 : 0) + (period ? 1 : 0);
+  (allKinds(filters) ? 0 : 1) + (period ? 1 : 0);
 
 /** Período em ordem: quem digita "até" antes do "de" não fica com a lista vazia. */
 export const orderedPeriod = ({ from, to }: Period): Period =>
@@ -176,9 +183,19 @@ export function filterTransactions(
   return transactions.filter((tx) => {
     if (accountId && !inScope(accountId, tx.accountId) && !inScope(accountId, tx.toAccountId))
       return false;
-    if (filters.planned && tx.status !== 'PLANNED') return false;
-    if (filters.kind === 'income' && signedAmount(tx, accountId) <= 0) return false;
-    if (filters.kind === 'expense' && signedAmount(tx, accountId) >= 0) return false;
+    if (!allKinds(filters)) {
+      const value = signedAmount(tx, accountId);
+      // Transferência que não muda o saldo do recorte não é entrada nem saída: só com as duas.
+      const shown =
+        tx.status === 'PLANNED'
+          ? filters.planned
+          : value > 0
+            ? filters.income
+            : value < 0
+              ? filters.expense
+              : filters.income && filters.expense;
+      if (!shown) return false;
+    }
     if (term && !normalize(`${tx.description} ${tx.notes ?? ''}`).includes(term)) return false;
     return true;
   });
