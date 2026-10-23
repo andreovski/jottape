@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { AccountCard } from '@/components/finance/account-card';
 import { AccountSheet } from '@/components/finance/account-sheet';
+import { BankCheckSheet } from '@/components/finance/bank-check-sheet';
 import { accountColor, monthOfDay } from '@/components/finance/finance-utils';
 import { futureInvoiceIds, groupInvoices } from '@/components/finance/finance-utils';
 import { invoiceName, InvoicePill, InvoiceSheet } from '@/components/finance/invoice-sheet';
@@ -14,6 +15,7 @@ import { Button, EmptyState, Skeleton } from '@/components/ios/controls';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
+import { useBankStatus } from '@/features/bank';
 import { useAccounts, useDeleteAccount, useInvoices, useUpdateAccount } from '@/features/finance';
 import { money, shortDay, todayKey } from '@/lib/format';
 
@@ -148,18 +150,7 @@ function AccountFacts({
   account: AccountResponse;
   accounts: AccountResponse[];
 }) {
-  if (account.type === 'CREDIT_CARD') {
-    const payer = accounts.find((a) => a.id === account.paymentAccountId);
-    return (
-      <Section>
-        <Row title='Fatura atual' detail={money(account.openInvoiceCents ?? 0)} />
-        <Row title='Total em aberto' detail={money(Math.max(0, -account.balanceCents))} />
-        <Row title='Fechamento' detail={`Dia ${account.closingDay ?? '—'}`} />
-        <Row title='Vencimento' detail={`Dia ${account.dueDay ?? '—'}`} />
-        <Row title='Paga com' detail={payer?.name ?? 'Nenhuma'} />
-      </Section>
-    );
-  }
+  if (account.type === 'CREDIT_CARD') return <CardFacts account={account} accounts={accounts} />;
   if (account.expectedBalanceCents === account.balanceCents) return null;
   return (
     <Section footer='Somando os previstos até hoje que ainda não foram marcados como pagos.'>
@@ -172,6 +163,43 @@ function AccountFacts({
         }
       />
     </Section>
+  );
+}
+
+function CardFacts({
+  account,
+  accounts,
+}: {
+  account: AccountResponse;
+  accounts: AccountResponse[];
+}) {
+  const payer = accounts.find((a) => a.id === account.paymentAccountId);
+  const bank = useBankStatus();
+  const linked = bank.data?.items.some((item) =>
+    item.accounts.some((a) => a.accountId === account.id && a.type === 'CREDIT')
+  );
+  const [checking, setChecking] = useState(false);
+  return (
+    <>
+      <Section>
+        <Row title='Fatura atual' detail={money(account.openInvoiceCents ?? 0)} />
+        <Row title='Total em aberto' detail={money(Math.max(0, -account.balanceCents))} />
+        <Row title='Fechamento' detail={`Dia ${account.closingDay ?? '—'}`} />
+        <Row title='Vencimento' detail={`Dia ${account.dueDay ?? '—'}`} />
+        <Row title='Paga com' detail={payer?.name ?? 'Nenhuma'} />
+        {linked && (
+          <Row
+            title='Conferir com o banco'
+            subtitle='O que o banco informa ao lado do Jottape'
+            chevron
+            onClick={() => setChecking(true)}
+          />
+        )}
+      </Section>
+      {linked && (
+        <BankCheckSheet accountId={account.id} open={checking} onOpenChange={setChecking} />
+      )}
+    </>
   );
 }
 

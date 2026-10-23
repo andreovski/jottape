@@ -77,7 +77,11 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   é movido para essa fatura. Fatura que o banco diz paga vira transferência da conta ligada onde o
   débito aparece (aceito, pendente ou já lançado como despesa); sem débito em conta ligada, foi
   paga por fora e fica paga sem tirar de conta nenhuma (e um pagamento sem débito numa conta
-  ligada sai). Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
+  ligada sai; o saldo do cartão soma de volta as faturas pagas por fora). A fatura do banco é
+  achada pelo vencimento (±7 dias), não pelo mês do fechamento. Sem o pagamento na fatura do banco,
+  `reconcileInvoicePayments` casa o débito "pagamento de fatura" (até 2% de diferença) ou boleto
+  (valor exato) com a fatura de vencimento perto. "Conferir com o banco" (`cardCheck`) lê a
+  Pluggy na hora e põe limite usado e faturas fechadas do banco ao lado das do Jottape. Job a cada 6 h; o Meu Pluggy só atualiza o banco uma vez por dia.
 - **Lembretes**: tabela `Reminder` com `nextFireAt`; o job de cada minuto marca antes de enviar e
   descarta o que atrasou mais de 1 h. Tarefa só com data é lembrada às 09:00 locais.
 - **Briefing** (tela Hoje): cada plugin é uma função em `services/briefing/index.ts` que devolve

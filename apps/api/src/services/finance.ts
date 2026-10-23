@@ -3,6 +3,7 @@ import {
   addDays,
   addMonthsClamped,
   dateOccurrences,
+  diffInDays,
   installmentDates,
   invoiceCycleFor,
   invoiceCycleForMonth,
@@ -106,16 +107,39 @@ export function billReferenceMonth(card: Account, bill: BankBill): Date {
  * A fatura do cartão que vence em `bill.dueDate`. Quando o banco deu o fechamento, as datas dele
  * valem mais que as do cartão (e a situação da fatura segue o banco).
  */
+/**
+ * A fatura do cartão que já existe para o vencimento do banco (até uma semana de diferença, o mais
+ * perto). Pelo vencimento, e não pelo mês do fechamento: com o fechamento na virada do mês (dia 30
+ * no banco, dia 1 no cartão) o mês muda, mas a fatura é a mesma.
+ */
+export async function findBillInvoice(db: Db, card: Pick<Account, 'id'>, dueDate: string) {
+  const near = await db.creditCardInvoice.findMany({
+    where: {
+      accountId: card.id,
+      dueDate: { gte: toDbDate(addDays(dueDate, -7)), lte: toDbDate(addDays(dueDate, 7)) },
+    },
+    include: { payment: true },
+  });
+  const distance = (d: Date) => Math.abs(diffInDays(fromDbDate(d), dueDate));
+  return near.sort((a, b) => distance(a.dueDate) - distance(b.dueDate))[0] ?? null;
+}
+
 export async function ensureBillInvoice(db: Db, userId: string, card: Account, bill: BankBill) {
+  const bankDates = bill.closingDate
+    ? { closingDate: toDbDate(bill.closingDate), dueDate: toDbDate(bill.dueDate) }
+    : null;
+  const existing = await findBillInvoice(db, card, bill.dueDate);
+  if (existing) {
+    return bankDates
+      ? db.creditCardInvoice.update({ where: { id: existing.id }, data: bankDates })
+      : existing;
+  }
   const referenceMonth = billReferenceMonth(card, bill);
   const cycle = invoiceCycleForMonth(
     fromDbDate(referenceMonth).slice(0, 7),
     card.closingDay!,
     card.dueDay!
   );
-  const bankDates = bill.closingDate
-    ? { closingDate: toDbDate(bill.closingDate), dueDate: toDbDate(bill.dueDate) }
-    : null;
   return db.creditCardInvoice.upsert({
     where: { accountId_referenceMonth: { accountId: card.id, referenceMonth } },
     update: bankDates ?? {},
@@ -255,8 +279,9 @@ export async function turnIntoInvoicePayment(
   invoiceId: string,
   transactionId: string
 ) {
+  // Paga por fora (paidAt sem pagamento) também: o débito mostra de que conta saiu.
   const invoice = await prisma.creditCardInvoice.findFirst({
-    where: { id: invoiceId, userId, paidAt: null, payment: null },
+    where: { id: invoiceId, userId, payment: null },
   });
   const tx = await prisma.transaction.findFirst({
     where: { id: transactionId, userId, kind: 'EXPENSE', invoiceId: null },
@@ -312,6 +337,21 @@ export async function listAccounts(
 
   const cards = accounts.filter((a) => a.type === 'CREDIT_CARD');
   const openInvoices = new Map<string, number>();
+  // Fatura paga por fora (conta fora do Jottape): não tem transferência, então o saldo do cartão
+  // só deixa de dever essas compras somando-as de volta.
+  const paidElsewhere = new Map<string, number>();
+  if (cards.length > 0) {
+    const elsewhere = await prisma.creditCardInvoice.findMany({
+      where: { accountId: { in: cards.map((c) => c.id) }, paidAt: { not: null }, payment: null },
+      include: { items: { select: { kind: true, amountCents: true } } },
+    });
+    for (const invoice of elsewhere) {
+      paidElsewhere.set(
+        invoice.accountId,
+        (paidElsewhere.get(invoice.accountId) ?? 0) + invoiceTotal(invoice.items)
+      );
+    }
+  }
   if (cards.length > 0) {
     const invoices = await prisma.creditCardInvoice.findMany({
       where: { accountId: { in: cards.map((c) => c.id) }, paidAt: null },
@@ -335,8 +375,11 @@ export async function listAccounts(
     dueDay: account.dueDay,
     paymentAccountId: account.paymentAccountId,
     archived: Boolean(account.archivedAt),
-    balanceCents: accountBalance(toLedgerAccount(account), ledger),
-    expectedBalanceCents: accountBalance(toLedgerAccount(account), ledger, { plannedUntil: today }),
+    balanceCents:
+      accountBalance(toLedgerAccount(account), ledger) + (paidElsewhere.get(account.id) ?? 0),
+    expectedBalanceCents:
+      accountBalance(toLedgerAccount(account), ledger, { plannedUntil: today }) +
+      (paidElsewhere.get(account.id) ?? 0),
     openInvoiceCents: account.type === 'CREDIT_CARD' ? (openInvoices.get(account.id) ?? 0) : null,
   }));
 }

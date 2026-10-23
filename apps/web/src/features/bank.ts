@@ -1,6 +1,7 @@
 import type {
   AcceptBankMovementBody,
   BankAdminResponse,
+  BankCardCheckResponse,
   BankFeedbackBody,
   BankConnectTokenResponse,
   BankMovementResponse,
@@ -21,6 +22,17 @@ export function useBankStatus() {
     queryKey: ['bank'],
     queryFn: () => api.get('bank').json<BankStatusResponse>(),
     retry: false,
+  });
+}
+
+/** O cartão ligado como o banco vê, lido na Pluggy na hora (só quando a seção abre). */
+export function useBankCardCheck(accountId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['bank-card-check', accountId],
+    queryFn: () => api.get(`bank/cards/${accountId}/check`).json<BankCardCheckResponse>(),
+    enabled,
+    retry: false,
+    staleTime: 5 * 60_000,
   });
 }
 

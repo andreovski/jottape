@@ -3,6 +3,7 @@ import {
   addBankItemBodySchema,
   bankFeedbackBodySchema,
   bankMovementStatusSchema,
+  idSchema,
   linkBankAccountBodySchema,
   saveBankCredentialsBodySchema,
   updateBankUserBodySchema,
@@ -16,6 +17,7 @@ import {
   acceptNotice,
   addItem,
   bankStatus,
+  cardCheck,
   connectToken,
   ignoreMovement,
   linkAccount,
@@ -81,6 +83,11 @@ export async function bankRoutes(app: FastifyInstance) {
   });
 
   // ------------------------------------------------------------ revisão
+
+  app.get('/bank/cards/:accountId/check', async (request) => {
+    const { accountId } = z.object({ accountId: idSchema }).parse(request.params);
+    return cardCheck(request.userId, accountId);
+  });
 
   app.get('/bank/movements', async (request) => {
     const { status } = z

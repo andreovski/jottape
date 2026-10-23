@@ -202,3 +202,32 @@ export const bankAdminResponseSchema = z.object({
   feedback: z.array(bankAdminFeedbackSchema),
 });
 export type BankAdminResponse = z.infer<typeof bankAdminResponseSchema>;
+
+/** Conferência de um cartão ligado: o que o banco informa ao lado do que está no Jottape. */
+export const bankCardCheckSchema = z.object({
+  bankName: z.string(),
+  /** Quanto do limite o banco diz que está usado (fatura aberta, fechadas e parcelas futuras). */
+  usedCents: z.number().int(),
+  /** Soma das faturas não pagas no Jottape. */
+  openCents: z.number().int(),
+  bills: z.array(
+    z.object({
+      dueDate: z.string(),
+      closingDate: z.string().nullable(),
+      bankTotalCents: z.number().int(),
+      bankPaidCents: z.number().int(),
+      bankPaidOn: z.string().nullable(),
+      invoice: z
+        .object({
+          id: idSchema,
+          referenceMonth: z.string(),
+          totalCents: z.number().int(),
+          status: z.enum(['OPEN', 'CLOSED', 'PAID', 'OVERDUE']),
+        })
+        .nullable(),
+    })
+  ),
+  /** Lançamentos do cartão vindos do banco: quantos o banco já pôs numa fatura fechada. */
+  movements: z.object({ total: z.number().int(), withBill: z.number().int() }),
+});
+export type BankCardCheckResponse = z.infer<typeof bankCardCheckSchema>;

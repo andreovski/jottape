@@ -1,6 +1,7 @@
-import { addDays } from '@jottape/finance-engine';
+import { addDays, dateStringInZone, diffInDays } from '@jottape/finance-engine';
 import type {
   AcceptBankMovementBody,
+  BankCardCheckResponse,
   BankConnectTokenResponse,
   BankMovementResponse,
   BankAiTrace,
@@ -23,9 +24,11 @@ import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
 import { isOwner } from '@/services/assistant';
 import {
-  billReferenceMonth,
   createTransactions,
   ensureBillInvoice,
+  findBillInvoice,
+  invoiceTotal,
+  listInvoices,
   payInvoice,
   turnIntoInvoicePayment,
   userTimezone,
@@ -60,6 +63,7 @@ import {
   findMatch,
   importedDescription,
   invoiceForPayment,
+  looksLikeBoleto,
   looksLikeInvoicePayment,
   MATCH_WINDOW_DAYS,
   movementBill,
@@ -604,15 +608,10 @@ async function payBills(userId: string, card: Account, bills: PluggyBill[], time
   for (const bill of bills) {
     const paid = billPayment(bill, timeZone);
     if (!paid) continue;
-    const invoice = await prisma.creditCardInvoice.findFirst({
-      where: {
-        accountId: card.id,
-        referenceMonth: billReferenceMonth(card, billDates(bill, timeZone)),
-        items: { some: {} },
-      },
-      include: { payment: true },
-    });
-    if (!invoice) continue;
+    const invoice = await findBillInvoice(prisma, card, billDates(bill, timeZone).dueDate);
+    if (!invoice || !(await prisma.transaction.count({ where: { invoiceId: invoice.id } }))) {
+      continue;
+    }
 
     if (invoice.payment) {
       await dropPaymentWithoutDebit(userId, invoice.payment);
@@ -713,6 +712,84 @@ async function dropPaymentWithoutDebit(
   await prisma.transaction.delete({ where: { id: payment.id } });
 }
 
+/**
+ * Pagamentos de fatura vistos nas contas, mesmo quando o banco do cartão não informa o pagamento:
+ * débito com cara de pagamento de fatura, no valor da fatura (até 2% de diferença) e perto do
+ * vencimento dela. Pendente vira o pagamento; já lançado como despesa vira a transferência.
+ */
+async function reconcileInvoicePayments(userId: string) {
+  const since = toDbDate(addDays(todayIn(await userTimezone(userId)), -120));
+  const debits = await prisma.bankMovement.findMany({
+    where: {
+      userId,
+      kind: 'EXPENSE',
+      date: { gte: since },
+      status: { in: ['PENDING', 'IMPORTED', 'MATCHED'] },
+      bankAccount: { type: 'BANK', accountId: { not: null } },
+    },
+    include: {
+      transaction: { select: { kind: true } },
+      bankAccount: { select: { accountId: true } },
+    },
+    orderBy: { date: 'asc' },
+  });
+  const payments = debits.filter(
+    (d) =>
+      (looksLikeInvoicePayment(d.description) || looksLikeBoleto(d.description)) &&
+      (d.status === 'PENDING' || d.transaction?.kind === 'EXPENSE')
+  );
+  if (!payments.length) return;
+
+  const invoices = await prisma.creditCardInvoice.findMany({
+    where: { userId, payment: null, account: { type: 'CREDIT_CARD', archivedAt: null } },
+    include: { items: { select: { kind: true, amountCents: true } } },
+  });
+  const open = invoices
+    .map((i) => ({ id: i.id, dueDate: fromDbDate(i.dueDate), totalCents: invoiceTotal(i.items) }))
+    .filter((i) => i.totalCents > 0);
+
+  for (const debit of payments) {
+    const date = fromDbDate(debit.date);
+    // Boleto pode ser qualquer conta: só no valor exato (até R$ 1 de diferença).
+    const slack = (total: number) =>
+      looksLikeInvoicePayment(debit.description) ? Math.max(100, total * 0.02) : 100;
+    const sameAmount = open.filter(
+      (i) => Math.abs(i.totalCents - debit.amountCents) <= slack(i.totalCents)
+    );
+    const invoice = invoiceForPayment(date, sameAmount);
+    if (!invoice) continue;
+    open.splice(open.indexOf(invoice), 1);
+
+    if (debit.status === 'PENDING') {
+      const paidAt = invoices.find((i) => i.id === invoice.id)!.paidAt;
+      if (paidAt) {
+        await prisma.creditCardInvoice.update({
+          where: { id: invoice.id },
+          data: { paidAt: null },
+        });
+      }
+      try {
+        const paid = await payInvoice(userId, invoice.id, {
+          fromAccountId: debit.bankAccount.accountId!,
+          date,
+          amountCents: debit.amountCents,
+        });
+        await prisma.bankMovement.update({
+          where: { id: debit.id },
+          data: { status: 'MATCHED', transactionId: paid.paymentTransactionId },
+        });
+      } catch (error) {
+        if (paidAt) {
+          await prisma.creditCardInvoice.update({ where: { id: invoice.id }, data: { paidAt } });
+        }
+        if (!(error instanceof AppError)) throw error;
+      }
+    } else if (debit.transactionId) {
+      await turnIntoInvoicePayment(userId, invoice.id, debit.transactionId);
+    }
+  }
+}
+
 /** Atualiza um banco: estado, contas e saldos, e os lançamentos das contas ligadas. */
 async function syncItem(
   userId: string,
@@ -783,6 +860,7 @@ export async function syncUser(userId: string) {
     where: { userId },
     data: { syncedAt: new Date(), lastError },
   });
+  await reconcileInvoicePayments(userId);
   await suggestCategories(userId);
 }
 
@@ -1064,4 +1142,75 @@ export async function ignoreMovement(userId: string, id: string) {
     data: { status: 'IGNORED' },
   });
   if (!count) throw notFound('Lançamento do banco');
+}
+
+// ---------------------------------------------------------------- conferência do cartão
+
+/**
+ * O cartão ligado como o banco vê (limite usado, faturas fechadas e pagamentos) ao lado das
+ * faturas do Jottape, para achar onde os números se separam. Lê a Pluggy na hora.
+ */
+export async function cardCheck(userId: string, accountId: string): Promise<BankCardCheckResponse> {
+  const bankAccount = await prisma.bankAccount.findFirst({
+    where: { userId, accountId, type: 'CREDIT' },
+    include: { item: true },
+  });
+  if (!bankAccount) throw notFound('Cartão ligado ao banco');
+  const timeZone = await userTimezone(userId);
+  const [remote, bills, invoices, movements, withBill] = await friendly(() =>
+    Promise.all([
+      fetchAccounts(userId, bankAccount.item.itemId),
+      fetchBills(userId, bankAccount.externalId),
+      listInvoices(userId, accountId),
+      prisma.bankMovement.count({ where: { bankAccountId: bankAccount.id } }),
+      prisma.bankMovement.count({
+        where: { bankAccountId: bankAccount.id, billDueDate: { not: null } },
+      }),
+    ])
+  );
+  const account = remote.find((a) => a.id === bankAccount.externalId);
+  const used = account ? account.balance : bankAccount.balanceCents / 100;
+
+  return {
+    bankName: bankAccount.item.name,
+    usedCents: Math.abs(Math.round(used * 100)),
+    openCents: invoices
+      .filter((i) => i.status !== 'PAID')
+      .reduce((sum, i) => sum + i.totalCents, 0),
+    bills: bills
+      .map((bill) => {
+        const dates = billDates(bill, timeZone);
+        const paid = (bill.payments ?? []).filter((p) => p.amount > 0);
+        const lastPaid = paid
+          .map((p) => p.paymentDate)
+          .filter((d): d is string => Boolean(d))
+          .sort()
+          .at(-1);
+        const invoice = invoices
+          .filter((i) => Math.abs(diffInDays(i.dueDate, dates.dueDate)) <= 7)
+          .sort(
+            (a, b) =>
+              Math.abs(diffInDays(a.dueDate, dates.dueDate)) -
+              Math.abs(diffInDays(b.dueDate, dates.dueDate))
+          )[0];
+        return {
+          dueDate: dates.dueDate,
+          closingDate: dates.closingDate,
+          bankTotalCents: Math.round(bill.totalAmount * 100),
+          bankPaidCents: paid.reduce((sum, p) => sum + Math.round(p.amount * 100), 0),
+          bankPaidOn: lastPaid ? dateStringInZone(new Date(lastPaid), timeZone) : null,
+          invoice: invoice
+            ? {
+                id: invoice.id,
+                referenceMonth: invoice.referenceMonth,
+                totalCents: invoice.totalCents,
+                status: invoice.status,
+              }
+            : null,
+        };
+      })
+      .sort((a, b) => b.dueDate.localeCompare(a.dueDate))
+      .slice(0, 6),
+    movements: { total: movements, withBill },
+  };
 }

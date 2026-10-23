@@ -380,6 +380,11 @@ export function looksLikeInvoicePayment(description: string): boolean {
   return INVOICE_PAYMENT.test(plain(description));
 }
 
+/** Boleto pago na conta: a fatura de outro banco costuma ser paga assim. */
+export function looksLikeBoleto(description: string): boolean {
+  return /\bboleto\b/.test(plain(description));
+}
+
 /** A fatura que um pagamento do dia `date` paga: a de vencimento mais perto, de 10 dias antes a 20 depois. */
 export function invoiceForPayment<T extends { dueDate: string }>(
   date: string,
