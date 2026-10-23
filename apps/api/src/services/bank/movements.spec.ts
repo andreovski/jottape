@@ -8,6 +8,8 @@ import {
   decideAiCategory,
   findMatch,
   importedDescription,
+  type InstallmentPiece,
+  lastKnownInstallments,
   type MatchCandidate,
   movementBill,
   normalize,
@@ -343,5 +345,48 @@ describe('categoria pela nota, regra fixa e IA', () => {
     expect(
       decideAiCategory('transporte', new Map([['transporte', AI_MIN_CONFIDENCE - 0.01]]))
     ).toBeNull();
+  });
+});
+
+describe('parcelas que faltam', () => {
+  const piece = (over: Partial<InstallmentPiece>): InstallmentPiece => ({
+    description: 'LOJA X',
+    amountCents: 10_000,
+    date: '2026-10-05',
+    installmentNumber: 2,
+    installmentTotal: 5,
+    transactionId: 'tx',
+    ...over,
+  });
+
+  it('devolve a última parcela de cada compra', () => {
+    const last = lastKnownInstallments([
+      piece({ installmentNumber: 2, date: '2026-09-05', transactionId: 'a' }),
+      piece({ installmentNumber: 3, date: '2026-10-05', transactionId: 'b', amountCents: 10_002 }),
+      piece({
+        description: 'OUTRA',
+        installmentNumber: 1,
+        installmentTotal: 3,
+        transactionId: 'c',
+      }),
+    ]);
+    expect(last.map((p) => p.transactionId)).toEqual(['b', 'c']);
+  });
+
+  it('separa duas compras iguais feitas em meses diferentes', () => {
+    const last = lastKnownInstallments([
+      piece({ installmentNumber: 2, date: '2026-10-05', transactionId: 'a' }),
+      piece({ installmentNumber: 4, date: '2026-10-05', transactionId: 'b' }),
+    ]);
+    expect(last.map((p) => p.transactionId)).toEqual(['a', 'b']);
+  });
+
+  it('pula a compra completa ou cuja última parcela não foi lançada', () => {
+    expect(
+      lastKnownInstallments([
+        piece({ installmentNumber: 5 }),
+        piece({ description: 'B', installmentNumber: 2, transactionId: null }),
+      ])
+    ).toEqual([]);
   });
 });

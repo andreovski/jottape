@@ -399,3 +399,45 @@ export function invoiceForPayment<T extends { dueDate: string }>(
   }
   return best?.invoice ?? null;
 }
+
+export interface InstallmentPiece {
+  description: string;
+  amountCents: number;
+  date: string;
+  installmentNumber: number;
+  installmentTotal: number;
+  transactionId: string | null;
+}
+
+/** Folga, em dias, entre as datas de compra deduzidas de duas parcelas da mesma compra. */
+const SAME_PURCHASE_DAYS = 20;
+
+/**
+ * Compras parceladas que o banco manda uma parcela por fatura: junta as parcelas da mesma compra
+ * (mesmo texto e número de parcelas, valor perto e a mesma data de compra, contando um mês por
+ * parcela) e devolve a última que o banco mandou, quando ela já está lançada e ainda faltam
+ * parcelas depois dela.
+ */
+export function lastKnownInstallments<T extends InstallmentPiece>(pieces: T[]): T[] {
+  const series: { purchase: string; pieces: T[] }[] = [];
+  for (const piece of pieces) {
+    const purchase = addMonthsClamped(piece.date, -(piece.installmentNumber - 1));
+    const same = series.find(({ purchase: other, pieces: [first] }) => {
+      return (
+        first!.description === piece.description &&
+        first!.installmentTotal === piece.installmentTotal &&
+        Math.abs(first!.amountCents - piece.amountCents) <= piece.installmentTotal &&
+        Math.abs(diffInDays(other, purchase)) <= SAME_PURCHASE_DAYS
+      );
+    });
+    if (same) same.pieces.push(piece);
+    else series.push({ purchase, pieces: [piece] });
+  }
+  return series
+    .map(({ pieces }) =>
+      pieces.reduce((last, piece) =>
+        piece.installmentNumber > last.installmentNumber ? piece : last
+      )
+    )
+    .filter((last) => last.transactionId && last.installmentNumber < last.installmentTotal);
+}
