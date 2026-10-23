@@ -24,6 +24,7 @@ import { AppError, notFound } from '@/lib/errors';
 import { prisma } from '@/lib/prisma';
 import { isOwner } from '@/services/assistant';
 import {
+  completeInstallments,
   createTransactions,
   ensureBillInvoice,
   findBillInvoice,
@@ -62,6 +63,7 @@ import {
   shortDescription,
   findMatch,
   importedDescription,
+  lastKnownInstallments,
   invoiceForPayment,
   looksLikeBoleto,
   looksLikeInvoicePayment,
@@ -509,6 +511,7 @@ async function importMovements(
     prisma.bankAccount.update({ where: { id: bankAccount.id }, data: { syncedAt: new Date() } }),
   ]);
   if (card) {
+    await fillInstallments(userId, bankAccount.id);
     await alignInvoices(userId, bankAccount.id, card);
     await payBills(userId, card, pluggyBills, timeZone);
   } else {
@@ -569,6 +572,47 @@ const storedBill = (m: Pick<BankMovement, 'billDueDate' | 'billClosingDate'>): B
     : null;
 
 /**
+ * O banco manda a parcela de uma compra antiga só quando a fatura dela fecha: lança as que faltam
+ * depois da última que chegou, para o cartão (e o limite usado) já contar com elas.
+ */
+async function fillInstallments(userId: string, bankAccountId: string) {
+  const pieces = await prisma.bankMovement.findMany({
+    where: {
+      bankAccountId,
+      kind: 'EXPENSE',
+      installmentNumber: { not: null },
+      installmentTotal: { not: null },
+      // A pendente conta: enquanto a última parcela espera revisão, nada é lançado.
+      status: { not: 'IGNORED' },
+    },
+    select: {
+      description: true,
+      amountCents: true,
+      date: true,
+      installmentNumber: true,
+      installmentTotal: true,
+      transactionId: true,
+    },
+  });
+  const last = lastKnownInstallments(
+    pieces.map((m) => ({
+      ...m,
+      date: fromDbDate(m.date),
+      installmentNumber: m.installmentNumber!,
+      installmentTotal: m.installmentTotal!,
+    }))
+  );
+  for (const piece of last) {
+    await completeInstallments(
+      userId,
+      piece.transactionId!,
+      piece.installmentNumber,
+      piece.installmentTotal
+    );
+  }
+}
+
+/**
  * Põe cada lançamento do cartão na fatura em que o banco o pôs (o Jottape decide pela data, e o
  * banco pode datar a parcela pela fatura). Fatura paga não muda; a que ficar vazia sai.
  */
@@ -620,12 +664,14 @@ async function payBills(userId: string, card: Account, bills: PluggyBill[], time
     if (invoice.paidAt) continue;
 
     const debit = await findDebit(userId, paid.amountCents, paid.date);
-    if (debit?.status === 'MATCHED') continue;
-    // Já lançado da revisão como despesa: a despesa vira o pagamento (senão sairia duas vezes).
-    if (debit?.status === 'IMPORTED') {
-      if (debit.transactionId && debit.transaction?.kind === 'EXPENSE') {
-        await turnIntoInvoicePayment(userId, invoice.id, debit.transactionId);
-      }
+    // Já lançado como despesa (da revisão ou à mão): a despesa vira o pagamento (senão sairia duas
+    // vezes).
+    if (
+      debit?.status !== 'PENDING' &&
+      debit?.transactionId &&
+      debit.transaction?.kind === 'EXPENSE' &&
+      (await turnIntoInvoicePayment(userId, invoice.id, debit.transactionId))
+    ) {
       continue;
     }
     if (debit?.status === 'PENDING' && debit.bankAccount.accountId) {
@@ -646,6 +692,8 @@ async function payBills(userId: string, card: Account, bills: PluggyBill[], time
         if (!(error instanceof AppError)) throw error;
       }
     }
+    // O banco diz que está paga: fica paga mesmo sem achar de onde saiu (paga por fora, ou o débito
+    // já virou outro lançamento).
     await prisma.creditCardInvoice.update({
       where: { id: invoice.id },
       data: { paidAt: new Date() },
@@ -1061,6 +1109,12 @@ export async function acceptMovement(
       data: { transactionId: created!.id, edited },
       include: withAccount,
     });
+    if (movement.installmentNumber) {
+      // Lançar as parcelas seguintes é um extra: a sincronização tenta de novo se falhar.
+      await fillInstallments(userId, movement.bankAccountId).catch((error) =>
+        console.error('[bank] parcelas', error)
+      );
+    }
     return toBankMovement(updated);
   } catch (error) {
     await prisma.bankMovement.update({ where: { id }, data: { status: 'PENDING' } });

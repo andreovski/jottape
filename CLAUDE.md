@@ -73,8 +73,9 @@ pnpm --filter api seed                         # dono, categorias padrão e list
   se apaga nem se renomeia (`movements.ts`, puro, com teste). Aceitar usa `createTransactions`
   (a fatura sai sozinha). No cartão, a fatura do banco vale mais que a data: o `billId` (só depois
   que a fatura fecha) dá vencimento e fechamento (`billDueDate`/`billClosingDate` no movimento), e
-  parcela 2+ datada pela fatura cai na que vence no mês da data; a cada sincronização o lançamento
-  é movido para essa fatura. Fatura que o banco diz paga vira transferência da conta ligada onde o
+  parcela 2+ datada pela fatura cai na que vence no mês da data; a parcela que o banco manda lança as que faltam
+  depois dela (`fillInstallments`, mesma série, e cada uma casa pelo número quando chega); a cada sincronização o lançamento
+  é movido para essa fatura. Fatura que o banco diz paga fica sempre paga e vira transferência da conta ligada onde o
   débito aparece (aceito, pendente ou já lançado como despesa); sem débito em conta ligada, foi
   paga por fora e fica paga sem tirar de conta nenhuma (e um pagamento sem débito numa conta
   ligada sai; o saldo do cartão soma de volta as faturas pagas por fora). A fatura do banco é

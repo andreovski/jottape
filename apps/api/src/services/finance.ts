@@ -271,6 +271,67 @@ export async function payInvoice(
 }
 
 /**
+ * Compra parcelada em que o banco manda uma parcela por fatura: a partir da parcela `number` já
+ * lançada, cria as seguintes até `total`, um mês depois da outra e na mesma série, para o cartão
+ * já contar com elas (como na compra parcelada lançada à mão). Quando o banco mandar cada uma,
+ * ela casa pelo número. Não faz nada se a série já tem parcela depois desta.
+ */
+export async function completeInstallments(
+  userId: string,
+  transactionId: string,
+  number: number,
+  total: number
+): Promise<number> {
+  return prisma.$transaction(async (db) => {
+    const tx = await db.transaction.findFirst({
+      where: { id: transactionId, userId, kind: 'EXPENSE', recurrenceId: null },
+      include: { account: true },
+    });
+    if (!tx || tx.account.type !== 'CREDIT_CARD' || number >= total) return 0;
+    if (tx.installmentGroupId) {
+      const later = await db.transaction.count({
+        where: {
+          userId,
+          installmentGroupId: tx.installmentGroupId,
+          installmentNumber: { gt: number },
+        },
+      });
+      if (later) return 0;
+    }
+    const groupId = tx.installmentGroupId ?? randomUUID();
+    await db.transaction.update({
+      where: { id: tx.id },
+      data: { installmentGroupId: groupId, installmentNumber: number, installmentTotal: total },
+    });
+    const start = fromDbDate(tx.date);
+    // A importação põe a parcela no fim do título, como "Loja (2/10)".
+    const suffix = ` (${number}/${total})`;
+    const title = tx.description.endsWith(suffix) ? tx.description.slice(0, -suffix.length) : null;
+    const rows: Prisma.TransactionUncheckedCreateInput[] = [];
+    for (let n = number + 1; n <= total; n++) {
+      const date = addMonthsClamped(start, n - number);
+      rows.push({
+        userId,
+        kind: 'EXPENSE',
+        amountCents: tx.amountCents,
+        date: toDbDate(date),
+        accountId: tx.accountId,
+        categoryId: tx.categoryId,
+        description: title === null ? tx.description : `${title} (${n}/${total})`,
+        notes: tx.notes,
+        status: 'DONE',
+        installmentGroupId: groupId,
+        installmentNumber: n,
+        installmentTotal: total,
+        invoiceId: await invoiceIdFor(db, userId, tx.account, date),
+      });
+    }
+    await db.transaction.createMany({ data: rows });
+    return rows.length;
+  });
+}
+
+/**
  * Um débito já lançado como despesa era, na verdade, o pagamento da fatura (o banco disse): vira a
  * transferência que paga a fatura, sem categoria, e a fatura fica paga.
  */

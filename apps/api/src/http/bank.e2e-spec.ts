@@ -478,17 +478,53 @@ describe('bancos (Meu Pluggy)', () => {
     const invoices = (
       await api.get(`/accounts/${cardAccountId}/invoices`)
     ).json() as InvoiceResponse[];
-    expect(invoices).toHaveLength(1);
-    expect(invoices[0]).toMatchObject({ referenceMonth: '2026-10', totalCents: 380_00 });
-    const furniture = await prisma.transaction.findFirstOrThrow({
+    // A 3/10 já lançada traz as parcelas 4 a 10, uma por fatura.
+    expect(
+      invoices.map((i) => [i.referenceMonth, i.totalCents]).sort((a, b) => (a[0]! < b[0]! ? -1 : 1))
+    ).toEqual([
+      ['2026-10', 380_00],
+      ['2026-11', 300_00],
+      ['2026-12', 300_00],
+      ['2027-01', 300_00],
+      ['2027-02', 300_00],
+      ['2027-03', 300_00],
+      ['2027-04', 300_00],
+      ['2027-05', 300_00],
+    ]);
+    const furniture = await prisma.transaction.findMany({
       where: { accountId: cardAccountId, amountCents: 300_00 },
+      orderBy: { installmentNumber: 'asc' },
     });
-    expect(furniture.description).toBe('Loja de Móveis (3/10)');
+    expect(furniture.map((tx) => tx.description)).toEqual(
+      [3, 4, 5, 6, 7, 8, 9, 10].map((n) => `Loja de Móveis (${n}/10)`)
+    );
+    expect(new Set(furniture.map((tx) => tx.installmentGroupId)).size).toBe(1);
+
+    // Quando o banco manda a 4/10, ela casa com a que já existe.
+    pluggy.add(CARD_ID, {
+      id: 'c4',
+      description: 'Loja de Móveis',
+      amount: 300,
+      date: '2026-08-15T03:00:00.000Z',
+      status: 'PENDING',
+      creditCardMetadata: {
+        installmentNumber: 4,
+        totalInstallments: 10,
+        purchaseDate: '2026-08-15T03:00:00.000Z',
+      },
+    });
+    await syncAllBanks();
+    expect(
+      await prisma.bankMovement.findFirstOrThrow({ where: { externalId: 'c4' } })
+    ).toMatchObject({ status: 'MATCHED', transactionId: furniture[1]!.id });
+    expect(
+      await prisma.transaction.count({ where: { accountId: cardAccountId, amountCents: 300_00 } })
+    ).toBe(8);
   });
 
   describe('faturas do banco', () => {
     // O banco fecha no dia 28 (o cartão diz 25): a Farmácia do dia 27 é da fatura de setembro,
-    // paga no dia 7. A parcela 2/3 vem datada pela fatura (novembro, mês do vencimento).
+    // paga no dia 7. A última parcela (3/3) vem datada pela fatura (novembro, mês do vencimento).
     const SEPTEMBER_BILL = {
       id: 'bill-set',
       dueDate: '2026-10-08T03:00:00.000Z',
@@ -511,7 +547,7 @@ describe('bancos (Meu Pluggy)', () => {
         amount: 60,
         date: '2026-11-04T03:00:00.000Z',
         status: 'PENDING',
-        creditCardMetadata: { installmentNumber: 2, totalInstallments: 3 },
+        creditCardMetadata: { installmentNumber: 3, totalInstallments: 3 },
       });
       if (withDebit) addDebit();
     }
@@ -599,6 +635,38 @@ describe('bancos (Meu Pluggy)', () => {
       addDebit();
       await syncAllBanks();
       await expectRepaired(cardId);
+    });
+
+    it('o débito já lançado à mão vira o pagamento da fatura que o banco deu como paga', async () => {
+      // A pessoa lançou o pagamento como despesa comum; o débito do banco casou com ela.
+      const manual = (
+        await api.post('/transactions', {
+          kind: 'EXPENSE',
+          amountCents: 200_00,
+          date: '2026-10-07',
+          accountId: checking.id,
+          description: 'Fatura do cartão',
+        })
+      ).json() as { id: string }[];
+      pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
+      addMovements(true, false);
+      // Sem cara de pagamento de fatura: só o banco do cartão diz que foi o pagamento.
+      pluggy.add(CHECKING_ID, {
+        id: 'p1',
+        description: 'Pix enviado',
+        amount: -200,
+        date: '2026-10-07T03:00:00.000Z',
+      });
+      const cardId = await linkBoth();
+      expect(
+        (await prisma.bankMovement.findFirstOrThrow({ where: { externalId: 'p1' } })).status
+      ).toBe('MATCHED');
+      await api.post('/bank/movements/accept-all');
+      await syncAllBanks();
+      expect((await invoicesOf(cardId))[0]!.slice(0, 3)).toEqual(['2026-09', 200_00, 'PAID']);
+      expect(
+        await prisma.transaction.findUniqueOrThrow({ where: { id: manual[0]!.id } })
+      ).toMatchObject({ kind: 'TRANSFER', toAccountId: cardId });
     });
 
     it('tira o pagamento que saiu de uma conta ligada sem o débito no banco', async () => {
