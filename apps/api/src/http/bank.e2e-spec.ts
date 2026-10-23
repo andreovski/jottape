@@ -1,5 +1,6 @@
 import type {
   AccountResponse,
+  BankCardCheckResponse,
   BankMovementResponse,
   BankAdminResponse,
   BankStatusResponse,
@@ -588,6 +589,11 @@ describe('bancos (Meu Pluggy)', () => {
       await syncAllBanks();
       expect((await invoicesOf(cardId))[0]!.slice(0, 3)).toEqual(['2026-09', 200_00, 'PAID']);
       expect(await payments()).toEqual([]);
+      // O cartão só deve a fatura de outubro: a de setembro foi paga por fora.
+      const card = ((await api.get('/accounts')).json() as AccountResponse[]).find(
+        (a) => a.id === cardId
+      )!;
+      expect(card.balanceCents).toBe(-60_00);
 
       // O débito aparece depois na conta ligada: vira o pagamento.
       addDebit();
@@ -612,6 +618,48 @@ describe('bancos (Meu Pluggy)', () => {
       await syncAllBanks();
       expect(await payments()).toEqual([]);
       expect((await invoicesOf(cardId))[0]!.slice(0, 3)).toEqual(['2026-09', 200_00, 'PAID']);
+    });
+
+    it('sem o pagamento na fatura do banco, o boleto do mesmo valor paga a fatura', async () => {
+      pluggy.bills.set(CARD_ID, [{ ...SEPTEMBER_BILL, payments: [] }]);
+      addMovements(true, false);
+      pluggy.add(CHECKING_ID, {
+        id: 'p1',
+        description: 'Pagamento de boleto efetuado BANCO TESTE',
+        amount: -200,
+        date: '2026-10-07T03:00:00.000Z',
+      });
+      const cardId = await linkBoth();
+      await api.post('/bank/movements/accept-all');
+      // O boleto entrou como despesa (não tem cara de fatura); a sincronização vê o valor e o
+      // vencimento e transforma em pagamento.
+      expect((await invoicesOf(cardId))[0]!.slice(0, 3)).toEqual(['2026-09', 200_00, 'OVERDUE']);
+      await syncAllBanks();
+      await expectRepaired(cardId);
+    });
+
+    it('confere o cartão com o banco: limite usado e cada fatura fechada', async () => {
+      pluggy.bills.set(CARD_ID, [SEPTEMBER_BILL]);
+      addMovements(true);
+      const cardId = await linkBoth();
+      await api.post('/bank/movements/accept-all');
+      const check = (await api.get(`/bank/cards/${cardId}/check`)).json() as BankCardCheckResponse;
+      expect(check).toMatchObject({
+        usedCents: 320_40,
+        openCents: 60_00,
+        movements: { total: 2, withBill: 2 },
+      });
+      expect(check.bills).toEqual([
+        {
+          dueDate: '2026-10-08',
+          closingDate: '2026-09-28',
+          bankTotalCents: 200_00,
+          bankPaidCents: 200_00,
+          bankPaidOn: '2026-10-07',
+          invoice: expect.objectContaining({ totalCents: 200_00, status: 'PAID' }),
+        },
+      ]);
+      expect((await api.get(`/bank/cards/${checking.id}/check`)).statusCode).toBe(404);
     });
   });
 
