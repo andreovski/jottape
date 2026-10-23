@@ -3,13 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { PluggyTransaction } from './client';
 import {
   billPayment,
+  AI_MIN_CONFIDENCE,
   categoryMemory,
+  decideAiCategory,
   findMatch,
   importedDescription,
   type MatchCandidate,
   movementBill,
   normalize,
   parseMovement,
+  ruleCategory,
   shortDescription,
   suggestCategory,
 } from './movements';
@@ -275,5 +278,70 @@ describe('título do lançamento do banco', () => {
         description: 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••',
       })
     ).toBe('casa');
+  });
+});
+
+describe('categoria pela nota, regra fixa e IA', () => {
+  const PIX = 'Transferência enviada pelo Pix|JOSIANE CRISTINA|•••.123.456-••|NU PAGAMENTOS - IP';
+
+  it('casa pela nota igual ao texto do banco, mesmo com o título trocado', () => {
+    const memory = categoryMemory([
+      { description: 'Faxina', notes: PIX, kind: 'EXPENSE', categoryId: 'casa' },
+    ]);
+    expect(
+      suggestCategory(memory, { kind: 'EXPENSE', description: ` ${PIX.toUpperCase()} ` })
+    ).toBe('casa');
+    // O tipo também precisa bater.
+    expect(suggestCategory(memory, { kind: 'INCOME', description: PIX })).toBeNull();
+  });
+
+  it('a descrição igual vem antes da nota', () => {
+    const memory = categoryMemory([
+      { description: 'Outra coisa', notes: PIX, kind: 'EXPENSE', categoryId: 'pela-nota' },
+      { description: 'Josiane Cristina', notes: null, kind: 'EXPENSE', categoryId: 'pelo-titulo' },
+    ]);
+    expect(suggestCategory(memory, { kind: 'EXPENSE', description: PIX })).toBe('pelo-titulo');
+  });
+
+  const ids = new Map([
+    ['EXPENSE:TRANSFER', 'saida'],
+    ['EXPENSE:TRANSFER_PIX', 'saida-pix'],
+    ['EXPENSE:TRANSFER_DEBIT', 'saida-debito'],
+    ['EXPENSE:TRANSFER_CREDIT', 'saida-credito'],
+    ['INCOME:TRANSFER', 'entrada'],
+    ['INCOME:TRANSFER_PIX', 'entrada-pix'],
+  ]);
+  const rule = (
+    kind: 'INCOME' | 'EXPENSE',
+    description: string,
+    type: 'BANK' | 'CREDIT' = 'BANK'
+  ) => ruleCategory({ kind, description }, type, ids);
+
+  it('a regra fixa vai pela forma de pagamento', () => {
+    expect(rule('EXPENSE', PIX)).toBe('saida-pix');
+    expect(rule('INCOME', 'Transferência recebida pelo Pix|MARIA')).toBe('entrada-pix');
+    expect(rule('EXPENSE', 'Compra no débito|PADARIA')).toBe('saida-debito');
+    expect(rule('EXPENSE', 'NETFLIX.COM', 'CREDIT')).toBe('saida-credito');
+    expect(rule('EXPENSE', 'TED enviada|FULANO')).toBe('saida');
+    // Estorno no cartão e o que não tem forma de pagamento ficam sem categoria.
+    expect(rule('INCOME', 'Estorno NETFLIX', 'CREDIT')).toBeNull();
+    expect(rule('EXPENSE', 'Padaria Pão Quente')).toBeNull();
+  });
+
+  it('a IA só vale com o Jev confiante e de acordo com o Haiku', () => {
+    const jev = new Map([
+      ['transporte', 0.82],
+      ['lazer', 0.1],
+    ]);
+    expect(decideAiCategory('transporte', jev)).toEqual({
+      categoryId: 'transporte',
+      confidence: 0.82,
+    });
+    expect(decideAiCategory('lazer', jev)).toBeNull();
+    expect(decideAiCategory(null, jev)).toBeNull();
+    expect(decideAiCategory('transporte', null)).toBeNull();
+    expect(
+      decideAiCategory('transporte', new Map([['transporte', AI_MIN_CONFIDENCE - 0.01]]))
+    ).toBeNull();
   });
 });

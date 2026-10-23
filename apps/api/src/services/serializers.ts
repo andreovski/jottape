@@ -51,6 +51,7 @@ export function toCategory(category: Category): CategoryResponse {
     parentId: category.parentId,
     icon: category.icon,
     color: category.color,
+    systemKey: category.systemKey,
   };
 }
 

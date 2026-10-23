@@ -71,6 +71,7 @@ const cat = (overrides: Partial<CategoryResponse>): CategoryResponse => ({
   parentId: null,
   icon: null,
   color: null,
+  systemKey: null,
   ...overrides,
 });
 

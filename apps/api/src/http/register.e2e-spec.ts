@@ -46,7 +46,7 @@ describe('cadastro', () => {
     const api = client(app, sessionOf(response));
     expect((await api.get('/me')).json()).toMatchObject({ email: NEW_USER.email });
     const user = await prisma.user.findUniqueOrThrow({ where: { email: NEW_USER.email } });
-    expect(await prisma.category.count({ where: { userId: user.id } })).toBe(11);
+    expect(await prisma.category.count({ where: { userId: user.id } })).toBe(19);
     expect(await prisma.taskList.count({ where: { userId: user.id, isInbox: true } })).toBe(1);
 
     const login = await app.inject({

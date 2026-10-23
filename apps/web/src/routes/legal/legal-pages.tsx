@@ -6,7 +6,7 @@ import { type ReactNode, useEffect } from 'react';
 // criptografia em apps/api/src/lib/crypto.ts): mudou o uso dos dados, mude aqui também.
 
 const CONTACT = 'andre14luiz21@gmail.com';
-const UPDATED_AT = '21 de outubro de 2026';
+const UPDATED_AT = '23 de outubro de 2026';
 
 function LegalLayout({ title, children }: { title: string; children: ReactNode }) {
   useEffect(() => {
@@ -154,6 +154,13 @@ export function PrivacyPage() {
         das contas que você escolheu importar, a partir da data escolhida. Esses dados só servem
         para montar suas finanças no Jottape, não são vendidos, repassados nem usados para treinar
         modelos de inteligência artificial.
+      </p>
+      <p>
+        Se você usa o Jotta, os lançamentos do banco que esperam revisão e que o seu histórico não
+        reconhece vão, uma vez cada, para a Anthropic (Claude) e para a TypeSafe (Jev), para sugerir
+        a categoria: o título (o nome da pessoa ou da loja), o texto que veio do banco, o valor, se
+        entrou ou saiu e os nomes das suas categorias. Não vão seu nome, seu e-mail nem os dados das
+        contas. A categoria é só uma sugestão: nada é lançado sem você conferir.
       </p>
 
       <H2>Onde os dados ficam</H2>

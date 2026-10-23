@@ -14,7 +14,8 @@ describe('sessão e perfil', () => {
     await ensureOwner(prisma, OWNER);
     await ensureOwner(prisma, { ...OWNER, password: 'outra-senha' });
     expect(await prisma.user.count()).toBe(1);
-    expect(await prisma.category.count()).toBe(11);
+    // As 11 padrão e as 8 fixas (Transferência, Pix, Débito e Crédito em entradas e saídas).
+    expect(await prisma.category.count()).toBe(19);
     expect(await prisma.taskList.count({ where: { isInbox: true } })).toBe(1);
   });
 

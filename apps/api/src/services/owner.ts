@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { CategoryKind, CategorySystemKey, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const DEFAULT_CATEGORIES: {
@@ -19,6 +19,53 @@ const DEFAULT_CATEGORIES: {
   { name: 'Educação', kind: 'EXPENSE', color: '#32ade6', icon: 'graduation-cap' },
   { name: 'Outras despesas', kind: 'EXPENSE', color: '#8e8e93', icon: 'circle-ellipsis' },
 ];
+
+/**
+ * Categorias fixas do app: Transferência e as formas de pagamento, uma árvore em entradas e outra
+ * em saídas (o Pix pode ir e vir). Não se apagam nem se renomeiam; o código acha pela `systemKey`.
+ * A migração 20261023020000 criou para quem já existia, com os mesmos nomes e ícones.
+ */
+export const SYSTEM_CATEGORIES: {
+  key: CategorySystemKey;
+  name: string;
+  icon: string;
+  color?: string;
+  parent?: CategorySystemKey;
+}[] = [
+  { key: 'TRANSFER', name: 'Transferência', icon: 'landmark', color: '#32ade6' },
+  { key: 'TRANSFER_PIX', name: 'Pix', icon: 'zap', parent: 'TRANSFER' },
+  { key: 'TRANSFER_DEBIT', name: 'Débito', icon: 'wallet', parent: 'TRANSFER' },
+  { key: 'TRANSFER_CREDIT', name: 'Crédito', icon: 'credit-card', parent: 'TRANSFER' },
+];
+
+/** Cria as categorias fixas que faltam. Idempotente; nunca mexe nas que já existem. */
+export async function ensureSystemCategories(
+  prisma: Pick<PrismaClient, 'category'>,
+  userId: string
+) {
+  const existing = await prisma.category.findMany({
+    where: { userId, systemKey: { not: null } },
+    select: { id: true, kind: true, systemKey: true },
+  });
+  for (const kind of ['INCOME', 'EXPENSE'] as CategoryKind[]) {
+    const ids = new Map(existing.filter((c) => c.kind === kind).map((c) => [c.systemKey!, c.id]));
+    for (const category of SYSTEM_CATEGORIES) {
+      if (ids.has(category.key)) continue;
+      const created = await prisma.category.create({
+        data: {
+          userId,
+          kind,
+          name: category.name,
+          icon: category.icon,
+          color: category.color ?? null,
+          systemKey: category.key,
+          parentId: category.parent ? (ids.get(category.parent) ?? null) : null,
+        },
+      });
+      ids.set(category.key, created.id);
+    }
+  }
+}
 
 export const hashPassword = (password: string) => bcrypt.hash(password, 10);
 
@@ -46,7 +93,10 @@ export async function ensureOwner(
   return user;
 }
 
-/** Categorias padrão e a lista "Entrada", para quem ainda não tem (dono e usuário cadastrado). */
+/**
+ * Categorias padrão e a lista "Entrada", para quem ainda não tem (dono e usuário cadastrado). As
+ * fixas valem para todos, mesmo quem já tem categorias.
+ */
 export async function ensureUserDefaults(
   prisma: Pick<PrismaClient, 'category' | 'taskList'>,
   userId: string
@@ -56,6 +106,7 @@ export async function ensureUserDefaults(
       data: DEFAULT_CATEGORIES.map((category) => ({ ...category, userId })),
     });
   }
+  await ensureSystemCategories(prisma, userId);
 
   if (!(await prisma.taskList.findFirst({ where: { userId, isInbox: true } }))) {
     await prisma.taskList.create({ data: { userId, name: 'Entrada', isInbox: true } });

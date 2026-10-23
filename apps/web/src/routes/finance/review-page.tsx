@@ -23,6 +23,34 @@ import { capitalize, money, relativeDay } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { BankFeedbackSheet } from '@/routes/settings/bank-feedback-sheet';
 
+/** Abaixo disso, a sugestão da IA pede conferência. */
+const AI_CONFIRM_BELOW = 0.8;
+
+type Suggestion = Pick<BankMovementResponse, 'suggestionSource' | 'suggestionConfidence'>;
+
+const needsCheck = (m: Suggestion) =>
+  m.suggestionSource === 'AI' && (m.suggestionConfidence ?? 0) < AI_CONFIRM_BELOW;
+
+/** De onde veio a categoria: do histórico ou da IA. A regra fixa (Pix → Pix) não leva etiqueta. */
+function SourceBadge({ movement }: { movement: Suggestion }) {
+  if (movement.suggestionSource !== 'AI' && movement.suggestionSource !== 'HISTORY') return null;
+  const check = needsCheck(movement);
+  return (
+    <span
+      className={cn(
+        'text-caption-2 ml-1.5 inline-flex h-[18px] shrink-0 items-center rounded-full px-1.5 font-semibold',
+        check
+          ? 'bg-orange/15 text-orange'
+          : movement.suggestionSource === 'AI'
+            ? 'bg-tint/15 text-tint'
+            : 'bg-fill text-label-2'
+      )}
+    >
+      {movement.suggestionSource === 'HISTORY' ? 'Histórico' : check ? 'Confira' : 'IA'}
+    </span>
+  );
+}
+
 /** Lançamentos que vieram do banco e não casaram com nada: o usuário confere antes do saldo. */
 export function ReviewPage() {
   const navigate = useNavigate();
@@ -94,9 +122,16 @@ export function ReviewPage() {
                       onClick={() => setOpen(movement)}
                       leading={<CategoryIcon category={category} kind={movement.kind} />}
                       title={movement.description}
-                      subtitle={[account?.name, category?.name ?? 'Sem categoria']
-                        .filter(Boolean)
-                        .join(' · ')}
+                      subtitle={
+                        <span className='flex min-w-0 items-center'>
+                          <span className='truncate'>
+                            {[account?.name, category?.name ?? 'Sem categoria']
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                          {category && <SourceBadge movement={movement} />}
+                        </span>
+                      }
                       trailing={
                         <span
                           className={cn(
@@ -117,6 +152,19 @@ export function ReviewPage() {
       {open && <ReviewSheet movement={open} onClose={() => setOpen(null)} />}
     </Page>
   );
+}
+
+/** De onde veio a categoria sugerida, no rodapé do formulário. */
+function suggestionNote(movement: BankMovementResponse): string | null {
+  if (movement.suggestionSource === 'HISTORY') {
+    return 'A categoria é a do último lançamento parecido.';
+  }
+  if (movement.suggestionSource === 'AI') {
+    return needsCheck(movement)
+      ? 'A categoria foi sugerida pela IA, com pouca certeza: confira.'
+      : 'A categoria foi sugerida pela IA.';
+  }
+  return null;
 }
 
 function ReviewSheet({
@@ -182,7 +230,14 @@ function ReviewSheet({
           { value: 'INCOME', label: 'Receita' },
         ]}
       />
-      <Section footer={`${capitalize(relativeDay(movement.date))}, como veio do banco.`}>
+      <Section
+        footer={[
+          `${capitalize(relativeDay(movement.date))}, como veio do banco.`,
+          categoryId && categoryId === movement.suggestedCategoryId && suggestionNote(movement),
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
         <FieldRow>
           <TextInput
             placeholder='Descrição'

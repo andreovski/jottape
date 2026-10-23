@@ -101,6 +101,10 @@ export const bankMovementResponseSchema = z.object({
   installmentTotal: z.number().int().nullable(),
   status: bankMovementStatusSchema,
   suggestedCategoryId: z.string().nullable(),
+  /** De onde veio a sugestão: o histórico, a IA ou a regra fixa (Pix → Transferência › Pix). */
+  suggestionSource: z.enum(['HISTORY', 'AI', 'RULE']).nullable(),
+  /** Confiança da IA, de 0 a 1 (só quando a sugestão veio dela). */
+  suggestionConfidence: z.number().nullable(),
   transactionId: z.string().nullable(),
 });
 export type BankMovementResponse = z.infer<typeof bankMovementResponseSchema>;
