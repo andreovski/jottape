@@ -21,7 +21,7 @@ import {
   futureInvoiceIds,
   zeroCrossingOffset,
 } from '@/components/finance/finance-utils';
-import { invoiceName, InvoicePill } from '@/components/finance/invoice-sheet';
+import { InvoicePill } from '@/components/finance/invoice-sheet';
 import { TransactionRow } from '@/components/finance/transaction-list';
 import { useUnpaidCardInvoices } from '@/components/finance/use-card-invoices';
 import { EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
@@ -279,14 +279,14 @@ function UnpaidInvoices({ accounts }: { accounts: AccountResponse[] }) {
               <CreditCard strokeWidth={2.25} />
             </IconChip>
           }
-          title={`${invoiceName(invoice)} · ${account.name}`}
-          subtitle={
-            <span className='flex items-center gap-1.5'>
-              Vence em {shortDay(invoice.dueDate)}{' '}
+          title={account.name}
+          subtitle={`Vence em ${shortDay(invoice.dueDate)}`}
+          trailing={
+            <span className='flex shrink-0 flex-col items-end gap-0.5'>
+              <span className='font-rounded numeric text-body'>{money(invoice.totalCents)}</span>
               <InvoicePill status={invoice.status} future={future.has(invoice.id)} />
             </span>
           }
-          detail={<span className='font-rounded text-foreground'>{money(invoice.totalCents)}</span>}
           chevron
           onClick={() =>
             void navigate({ to: '/financas/contas/$accountId', params: { accountId: account.id } })
