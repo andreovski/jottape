@@ -4,6 +4,7 @@ import {
   createCategoryBodySchema,
   createTransactionBodySchema,
   deleteTransactionQuerySchema,
+  dueInvoicesQuerySchema,
   forecastQuerySchema,
   isoMonthSchema,
   listTransactionsQuerySchema,
@@ -25,6 +26,7 @@ import {
   createTransactions,
   deleteTransaction,
   listAccounts,
+  listDueInvoices,
   listInvoices,
   payInvoice,
   redateOpenInvoices,
@@ -114,6 +116,12 @@ export async function financeRoutes(app: FastifyInstance) {
   app.get('/accounts/:id/invoices', async (request) => {
     const { id } = idParams.parse(request.params);
     return listInvoices(request.userId, id);
+  });
+
+  app.get('/invoices/due', async (request) => {
+    const query = dueInvoicesQuerySchema.parse(request.query);
+    const range = query.month ? monthRange(query.month) : null;
+    return listDueInvoices(request.userId, query.from ?? range?.first, query.to ?? range?.last);
   });
 
   app.get('/invoices/:id/transactions', async (request) => {

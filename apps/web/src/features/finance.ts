@@ -5,6 +5,7 @@ import type {
   CreateAccountBody,
   CreateCategoryBody,
   CreateTransactionBody,
+  DueInvoicesQuery,
   ForecastResponse,
   InvoiceResponse,
   ListTransactionsQuery,
@@ -79,6 +80,16 @@ export function useInvoices(accountId: string | undefined) {
     queryKey: ['invoices', accountId],
     enabled: Boolean(accountId),
     queryFn: () => api.get(`accounts/${accountId}/invoices`).json<InvoiceResponse[]>(),
+  });
+}
+
+/** Faturas de todos os cartões a pagar que vencem no mês ou período. */
+export function useDueInvoices(query: DueInvoicesQuery, enabled = true) {
+  return useQuery({
+    queryKey: ['invoices', 'due', query],
+    enabled,
+    queryFn: () =>
+      api.get('invoices/due', { searchParams: searchParams(query) }).json<InvoiceResponse[]>(),
   });
 }
 

@@ -1,17 +1,24 @@
-import type { AccountResponse, CategoryResponse, TransactionResponse } from '@jottape/schemas';
-import { Clock, Repeat } from 'lucide-react';
+import {
+  type AccountResponse,
+  type CategoryResponse,
+  INVOICE_STATUS_LABELS,
+  type TransactionResponse,
+} from '@jottape/schemas';
+import { Clock, CreditCard, Repeat } from 'lucide-react';
 
-import { Section } from '@/components/ios/list';
+import { IconChip, Section } from '@/components/ios/list';
 import { useUpdateTransaction } from '@/features/finance';
 import { amountTone, money, relativeDay } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 import { CategoryIcon } from './category-icon';
 import {
+  accountColor,
   type AccountScope,
   groupByDay,
   installmentLabel,
   signedAmount,
+  type StatementItem,
   type Totals,
 } from './finance-utils';
 
@@ -88,12 +95,16 @@ export function TransactionRow({
   const destination = accounts.find((a) => a.id === tx.toAccountId);
   const planned = tx.status === 'PLANNED';
   const installment = installmentLabel(tx);
+  // Fatura a pagar (ainda não é lançamento): o "Pagar" abre a fatura, onde se escolhe conta e dia.
+  const dueInvoice = (tx as StatementItem).dueInvoice;
+  const card = dueInvoice && accounts.find((a) => a.id === dueInvoice.accountId);
 
   const subtitleParts = [
     showDate ? relativeDay(tx.date) : null,
     tx.kind === 'TRANSFER'
       ? `${account?.name ?? 'Conta'} → ${destination?.name ?? 'Conta'}`
       : (account?.name ?? null),
+    dueInvoice ? INVOICE_STATUS_LABELS[dueInvoice.status] : null,
     installment,
   ].filter(Boolean);
 
@@ -121,7 +132,13 @@ export function TransactionRow({
       className='group/row active:bg-fill flex w-full cursor-pointer items-center gap-3 pl-4 text-left transition-colors duration-75 outline-none focus-visible:bg-fill'
     >
       <div className='flex shrink-0 items-center py-2'>
-        <CategoryIcon category={category} kind={tx.kind} />
+        {dueInvoice ? (
+          <IconChip color={card ? accountColor(card) : 'var(--indigo)'} round>
+            <CreditCard strokeWidth={2.25} />
+          </IconChip>
+        ) : (
+          <CategoryIcon category={category} kind={tx.kind} />
+        )}
       </div>
       <div className='flex min-h-[58px] min-w-0 flex-1 items-center gap-3 py-2 pr-4 shadow-[inset_0_-0.5px_0_var(--separator)] group-last/row:shadow-none'>
         <div className='min-w-0 flex-1'>
@@ -147,7 +164,8 @@ export function TransactionRow({
               disabled={update.isPending}
               onClick={(event) => {
                 event.stopPropagation();
-                update.mutate({ id: tx.id, status: 'DONE', scope: 'single' });
+                if (dueInvoice) onClick();
+                else update.mutate({ id: tx.id, status: 'DONE', scope: 'single' });
               }}
               className='bg-tint/15 text-tint text-caption h-6 rounded-full px-2.5 font-semibold transition-opacity active:opacity-50 disabled:opacity-40'
             >

@@ -277,6 +277,34 @@ export async function listInvoices(userId: string, accountId: string) {
   return invoices.map((invoice) => toInvoice(invoice, today));
 }
 
+/**
+ * Faturas de todos os cartões ainda sem pagamento que vencem entre `from` e `to` (inclusive), com
+ * algo a cobrar. Paga (no app ou por fora) sai daqui: o pagamento já aparece como transferência.
+ */
+export async function listDueInvoices(userId: string, from?: string, to?: string) {
+  const today = todayIn(await userTimezone(userId));
+  const invoices = await prisma.creditCardInvoice.findMany({
+    where: {
+      userId,
+      paidAt: null,
+      payment: null,
+      account: { archivedAt: null },
+      dueDate: {
+        ...(from ? { gte: toDbDate(from) } : {}),
+        ...(to ? { lte: toDbDate(to) } : {}),
+      },
+    },
+    include: {
+      items: { select: { kind: true, amountCents: true } },
+      payment: { select: { id: true } },
+    },
+    orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
+  });
+  return invoices
+    .map((invoice) => toInvoice(invoice, today))
+    .filter((invoice) => invoice.totalCents > 0);
+}
+
 export async function payInvoice(
   userId: string,
   invoiceId: string,

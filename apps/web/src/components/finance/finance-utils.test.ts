@@ -16,6 +16,7 @@ import {
   compactMoney,
   comparisonText,
   defaultStatus,
+  dueInvoiceRows,
   filterTransactions,
   forecastAt,
   futureInvoiceIds,
@@ -274,6 +275,61 @@ describe('contas e cartões no extrato', () => {
     expect(hasCardsAndAccounts(accounts)).toBe(true);
     expect(hasCardsAndAccounts(accounts.slice(0, 2))).toBe(false);
     expect(hasCardsAndAccounts(accounts.slice(2))).toBe(false);
+  });
+});
+
+describe('fatura a pagar no extrato das contas', () => {
+  const accounts = [
+    { id: 'cc', name: 'Nu PJ', type: 'CHECKING' as const, paymentAccountId: null },
+    { id: 'c6', name: 'C6', type: 'CHECKING' as const, paymentAccountId: null },
+    { id: 'nu', name: 'Nubank', type: 'CREDIT_CARD' as const, paymentAccountId: 'cc' },
+    { id: 'mp', name: 'Mercado Pago', type: 'CREDIT_CARD' as const, paymentAccountId: null },
+  ];
+  const invoice = (id: string, accountId: string, totalCents: number, status = 'CLOSED') => ({
+    id,
+    accountId,
+    dueDate: '2026-11-10',
+    totalCents,
+    status: status as InvoiceResponse['status'],
+  });
+  const invoices = [
+    invoice('f-nu', 'nu', 120000),
+    invoice('f-mp', 'mp', 4500, 'OPEN'),
+    invoice('f-zero', 'nu', 0),
+    invoice('f-paga', 'nu', 9000, 'PAID'),
+  ];
+  const contas = scopeAccountIds(accounts, 'accounts')!;
+
+  it('vira saída prevista no vencimento, saindo da conta de pagamento', () => {
+    const rows = dueInvoiceRows(invoices, accounts);
+    expect(rows.map((r) => [r.description, r.accountId, r.date, r.status, r.amountCents])).toEqual([
+      ['Fatura Nubank', 'cc', '2026-11-10', 'PLANNED', 120000],
+      // Sem conta de pagamento, a linha mostra o cartão, mas continua no recorte das contas.
+      ['Fatura Mercado Pago', 'mp', '2026-11-10', 'PLANNED', 4500],
+    ]);
+    expect(filterTransactions(rows, NO_FILTERS, '', contas)).toHaveLength(2);
+    expect(filterTransactions(rows, NO_FILTERS, 'nubank', contas)).toHaveLength(1);
+    expect(
+      filterTransactions(rows, { income: true, expense: true, planned: false }, '', contas)
+    ).toHaveLength(0);
+  });
+
+  it('entra no total do dia e nos previstos do mês', () => {
+    const rows = dueInvoiceRows(invoices, accounts);
+    const list = [
+      ...rows,
+      tx({ id: 'aluguel', accountId: 'cc', date: '2026-11-10', amountCents: 145000 }),
+    ];
+    expect(groupByDay(list, contas)[0].totalCents).toBe(-(120000 + 4500 + 145000));
+    expect(totalsOf(list, contas)).toMatchObject({
+      expenseCents: 120000 + 4500 + 145000,
+      plannedExpenseCents: 120000 + 4500,
+    });
+  });
+
+  it('no extrato de uma conta, só as faturas que ela paga', () => {
+    expect(dueInvoiceRows(invoices, accounts, 'cc').map((r) => r.id)).toEqual(['fatura:f-nu']);
+    expect(dueInvoiceRows(invoices, accounts, 'c6')).toEqual([]);
   });
 });
 

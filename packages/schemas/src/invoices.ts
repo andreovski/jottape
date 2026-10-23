@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { idSchema, isoDateSchema } from './common';
+import { idSchema, isoDateSchema, isoMonthSchema } from './common';
 
 export const invoiceStatusSchema = z.enum(['OPEN', 'CLOSED', 'PAID', 'OVERDUE']);
 export type InvoiceStatus = z.infer<typeof invoiceStatusSchema>;
@@ -32,3 +32,11 @@ export const payInvoiceBodySchema = z.object({
   date: isoDateSchema.optional(),
 });
 export type PayInvoiceBody = z.infer<typeof payInvoiceBodySchema>;
+
+/** Faturas a pagar que vencem no mês ou no período (o extrato de Contas as mostra no vencimento). */
+export const dueInvoicesQuerySchema = z.object({
+  month: isoMonthSchema.optional(),
+  from: isoDateSchema.optional(),
+  to: isoDateSchema.optional(),
+});
+export type DueInvoicesQuery = z.infer<typeof dueInvoicesQuerySchema>;
