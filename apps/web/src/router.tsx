@@ -1,0 +1,164 @@
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  redirect,
+  type RouterHistory,
+} from '@tanstack/react-router';
+
+import { AppShell } from '@/components/app-shell';
+import { AuthGate } from '@/components/auth-gate';
+import { AgendaPage } from '@/routes/agenda/agenda-page';
+import { AssistantPage } from '@/routes/assistant/assistant-page';
+import { AccountPage } from '@/routes/finance/account-page';
+import { CategoryPage } from '@/routes/finance/category-page';
+import { FinancePage } from '@/routes/finance/finance-page';
+import { ReviewPage } from '@/routes/finance/review-page';
+import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
+import { AssistantAdminPage } from '@/routes/settings/assistant-admin-page';
+import { AssistantMemoryPage } from '@/routes/settings/assistant-memory-page';
+import { BankAdminPage } from '@/routes/settings/bank-admin-page';
+import { BankPage } from '@/routes/settings/bank-page';
+import { BetaPage } from '@/routes/settings/beta-page';
+import { BriefingSettingsPage } from '@/routes/settings/briefing-page';
+import { CategoriesPage } from '@/routes/settings/categories-page';
+import { GooglePage } from '@/routes/settings/google-page';
+import { InstallPage } from '@/routes/settings/install-guide';
+import { SettingsPage } from '@/routes/settings/settings-page';
+import { TasksPage } from '@/routes/tasks/tasks-page';
+import { TodayPage } from '@/routes/today-page';
+
+// Rotas em código (são poucas). As URLs ficam em português: é o que aparece na barra do navegador.
+const rootRoute = createRootRoute({ component: Outlet });
+
+// Termos e privacidade abrem sem login: o Google exige as duas páginas públicas na tela de
+// consentimento do OAuth.
+const publicRoutes = [
+  createRoute({ getParentRoute: () => rootRoute, path: '/privacidade', component: PrivacyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/termos', component: TermsPage }),
+];
+
+// Todo o resto passa pelo login.
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'app',
+  component: () => (
+    <AuthGate>
+      <AppShell />
+    </AuthGate>
+  ),
+});
+
+const route = <P extends string>(path: P, component: () => React.ReactNode) =>
+  createRoute({ getParentRoute: () => appRoute, path, component });
+
+const appRoutes = appRoute.addChildren([
+  route('/', TodayPage),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/entrar',
+    beforeLoad: () => {
+      throw redirect({ to: '/' });
+    },
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/cadastro',
+    beforeLoad: () => {
+      throw redirect({ to: '/' });
+    },
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/agenda',
+    component: AgendaPage,
+    validateSearch: (
+      search: Record<string, unknown>
+    ): { view?: string; date?: string; novo?: string } => ({
+      view: typeof search.view === 'string' ? search.view : undefined,
+      date: typeof search.date === 'string' ? search.date : undefined,
+      novo: typeof search.novo === 'string' ? search.novo : undefined,
+    }),
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/tarefas',
+    component: TasksPage,
+    validateSearch: (
+      search: Record<string, unknown>
+    ): { filtro?: string; tag?: string; novo?: string } => ({
+      filtro: typeof search.filtro === 'string' ? search.filtro : undefined,
+      tag: typeof search.tag === 'string' ? search.tag : undefined,
+      novo: typeof search.novo === 'string' ? search.novo : undefined,
+    }),
+  }),
+  // Endereço antigo de cada lista: hoje as listas são filtros da tela Tarefas.
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/tarefas/$listId',
+    beforeLoad: ({ params, search }) => {
+      const { tag, novo } = search as { tag?: string; novo?: string };
+      throw redirect({
+        to: '/tarefas',
+        search: { filtro: params.listId === 'todas' ? undefined : params.listId, tag, novo },
+        replace: true,
+      });
+    },
+  }),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/financas',
+    component: FinancePage,
+    validateSearch: (
+      search: Record<string, unknown>
+    ): { tab?: string; month?: string; scope?: string } => ({
+      tab: typeof search.tab === 'string' ? search.tab : undefined,
+      month: typeof search.month === 'string' ? search.month : undefined,
+      scope: typeof search.scope === 'string' ? search.scope : undefined,
+    }),
+  }),
+  route('/financas/contas/$accountId', AccountPage),
+  // Despesas de uma categoria no mês (vindo do Resumo); "sem" é a fatia sem categoria.
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/financas/categorias/$categoryId',
+    component: CategoryPage,
+    validateSearch: (search: Record<string, unknown>): { month?: string; scope?: string } => ({
+      month: typeof search.month === 'string' ? search.month : undefined,
+      scope: typeof search.scope === 'string' ? search.scope : undefined,
+    }),
+  }),
+  route('/financas/revisar', ReviewPage),
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/assistente',
+    component: AssistantPage,
+    // Pergunta pronta (vinda de um insight do briefing): entra no campo, sem enviar.
+    validateSearch: (search: Record<string, unknown>): { pergunta?: string } => ({
+      pergunta: typeof search.pergunta === 'string' ? search.pergunta.slice(0, 200) : undefined,
+    }),
+  }),
+  route('/ajustes', SettingsPage),
+  route('/ajustes/categorias', CategoriesPage),
+  route('/ajustes/google', GooglePage),
+  route('/ajustes/bancos', BankPage),
+  route('/ajustes/briefing', BriefingSettingsPage),
+  route('/ajustes/beta', BetaPage),
+  route('/ajustes/beta/bancos', BankAdminPage),
+  route('/ajustes/assistente', AssistantAdminPage),
+  route('/ajustes/jotta', AssistantMemoryPage),
+  route('/ajustes/instalar', InstallPage),
+]);
+
+const routeTree = rootRoute.addChildren([...publicRoutes, appRoutes]);
+
+export function createAppRouter(history?: RouterHistory) {
+  return createRouter({ routeTree, history, scrollRestoration: true, defaultPreload: 'intent' });
+}
+
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: ReturnType<typeof createAppRouter>;
+  }
+}

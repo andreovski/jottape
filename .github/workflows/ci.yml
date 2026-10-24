@@ -1,0 +1,251 @@
+# Portão antes da produção: push na main é deploy no Railway, então todo PR e todo push na main
+# passam por lint, typecheck, testes, build e os e2e da API contra um Postgres de verdade.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm turbo run lint typecheck test
+
+      - run: pnpm turbo run build
+
+  api-e2e:
+    name: E2E da API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # Mesma versão maior de produção (docs/deploy/railway.md).
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jottape_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL_TEST: postgresql://postgres:postgres@localhost:5432/jottape_test?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Os pacotes exportam de dist/, e o e2e recria o banco com as migrations.
+      - run: pnpm turbo run build --filter=api^...
+
+      - run: pnpm --filter api exec prisma generate
+
+      - run: pnpm --filter api test:e2e
+
+  # Teste de acerto do Jotta: só em PR que mexe no Assistente. Roda os 50 exemplos e os casos reais
+  # (relatos que viraram caso) pelo Haiku e pelo Jev de verdade, no código do PR, e compara com a
+  # base. O resultado da base fica em cache (pelo commit da base e pelos casos), então só o PR
+  # gasta, uns US$ 0,05. Caso que passava na base e falha no PR duas vezes deixa o job vermelho.
+  # Sem a ANTHROPIC_API_KEY nos segredos do GitHub, o job só avisa e passa.
+  assistant-benchmark:
+    name: Teste de acerto do Jotta
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+      BENCH_TOKEN: ${{ secrets.BENCH_TOKEN }}
+      BENCH_API_URL: ${{ vars.BENCH_API_URL || 'https://jottape-web-production.up.railway.app/api' }}
+      BENCH_COMMIT: ${{ github.event.pull_request.head.sha }}
+      BENCH_LABEL: '#${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}'
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: O PR mexe no Jotta?
+        id: scope
+        run: |
+          if git diff --name-only "$BASE_SHA...HEAD" | grep -qE '^(apps/api/src/services/assistant/|packages/schemas/src/assistant\.ts$|apps/api/src/scripts/benchmark-ci\.ts$)'; then
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::notice::Sem ANTHROPIC_API_KEY nos segredos do GitHub: teste de acerto pulado."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "O PR não mexe no Jotta: teste de acerto pulado." >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.scope.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Casos reais da produção
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm turbo run build --filter=api^...
+          pnpm --filter api exec prisma generate
+          mkdir -p .bench
+          pnpm --filter api bench:ci fetch-cases "$GITHUB_WORKSPACE/.bench/cases.json"
+
+      - name: Resultado da base (cache)
+        id: base-cache
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .bench/base.json
+          key: jotta-bench-${{ github.event.pull_request.base.sha }}-${{ hashFiles('.bench/cases.json') }}
+
+      - name: Roda a base
+        if: steps.scope.outputs.run == 'true' && steps.base-cache.outputs.cache-hit != 'true'
+        run: |
+          if ! git cat-file -e "$BASE_SHA:apps/api/src/scripts/benchmark-ci.ts" 2>/dev/null; then
+            echo "A base ainda não tem o teste na CI: roda só o PR."
+            exit 0
+          fi
+          git worktree add ../base "$BASE_SHA"
+          cd ../base
+          pnpm install --frozen-lockfile
+          pnpm turbo run build --filter=api^...
+          pnpm --filter api exec prisma generate
+          pnpm --filter api bench:ci run "$GITHUB_WORKSPACE/.bench/cases.json" "$GITHUB_WORKSPACE/.bench/base.json"
+
+      - name: Guarda a base
+        if: steps.scope.outputs.run == 'true' && steps.base-cache.outputs.cache-hit != 'true' && hashFiles('.bench/base.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .bench/base.json
+          key: jotta-bench-${{ github.event.pull_request.base.sha }}-${{ hashFiles('.bench/cases.json') }}
+
+      - name: Roda o PR e compara
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          BASE=""
+          if [ -f .bench/base.json ]; then BASE="$GITHUB_WORKSPACE/.bench/base.json"; fi
+          pnpm --filter api bench:ci run "$GITHUB_WORKSPACE/.bench/cases.json" "$GITHUB_WORKSPACE/.bench/pr.json" $BASE
+
+  # Teste de acerto da categoria do banco: como o do Jotta, só em PR que mexe na IA da revisão do
+  # banco. Roda os lançamentos de exemplo pelo Haiku e pelo Jev de verdade, no código do PR, e
+  # compara com a base (em cache pelo commit da base). Caso que passava na base e falha no PR duas
+  # vezes deixa o job vermelho. Custa menos de US$ 0,01. Sem as chaves nos segredos, só avisa.
+  bank-benchmark:
+    name: Teste de acerto da categoria do banco
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      JEV_API_KEY: ${{ secrets.JEV_API_KEY }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: O PR mexe na IA do banco?
+        id: scope
+        run: |
+          if git diff --name-only "$BASE_SHA...HEAD" | grep -qE '^(apps/api/src/services/bank/(ai|ai-batch|ai-model|benchmark|movements)\.ts$|apps/api/src/services/assistant/(jev|haiku)\.ts$|apps/api/src/scripts/bank-benchmark-ci\.ts$)'; then
+            if [ -z "$ANTHROPIC_API_KEY" ] || [ -z "$JEV_API_KEY" ]; then
+              echo "::notice::Sem ANTHROPIC_API_KEY ou JEV_API_KEY nos segredos do GitHub: teste de acerto do banco pulado."
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "O PR não mexe na IA do banco: teste de acerto pulado." >> "$GITHUB_STEP_SUMMARY"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.scope.outputs.run == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instala
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm turbo run build --filter=api^...
+          pnpm --filter api exec prisma generate
+          mkdir -p .bench
+
+      - name: Resultado da base (cache)
+        id: base-cache
+        if: steps.scope.outputs.run == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .bench/bank-base.json
+          key: bank-bench-${{ github.event.pull_request.base.sha }}
+
+      - name: Roda a base
+        if: steps.scope.outputs.run == 'true' && steps.base-cache.outputs.cache-hit != 'true'
+        run: |
+          if ! git cat-file -e "$BASE_SHA:apps/api/src/scripts/bank-benchmark-ci.ts" 2>/dev/null; then
+            echo "A base ainda não tem o teste do banco: roda só o PR."
+            exit 0
+          fi
+          git worktree add ../base "$BASE_SHA"
+          cd ../base
+          pnpm install --frozen-lockfile
+          pnpm turbo run build --filter=api^...
+          pnpm --filter api exec prisma generate
+          pnpm --filter api bench:bank run "$GITHUB_WORKSPACE/.bench/bank-base.json"
+
+      - name: Guarda a base
+        if: steps.scope.outputs.run == 'true' && steps.base-cache.outputs.cache-hit != 'true' && hashFiles('.bench/bank-base.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .bench/bank-base.json
+          key: bank-bench-${{ github.event.pull_request.base.sha }}
+
+      - name: Roda o PR e compara
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          BASE=""
+          if [ -f .bench/bank-base.json ]; then BASE="$GITHUB_WORKSPACE/.bench/bank-base.json"; fi
+          pnpm --filter api bench:bank run "$GITHUB_WORKSPACE/.bench/bank-pr.json" $BASE

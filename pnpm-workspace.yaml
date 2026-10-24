@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Versão única para todo o monorepo: o pacote usa `"catalog:"` e a versão mora só aqui.
+catalog:
+  typescript: ~5.9.3
+  vitest: ^4.1.11

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    # Mesma versão maior de produção (docs/deploy/railway.md).
+    image: postgres:17-alpine
+    container_name: jottape_db
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: jottape
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

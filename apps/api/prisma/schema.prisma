@@ -1,0 +1,895 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// O dono é criado pelo seed (src/scripts/seed-owner.ts) a partir de OWNER_EMAIL e OWNER_PASSWORD; os
+// outros usuários se cadastram com o código de convite (POST /users). Todo modelo carrega userId e
+// toda consulta filtra por ele.
+//
+// Dinheiro sempre em centavos (Int). Datas de lançamento são DATE (dia, sem hora); horários de
+// evento e tarefa são timestamptz.
+
+model User {
+  id                   String    @id @default(uuid())
+  name                 String
+  email                String    @unique
+  passwordHash         String?   @map("password_hash")
+  googleSub            String?   @unique @map("google_sub")
+  timezone             String    @default("America/Sao_Paulo")
+  currency             String    @default("BRL")
+  weekStartsOn         Int       @default(0) @map("week_starts_on")
+  defaultReminderMin   Int?      @default(10) @map("default_reminder_min")
+  dailySummaryHour     Int?      @default(8) @map("daily_summary_hour")
+  lastDailySummaryDate String?   @map("last_daily_summary_date")
+  /// Calendário do Google onde nascem os eventos novos (vale entre as contas conectadas).
+  defaultCalendarId    String?   @unique @map("default_calendar_id")
+  /// Convidado do beta do Assistente (o dono liga no painel; ASSISTANT_EMAILS também vale).
+  assistantAccess      Boolean   @default(false) @map("assistant_access")
+  /// Pedidos por mês deste usuário; null usa ASSISTANT_MONTHLY_LIMIT.
+  assistantLimit       Int?      @map("assistant_limit")
+  /// Quando a pessoa leu o aviso de privacidade de Bancos (null = mostrar na primeira entrada).
+  bankNoticeAt         DateTime? @map("bank_notice_at")
+  /// Convidado do beta de Bancos (o dono liga no painel; o dono sempre tem).
+  bankAccess           Boolean   @default(false) @map("bank_access")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  googleConnections GoogleConnection[]
+  googleCalendars   GoogleCalendar[]
+  defaultCalendar   GoogleCalendar?     @relation("DefaultCalendar", fields: [defaultCalendarId], references: [id], onDelete: SetNull)
+  events            Event[]
+  reminders         Reminder[]
+  pushSubscriptions PushSubscription[]
+  taskLists         TaskList[]
+  tasks             Task[]
+  tags              Tag[]
+  accounts          Account[]
+  categories        Category[]
+  transactions      Transaction[]
+  recurrences       Recurrence[]
+  invoices          CreditCardInvoice[]
+  budgets           Budget[]
+  briefingSettings  BriefingSettings?
+  assistantMessages AssistantMessage[]
+  assistantCards    AssistantCard[]
+  assistantUsage    AssistantUsage[]
+  assistantFeedback AssistantFeedback[]
+  assistantMemory   AssistantMemory[]
+  financeInsight    FinanceInsight?
+  pluggyCredential  PluggyCredential?
+  pluggyItems       PluggyItem[]
+  bankAccounts      BankAccount[]
+  bankMovements     BankMovement[]
+  bankFeedback      BankFeedback[]
+
+  @@map("users")
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ip        String
+  success   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ip, createdAt])
+  @@map("login_attempts")
+}
+
+// ---------------------------------------------------------------- Google
+
+enum ConnectionProvider {
+  GOOGLE
+  MICROSOFT
+  /// Agenda publicada por link (ICS/webcal), só de leitura.
+  ICS
+}
+
+// Uma conta de agenda conectada (Google ou Microsoft; o nome do modelo é da época só do Google).
+// googleSub/googleEmail guardam o id e o e-mail da conta no provedor. Na agenda por link (ICS),
+// googleEmail é o domínio do link, refreshTokenEncrypted guarda o link cifrado (quem tem o link vê
+// a agenda) e há um GoogleCalendar só, com o nome dado pela pessoa.
+// Uma conta Google conectada. O usuário pode ter várias; só uma (syncTasks) sincroniza o Google
+// Tasks, garantido por um índice único parcial na migration.
+model GoogleConnection {
+  id                    String             @id @default(uuid())
+  userId                String             @map("user_id")
+  provider              ConnectionProvider @default(GOOGLE)
+  googleSub             String?            @map("google_sub")
+  googleEmail           String             @map("google_email")
+  refreshTokenEncrypted String             @map("refresh_token_encrypted")
+  scope                 String
+  syncTasks             Boolean            @default(false) @map("sync_tasks")
+  tasksSyncedAt         DateTime?          @map("tasks_synced_at")
+  lastError             String?            @map("last_error")
+  createdAt             DateTime           @default(now()) @map("created_at")
+  updatedAt             DateTime           @updatedAt @map("updated_at")
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendars GoogleCalendar[]
+
+  @@unique([userId, googleSub])
+  @@index([userId])
+  @@map("google_connections")
+}
+
+model GoogleCalendar {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  connectionId     String    @map("connection_id")
+  googleCalendarId String    @map("google_calendar_id")
+  name             String
+  color            String?
+  /// Cor escolhida no Jottape; vence a do Google.
+  colorOverride    String?   @map("color_override")
+  primary          Boolean   @default(false)
+  selected         Boolean   @default(false)
+  syncToken        String?   @map("sync_token")
+  /// Microsoft: início da janela do calendarView/delta (a janela anda de tempos em tempos).
+  syncWindowStart  DateTime? @map("sync_window_start")
+  syncedAt         DateTime? @map("synced_at")
+  watchChannelId   String?   @unique @map("watch_channel_id")
+  watchResourceId  String?   @map("watch_resource_id")
+  watchExpiresAt   DateTime? @map("watch_expires_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection    GoogleConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  events        Event[]
+  defaultOfUser User?            @relation("DefaultCalendar")
+
+  @@unique([connectionId, googleCalendarId])
+  @@index([userId])
+  @@map("google_calendars")
+}
+
+// ---------------------------------------------------------------- Agenda
+
+enum EventSource {
+  LOCAL
+  GOOGLE
+  MICROSOFT
+  ICS
+}
+
+enum EventStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+enum SyncState {
+  SYNCED
+  PENDING
+  ERROR
+}
+
+// Recorrência no modelo do Google: o evento mestre tem `rrule`; uma ocorrência alterada é outro
+// Event com `recurringEventId` + `originalStartAt`, e uma ocorrência apagada é esse override com
+// status CANCELLED.
+model Event {
+  id               String      @id @default(uuid())
+  userId           String      @map("user_id")
+  title            String
+  description      String?
+  location         String?
+  startAt          DateTime    @map("start_at")
+  endAt            DateTime    @map("end_at")
+  allDay           Boolean     @default(false) @map("all_day")
+  color            String?
+  rrule            String?
+  status           EventStatus @default(CONFIRMED)
+  recurringEventId String?     @map("recurring_event_id")
+  originalStartAt  DateTime?   @map("original_start_at")
+  source           EventSource @default(LOCAL)
+  calendarId       String?     @map("calendar_id")
+  googleEventId    String?     @map("google_event_id")
+  etag             String?
+  syncState        SyncState   @default(SYNCED) @map("sync_state")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendar  GoogleCalendar? @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  recurring Event?          @relation("EventOverrides", fields: [recurringEventId], references: [id], onDelete: Cascade)
+  overrides Event[]         @relation("EventOverrides")
+
+  @@unique([calendarId, googleEventId])
+  @@index([userId, startAt])
+  @@index([userId, recurringEventId])
+  @@map("events")
+}
+
+enum ReminderOwner {
+  EVENT
+  TASK
+}
+
+model Reminder {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  ownerType     ReminderOwner @map("owner_type")
+  ownerId       String        @map("owner_id")
+  minutesBefore Int           @map("minutes_before")
+  // Próximo disparo já calculado (para recorrentes, da próxima ocorrência). Null = nada pela frente.
+  nextFireAt    DateTime?     @map("next_fire_at")
+  // Início da ocorrência do último disparo, para não repetir a mesma.
+  lastFiredFor  DateTime?     @map("last_fired_for")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerType, ownerId, minutesBefore])
+  @@index([nextFireAt])
+  @@map("reminders")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("push_subscriptions")
+}
+
+// ---------------------------------------------------------------- Tarefas
+
+model TaskList {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  name             String
+  color            String?
+  icon             String?
+  sortOrder        Int       @default(0) @map("sort_order")
+  isInbox          Boolean   @default(false) @map("is_inbox")
+  googleTaskListId String?   @map("google_task_list_id")
+  syncState        SyncState @default(SYNCED) @map("sync_state")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks Task[]
+
+  @@unique([userId, googleTaskListId])
+  @@map("task_lists")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id            String        @id @default(uuid())
+  userId        String        @map("user_id")
+  listId        String        @map("list_id")
+  parentTaskId  String?       @map("parent_task_id")
+  title         String
+  notes         String?
+  dueAt         DateTime?     @map("due_at")
+  hasTime       Boolean       @default(false) @map("has_time")
+  priority      TaskPriority?
+  rrule         String?
+  completedAt   DateTime?     @map("completed_at")
+  sortOrder     Int           @default(0) @map("sort_order")
+  transactionId String?       @map("transaction_id")
+  googleTaskId  String?       @map("google_task_id")
+  googleEtag    String?       @map("google_etag")
+  syncState     SyncState     @default(SYNCED) @map("sync_state")
+  // Apagada localmente, esperando o apagar no Google Tasks.
+  deletedAt     DateTime?     @map("deleted_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  list        TaskList     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  parent      Task?        @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  subtasks    Task[]       @relation("Subtasks")
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  tags        TaskTag[]
+
+  @@unique([listId, googleTaskId])
+  @@index([userId, dueAt])
+  @@map("tasks")
+}
+
+model Tag {
+  id     String    @id @default(uuid())
+  userId String    @map("user_id")
+  name   String
+  color  String?
+  tasks  TaskTag[]
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@map("tags")
+}
+
+model TaskTag {
+  taskId String @map("task_id")
+  tagId  String @map("tag_id")
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@map("task_tags")
+}
+
+// ---------------------------------------------------------------- Finanças
+
+enum AccountType {
+  WALLET
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+}
+
+model Account {
+  id                  String      @id @default(uuid())
+  userId              String      @map("user_id")
+  name                String
+  type                AccountType
+  initialBalanceCents Int         @default(0) @map("initial_balance_cents")
+  color               String?
+  // Só cartão: dia do fechamento, dia do vencimento e a conta que paga a fatura.
+  closingDay          Int?        @map("closing_day")
+  dueDay              Int?        @map("due_day")
+  paymentAccountId    String?     @map("payment_account_id")
+  archivedAt          DateTime?   @map("archived_at")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
+
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  paymentAccount    Account?            @relation("CardPayment", fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  cardsPaid         Account[]           @relation("CardPayment")
+  transactions      Transaction[]       @relation("TransactionAccount")
+  incomingTransfers Transaction[]       @relation("TransactionToAccount")
+  invoices          CreditCardInvoice[]
+  bankAccount       BankAccount?
+
+  @@map("accounts")
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+}
+
+model Category {
+  id        String             @id @default(uuid())
+  userId    String             @map("user_id")
+  name      String
+  kind      CategoryKind
+  parentId  String?            @map("parent_id")
+  icon      String?
+  color     String?
+  /// Categoria fixa do app (Transferência e as suas): não se apaga nem se renomeia. Uma por tipo.
+  systemKey CategorySystemKey? @map("system_key")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent        Category?      @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Category[]     @relation("Subcategories")
+  transactions  Transaction[]
+  budgets       Budget[]
+  bankMovements BankMovement[]
+
+  @@unique([userId, kind, systemKey])
+  @@map("categories")
+}
+
+enum CategorySystemKey {
+  TRANSFER
+  TRANSFER_PIX
+  TRANSFER_DEBIT
+  TRANSFER_CREDIT
+}
+
+enum TransactionKind {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PLANNED
+  DONE
+}
+
+model Transaction {
+  id                    String            @id @default(uuid())
+  userId                String            @map("user_id")
+  kind                  TransactionKind
+  // Sempre positivo: o sinal vem de `kind`.
+  amountCents           Int               @map("amount_cents")
+  date                  DateTime          @db.Date
+  accountId             String            @map("account_id")
+  toAccountId           String?           @map("to_account_id")
+  categoryId            String?           @map("category_id")
+  description           String
+  notes                 String?
+  status                TransactionStatus @default(DONE)
+  recurrenceId          String?           @map("recurrence_id")
+  // Ocorrência de recorrência editada só ela: a regeneração não mexe mais nela.
+  isRecurrenceException Boolean           @default(false) @map("is_recurrence_exception")
+  installmentGroupId    String?           @map("installment_group_id")
+  installmentNumber     Int?              @map("installment_number")
+  installmentTotal      Int?              @map("installment_total")
+  invoiceId             String?           @map("invoice_id")
+  // Transferência que paga esta fatura (só nos pagamentos de fatura).
+  paysInvoiceId         String?           @unique @map("pays_invoice_id")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account       Account            @relation("TransactionAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount     Account?           @relation("TransactionToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+  category      Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recurrence    Recurrence?        @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
+  invoice       CreditCardInvoice? @relation("InvoiceItems", fields: [invoiceId], references: [id], onDelete: SetNull)
+  paysInvoice   CreditCardInvoice? @relation("InvoicePayment", fields: [paysInvoiceId], references: [id], onDelete: SetNull)
+  tasks         Task[]
+  bankMovements BankMovement[]
+
+  @@index([userId, date])
+  @@index([accountId, date])
+  @@map("transactions")
+}
+
+model Recurrence {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  rrule          String
+  // Data da primeira ocorrência (YYYY-MM-DD) e o lançamento modelo (kind, valor, conta...).
+  startDate      DateTime @map("start_date") @db.Date
+  template       Json
+  generatedUntil DateTime @map("generated_until") @db.Date
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@map("recurrences")
+}
+
+model CreditCardInvoice {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  accountId      String    @map("account_id")
+  // Primeiro dia do mês do fechamento (YYYY-MM-01).
+  referenceMonth DateTime  @map("reference_month") @db.Date
+  closingDate    DateTime  @map("closing_date") @db.Date
+  dueDate        DateTime  @map("due_date") @db.Date
+  paidAt         DateTime? @map("paid_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  items   Transaction[] @relation("InvoiceItems")
+  payment Transaction?  @relation("InvoicePayment")
+
+  @@unique([accountId, referenceMonth])
+  @@map("credit_card_invoices")
+}
+
+model Budget {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  categoryId String   @map("category_id")
+  // Primeiro dia do mês (YYYY-MM-01).
+  month      DateTime @db.Date
+  limitCents Int      @map("limit_cents")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, month])
+  @@map("budgets")
+}
+
+// ---------------------------------------------------------------- bancos (Meu Pluggy)
+
+/// Chaves da aplicação que o próprio usuário cria no painel da Pluggy para ler o Meu Pluggy dele
+/// (de graça, só contas do mesmo titular). O secret fica cifrado como os tokens do Google.
+model PluggyCredential {
+  userId                String    @id @map("user_id")
+  clientId              String    @map("client_id")
+  clientSecretEncrypted String    @map("client_secret_encrypted")
+  syncedAt              DateTime? @map("synced_at")
+  lastError             String?   @map("last_error")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("pluggy_credentials")
+}
+
+/// Um banco conectado (um "item" da Pluggy). `itemId` é o id na Pluggy.
+model PluggyItem {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  itemId    String    @map("item_id")
+  name      String
+  imageUrl  String?   @map("image_url")
+  status    String?
+  lastError String?   @map("last_error")
+  syncedAt  DateTime? @map("synced_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts BankAccount[]
+
+  @@unique([userId, itemId])
+  @@map("pluggy_items")
+}
+
+enum BankAccountType {
+  BANK
+  CREDIT
+}
+
+/// Conta ou cartão que a Pluggy enxerga. Só a ligada a uma conta do Jottape (`accountId`) traz
+/// lançamentos, e só a partir de `importFrom`.
+model BankAccount {
+  id           String          @id @default(uuid())
+  userId       String          @map("user_id")
+  itemId       String          @map("item_id")
+  externalId   String          @map("external_id")
+  name         String
+  number       String?
+  type         BankAccountType
+  balanceCents Int             @default(0) @map("balance_cents")
+  accountId    String?         @unique @map("account_id")
+  importFrom   DateTime?       @map("import_from") @db.Date
+  syncedAt     DateTime?       @map("synced_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      PluggyItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  account   Account?       @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  movements BankMovement[]
+
+  @@unique([userId, externalId])
+  @@map("bank_accounts")
+}
+
+/// De onde veio a categoria sugerida na revisão.
+enum CategorySuggestionSource {
+  HISTORY
+  AI
+  RULE
+}
+
+enum BankMovementStatus {
+  PENDING
+  MATCHED
+  IMPORTED
+  IGNORED
+}
+
+/// Lançamento lido do banco. PENDING espera a revisão; MATCHED casou com um lançamento que já
+/// existia; IMPORTED virou lançamento; IGNORED foi dispensado (ou é o pagamento da fatura no cartão).
+/// Nunca é apagado enquanto a conta do banco existe: é o que impede importar duas vezes.
+model BankMovement {
+  id                   String                    @id @default(uuid())
+  userId               String                    @map("user_id")
+  bankAccountId        String                    @map("bank_account_id")
+  externalId           String                    @map("external_id")
+  kind                 TransactionKind
+  amountCents          Int                       @map("amount_cents")
+  date                 DateTime                  @db.Date
+  description          String
+  installmentNumber    Int?                      @map("installment_number")
+  installmentTotal     Int?                      @map("installment_total")
+  /// A fatura do cartão em que o banco pôs o movimento (vencimento e fechamento do banco).
+  billDueDate          DateTime?                 @map("bill_due_date") @db.Date
+  billClosingDate      DateTime?                 @map("bill_closing_date") @db.Date
+  status               BankMovementStatus
+  suggestedCategoryId  String?                   @map("suggested_category_id")
+  suggestionSource     CategorySuggestionSource? @map("suggestion_source")
+  /// Confiança da IA (probabilidade do Jev) quando a sugestão veio dela.
+  suggestionConfidence Float?                    @map("suggestion_confidence")
+  /// Quando a IA já olhou o movimento (uma vez só, decidindo ou não).
+  aiCheckedAt          DateTime?                 @map("ai_checked_at")
+  /// O que cada IA respondeu e quanto custou (o modo dev do dono mostra).
+  aiTrace              Json?                     @map("ai_trace")
+  transactionId        String?                   @map("transaction_id")
+  /// Aceito na revisão com tipo, categoria ou descrição trocados (mede a categoria sugerida).
+  edited               Boolean                   @default(false)
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccount       BankAccount  @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  suggestedCategory Category?    @relation(fields: [suggestedCategoryId], references: [id], onDelete: SetNull)
+  transaction       Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@unique([bankAccountId, externalId])
+  @@index([userId, status])
+  @@map("bank_movements")
+}
+
+/// "Algo veio errado" no beta de Bancos: o texto e uma foto do estado (nunca as chaves).
+model BankFeedback {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  note       String
+  /// Bancos, contas e, se veio da revisão, o lançamento, como estavam no relato.
+  snapshot   Json
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("bank_feedback")
+}
+
+// ---------------------------------------------------------------- briefing
+
+/// Plugins do briefing da tela Hoje: ordem, quais estão ligados e ajustes (signo, cidade, moedas).
+model BriefingSettings {
+  userId    String   @id @map("user_id")
+  settings  Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("briefing_settings")
+}
+
+/// Respostas de serviços de fora (clima, horóscopo, cotação, feriados), iguais para todos os usuários.
+model ExternalCache {
+  key       String   @id
+  data      Json
+  expiresAt DateTime @map("expires_at")
+
+  @@map("external_cache")
+}
+
+// ---------------------------------------------------------------- assistente
+
+enum AssistantRole {
+  USER
+  ASSISTANT
+}
+
+/// Conversa com o Assistente. Some depois de 30 dias (job diário) ou com "Nova conversa".
+model AssistantMessage {
+  id           String        @id @default(uuid())
+  userId       String        @map("user_id")
+  role         AssistantRole
+  // `{0}`, `{1}`... no texto marcam valores em dinheiro (em `values`, centavos).
+  text         String
+  values       Int[]         @default([])
+  // Passos da resposta (Haiku, Jev, consultas) com tempo e custo, para o modo dev.
+  trace        Json?
+  // Pedido ditado: quantos segundos de fala (a linha do tempo mostra "voz · 3 s"). Digitado: null.
+  voiceSeconds Int?          @map("voice_seconds")
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards AssistantCard[]
+
+  @@index([userId, createdAt])
+  @@map("assistant_messages")
+}
+
+enum AssistantCardStatus {
+  DRAFT
+  SAVED
+  UNDONE
+  DISCARDED
+}
+
+/// Lançamento, evento ou tarefa proposto pelo Assistente: rascunho até ser salvo (sozinho, com
+/// score alto, ou pelo usuário). `draft` tem o `type`; `transactionIds`, `eventId` e `taskId` são
+/// o que foi criado.
+model AssistantCard {
+  id             String              @id @default(uuid())
+  userId         String              @map("user_id")
+  messageId      String              @map("message_id")
+  status         AssistantCardStatus
+  score          Float
+  draft          Json
+  missing        String[]
+  uncertain      String[]
+  transactionIds String[]            @map("transaction_ids")
+  /// Evento ou tarefa criados (sem chave estrangeira: somem por fora e o cartão fica).
+  eventId        String?             @map("event_id")
+  taskId         String?             @map("task_id")
+  /// Salvo sozinho (score alto), sem o usuário tocar.
+  autoSaved      Boolean             @default(false) @map("auto_saved")
+  /// Salvo pela folha de edição ou com o que o usuário trocou no cartão.
+  edited         Boolean             @default(false)
+  /// Campos que o usuário trocou antes de salvar ("account", "category"...).
+  corrections    String[]            @default([])
+  /// O que foi salvo pela folha, quando diferente do rascunho (para ver e aprender a correção).
+  saved          Json?
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message AssistantMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("assistant_cards")
+}
+
+enum AssistantUsageKind {
+  MESSAGE
+  TRANSCRIPTION
+  INSIGHT
+  /// Teste de acerto rodado pelo dono no painel (não conta no limite).
+  BENCHMARK
+  /// Categoria sugerida pela IA na revisão do banco (não conta no limite).
+  BANK_CATEGORY
+}
+
+/// Uma linha por comando ou transcrição: conta o limite do mês e o custo. Sem o texto.
+model AssistantUsage {
+  id                String             @id @default(uuid())
+  userId            String             @map("user_id")
+  kind              AssistantUsageKind
+  audioSeconds      Float?             @map("audio_seconds")
+  jevInputTokens    Int                @default(0) @map("jev_input_tokens")
+  modelInputTokens  Int                @default(0) @map("model_input_tokens")
+  modelOutputTokens Int                @default(0) @map("model_output_tokens")
+  /// Custo estimado em milionésimos de dólar.
+  costMicros        Int                @default(0) @map("cost_micros")
+  createdAt         DateTime           @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+  @@map("assistant_usage")
+}
+
+/// "Isso está errado": cópia do pedido, da resposta e dos passos, que fica depois que a conversa
+/// some (30 dias). Só o dono lê, no painel do beta.
+model AssistantFeedback {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  /// A mensagem da resposta (sem chave estrangeira: a conversa some e o relato fica).
+  messageId  String?   @map("message_id")
+  request    String
+  reply      String
+  values     Int[]     @default([])
+  trace      Json?
+  /// Os rascunhos dos cartões da resposta, como estavam no relato.
+  cards      Json      @default("[]")
+  note       String?
+  /// O dia (AAAA-MM-DD) e o fuso do pedido, e os nomes das contas, categorias e listas daquele
+  /// momento: o que o caso de teste precisa para rodar igual depois.
+  today      String?
+  timezone   String?
+  context    Json?
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testCase AssistantTestCase?
+
+  @@index([createdAt])
+  @@map("assistant_feedback")
+}
+
+/// Caso de teste vindo de um relato: o pedido, o contexto do dia e a resposta certa. O teste de
+/// acerto roda os ativos junto com os fixos.
+model AssistantTestCase {
+  id         String   @id @default(uuid())
+  feedbackId String?  @unique @map("feedback_id")
+  text       String
+  today      String
+  timezone   String
+  /// Nomes das contas (com tipo), categorias (com tipo) e listas.
+  context    Json
+  /// O que o primeiro item precisa ter (nomes, não ids).
+  expect     Json
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  feedback AssistantFeedback? @relation(fields: [feedbackId], references: [id], onDelete: SetNull)
+
+  @@map("assistant_test_cases")
+}
+
+/// Insights de IA do briefing: a última análise de cada usuário, guardada até a próxima. Datas
+/// em AAAA-MM-DD no fuso do usuário.
+model FinanceInsight {
+  userId       String    @id @map("user_id")
+  /// "month" (mês corrente até hoje) ou "close" (fechamento do mês anterior).
+  kind         String?
+  /// Mês analisado (AAAA-MM).
+  period       String?
+  /// Resumo dos lançamentos e orçamentos usados: igual, a análise não é refeita.
+  fingerprint  String?
+  /// [{ text, values, tone, question }]
+  items        Json      @default("[]")
+  generatedOn  String?   @map("generated_on")
+  generatedAt  DateTime? @map("generated_at")
+  /// Última tentativa (automática ou não): no máximo uma por dia, mesmo se falhar.
+  attemptedOn  String?   @map("attempted_on")
+  /// Último uso do botão de atualizar (uma vez por dia).
+  refreshedOn  String?   @map("refreshed_on")
+  /// Última vez que o briefing foi aberto: sem abrir há 3 dias, a rotina não gera.
+  viewedAt     DateTime  @default(now()) @map("viewed_at")
+  inputTokens  Int       @default(0) @map("input_tokens")
+  outputTokens Int       @default(0) @map("output_tokens")
+  costMicros   Int       @default(0) @map("cost_micros")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([viewedAt])
+  @@map("finance_insights")
+}
+
+/// Cada rodada do teste de acerto: pelo painel ou pela CI (num PR, com o commit).
+model AssistantBenchmarkRun {
+  id             String   @id @default(uuid())
+  /// PANEL: botão do painel; CI: job do GitHub.
+  source         String
+  commit         String?
+  /// Título ou número do PR, para o painel.
+  label          String?
+  total          Int
+  passed         Int
+  autoSavedWrong Int      @map("auto_saved_wrong")
+  /// Casos que passavam na base e quebraram (só CI).
+  regressions    Int      @default(0)
+  costMicros     Int      @map("cost_micros")
+  ms             Int
+  /// AssistantBenchmarkCase[]
+  cases          Json
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("assistant_benchmark_runs")
+}
+
+/// O que o Jotta aprendeu de cada pessoa: quando ela troca a conta ou a categoria no cartão,
+/// "iFood" passa a apontar para o que ela escolheu. A pessoa vê e apaga em Ajustes.
+model AssistantMemory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  /// A descrição normalizada ("ifood"), como `normalize` do resolve.
+  phrase    String
+  /// A descrição como estava no cartão ("iFood"), para mostrar.
+  label     String
+  /// account ou category.
+  field     String
+  valueId   String   @map("value_id")
+  /// Vezes que a pessoa escolheu este valor (volta a 1 quando muda).
+  uses      Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phrase, field])
+  @@map("assistant_memory")
+}

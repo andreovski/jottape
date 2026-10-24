@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#18181b" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Jottape</title>
+    <script>
+      // Aplica o tema antes do bundle carregar, senão a tela pisca clara no modo escuro. Mesma
+      // chave e mesmos valores do next-themes, que assume daqui em diante
+      // (src/components/theme-provider.tsx).
+      (function () {
+        // Alguns Androids escurecem o site à força (o "tema escuro para sites" do Chrome e o modo
+        // escuro forçado de fabricantes como Xiaomi) sem avisar pelo prefers-color-scheme, que
+        // continua dizendo claro. Aí o tema claro vira um cinza escuro em que os cartões somem no
+        // fundo. Dá para perceber pela cor do sistema "canvas", que deixa de ser branca. Nesse caso
+        // o "Automático" passa a ser o tema escuro de verdade, inclusive para o next-themes, que
+        // consulta o mesmo matchMedia.
+        try {
+          var teste = document.createElement('div');
+          teste.style.cssText = 'display:none;color-scheme:light;background-color:canvas';
+          document.documentElement.appendChild(teste);
+          var escurecido = getComputedStyle(teste).backgroundColor !== 'rgb(255, 255, 255)';
+          teste.remove();
+          if (escurecido) {
+            var original = window.matchMedia.bind(window);
+            window.matchMedia = function (consulta) {
+              var lista = original(consulta);
+              if (!/prefers-color-scheme:\s*dark/.test(consulta)) return lista;
+              return new Proxy(lista, {
+                get: function (alvo, prop) {
+                  if (prop === 'matches') return true;
+                  var valor = alvo[prop];
+                  return typeof valor === 'function' ? valor.bind(alvo) : valor;
+                },
+              });
+            };
+          }
+        } catch (e) {
+          // Navegador antigo: segue o prefers-color-scheme.
+        }
+
+        var salvo = null;
+        try {
+          salvo = localStorage.getItem('theme');
+        } catch (e) {
+          // Armazenamento bloqueado: segue o sistema.
+        }
+        var escuro =
+          salvo === 'dark' ||
+          (salvo !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', escuro);
+        document.documentElement.style.colorScheme = escuro ? 'dark' : 'light';
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
