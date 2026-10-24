@@ -181,7 +181,12 @@ export function filterTransactions(
 ): TransactionResponse[] {
   const term = normalize(search);
   return transactions.filter((tx) => {
-    if (accountId && !inScope(accountId, tx.accountId) && !inScope(accountId, tx.toAccountId))
+    if (
+      accountId &&
+      !isDueInvoiceRow(tx) &&
+      !inScope(accountId, tx.accountId) &&
+      !inScope(accountId, tx.toAccountId)
+    )
       return false;
     if (!allKinds(filters)) {
       const value = signedAmount(tx, accountId);
@@ -465,6 +470,64 @@ export function futureInvoiceIds(
     else current.add(invoice.accountId);
   }
   return future;
+}
+
+/**
+ * Linha do extrato que é uma fatura a pagar: ainda não é lançamento, mas sai da conta no
+ * vencimento. Vem montada por `dueInvoiceRows` e já entra no recorte certo.
+ */
+export type StatementItem = TransactionResponse & {
+  dueInvoice?: Pick<InvoiceResponse, 'id' | 'accountId' | 'status'> & { cardName: string };
+};
+
+export const isDueInvoiceRow = (tx: TransactionResponse) =>
+  Boolean((tx as StatementItem).dueInvoice);
+
+/**
+ * Faturas não pagas como saídas previstas no vencimento, para o extrato das contas: sai da conta
+ * de pagamento do cartão (no extrato de uma conta, só as que ela paga). Quando é paga, a fatura
+ * some daqui e o pagamento (transferência) entra no lugar, então nada conta duas vezes.
+ */
+export function dueInvoiceRows(
+  invoices: Pick<InvoiceResponse, 'id' | 'accountId' | 'dueDate' | 'totalCents' | 'status'>[],
+  accounts: Pick<AccountResponse, 'id' | 'name' | 'type' | 'paymentAccountId'>[],
+  payerId?: string
+): StatementItem[] {
+  const rows: StatementItem[] = [];
+  for (const invoice of invoices) {
+    if (invoice.status === 'PAID' || invoice.totalCents <= 0) continue;
+    const card = accounts.find((a) => a.id === invoice.accountId);
+    if (!card) continue;
+    const payer = card.paymentAccountId ?? undefined;
+    if (payerId && payer !== payerId) continue;
+    rows.push({
+      id: `fatura:${invoice.id}`,
+      kind: 'EXPENSE',
+      amountCents: invoice.totalCents,
+      date: invoice.dueDate,
+      // Sem conta de pagamento, a linha mostra o próprio cartão.
+      accountId: payer ?? card.id,
+      toAccountId: null,
+      categoryId: null,
+      description: `Fatura ${card.name}`,
+      notes: null,
+      status: 'PLANNED',
+      recurrenceId: null,
+      recurrenceRule: null,
+      installmentGroupId: null,
+      installmentNumber: null,
+      installmentTotal: null,
+      invoiceId: null,
+      paysInvoiceId: null,
+      dueInvoice: {
+        id: invoice.id,
+        accountId: invoice.accountId,
+        status: invoice.status,
+        cardName: card.name,
+      },
+    });
+  }
+  return rows;
 }
 
 export function groupInvoices(invoices: InvoiceResponse[]) {

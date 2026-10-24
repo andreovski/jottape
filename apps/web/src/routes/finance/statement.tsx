@@ -1,23 +1,27 @@
-import type { TransactionResponse } from '@jottape/schemas';
+import type { InvoiceResponse, TransactionResponse } from '@jottape/schemas';
 import { CircleX, Receipt, Search, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 
 import {
   activeFilterCount,
+  dueInvoiceRows,
   filterTransactions,
   hasCardsAndAccounts,
   NO_FILTERS,
   type Period,
   scopeAccountIds,
   type StatementFilters,
+  type StatementItem,
   type StatementScope,
   totalsOf,
 } from '@/components/finance/finance-utils';
+import { InvoiceSheet } from '@/components/finance/invoice-sheet';
 import { MonthSwitcher } from '@/components/finance/month-switcher';
 import { TotalsCard, TransactionList } from '@/components/finance/transaction-list';
+import { useSheetState } from '@/components/finance/use-sheet-state';
 import { Button, EmptyState, Skeleton } from '@/components/ios/controls';
 import { Section } from '@/components/ios/list';
-import { useAccounts, useCategories, useTransactions } from '@/features/finance';
+import { useAccounts, useCategories, useDueInvoices, useTransactions } from '@/features/finance';
 import { capitalize, monthName, shortDay } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -56,6 +60,7 @@ export function Statement({
     setSheetKey((key) => key + 1);
     setSheetOpen(true);
   };
+  const invoiceSheet = useSheetState<InvoiceResponse>();
   const { data: transactions, isLoading } = useTransactions(
     period ? { ...period, accountId } : { month, accountId }
   );
@@ -66,7 +71,21 @@ export function Statement({
   const showScope = !accountId && hasCardsAndAccounts(accounts);
   const perspective = accountId ?? (showScope ? scopeAccountIds(accounts, scope) : undefined);
 
-  const all = transactions ?? [];
+  // Nas contas, a fatura a pagar aparece no vencimento como saída prevista. Em "Tudo" não: as
+  // compras do cartão já contam lá, e a fatura seria a mesma despesa duas vezes.
+  const viewed = accountId ? accounts.find((a) => a.id === accountId) : undefined;
+  const showInvoices =
+    (showScope && scope === 'accounts') || (viewed !== undefined && viewed.type !== 'CREDIT_CARD');
+  const { data: dueInvoices } = useDueInvoices(period ?? { month }, showInvoices);
+  const invoiceRows = showInvoices ? dueInvoiceRows(dueInvoices ?? [], accounts, accountId) : [];
+
+  const all: StatementItem[] = [...invoiceRows, ...(transactions ?? [])];
+  const select = (tx: StatementItem) => {
+    const invoice = tx.dueInvoice && dueInvoices?.find((i) => i.id === tx.dueInvoice?.id);
+    if (invoice) invoiceSheet.show(invoice);
+    else onSelect(tx);
+  };
+  const invoiceCard = accounts.find((a) => a.id === invoiceSheet.value?.accountId);
   const inScope = filterTransactions(all, NO_FILTERS, '', perspective);
   const visible = filterTransactions(inScope, filters, search, perspective);
   const totals = totalsOf(inScope, perspective);
@@ -126,7 +145,7 @@ export function Statement({
           accounts={accounts}
           categories={categories}
           accountId={perspective}
-          onSelect={onSelect}
+          onSelect={select}
         />
       ) : (
         <Section>
@@ -163,6 +182,17 @@ export function Statement({
       )}
 
       {!isLoading && inScope.length > 0 && <TotalsCard totals={totals} title={totalsTitle} />}
+
+      <InvoiceSheet
+        open={invoiceSheet.open}
+        invoice={invoiceSheet.value ?? null}
+        paymentAccountId={invoiceCard?.paymentAccountId ?? null}
+        onOpenChange={invoiceSheet.onOpenChange}
+        onSelectTransaction={(tx) => {
+          invoiceSheet.onOpenChange(false);
+          onSelect(tx);
+        }}
+      />
 
       <StatementFiltersSheet
         key={sheetKey}

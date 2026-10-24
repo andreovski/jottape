@@ -193,6 +193,42 @@ describe('finanças', () => {
     expect(reopened[2].status).toBe('OPEN');
   });
 
+  it('faturas a pagar do mês: no vencimento, até serem pagas (no app ou por fora)', async () => {
+    await api.post('/transactions', {
+      kind: 'EXPENSE',
+      amountCents: 300_00,
+      date: '2026-10-20',
+      accountId: card.id,
+      description: 'Fone',
+      installments: 3,
+    });
+    const due = async (query: string) =>
+      ((await api.get(`/invoices/due?${query}`)).json() as InvoiceResponse[]).map((i) => [
+        i.referenceMonth,
+        i.dueDate,
+        i.totalCents,
+      ]);
+
+    expect(await due('month=2026-11')).toEqual([['2026-10', '2026-11-05', 100_00]]);
+    expect(await due('from=2026-11-01&to=2027-01-31')).toEqual([
+      ['2026-10', '2026-11-05', 100_00],
+      ['2026-11', '2026-12-05', 100_00],
+      ['2026-12', '2027-01-05', 100_00],
+    ]);
+    expect(await due('month=2026-10')).toEqual([]);
+
+    const [october, november] = (
+      await api.get(`/invoices/due?from=2026-11-01&to=2026-12-31`)
+    ).json();
+    await api.post(`/invoices/${october.id}/pay`, {});
+    // Paga por fora (pelo banco, de uma conta que não está no app): só a data de pagamento.
+    await prisma.creditCardInvoice.update({
+      where: { id: november.id },
+      data: { paidAt: new Date() },
+    });
+    expect(await due('from=2026-11-01&to=2027-01-31')).toEqual([['2026-12', '2027-01-05', 100_00]]);
+  });
+
   it('recorrência gera 12 meses de previstos e edita/apaga daqui para frente', async () => {
     const created: TransactionResponse[] = (
       await api.post('/transactions', {
