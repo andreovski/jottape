@@ -6,6 +6,7 @@ import {
 } from '@jottape/schemas';
 import { Clock, CreditCard, Repeat } from 'lucide-react';
 
+import { FitText } from '@/components/ios/fit-text';
 import { IconChip, Section } from '@/components/ios/list';
 import { useUpdateTransaction } from '@/features/finance';
 import { amountTone, money, relativeDay } from '@/lib/format';
@@ -222,14 +223,14 @@ function TotalCell({
   return (
     <div className='flex min-w-0 flex-col items-center px-2'>
       <span className='text-caption text-label-2 font-medium uppercase'>{label}</span>
-      <span
+      <FitText
         className={cn(
-          'font-rounded numeric text-callout mt-0.5 max-w-full truncate font-semibold',
+          'font-rounded numeric text-callout mt-0.5 w-full text-center font-semibold',
           className
         )}
       >
         {value}
-      </span>
+      </FitText>
     </div>
   );
 }

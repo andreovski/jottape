@@ -1,6 +1,7 @@
 import { ACCOUNT_TYPE_LABELS, type AccountResponse, type AccountType } from '@jottape/schemas';
 import { CreditCard, Landmark, type LucideIcon, PiggyBank, Wallet } from 'lucide-react';
 
+import { FitText } from '@/components/ios/fit-text';
 import { money } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -86,14 +87,14 @@ export function AccountCard({
             <span className='text-caption block font-medium tracking-wide text-white/75 uppercase'>
               {isCard ? 'Fatura aberta' : 'Saldo'}
             </span>
-            <span
+            <FitText
               className={cn(
-                'font-rounded numeric block truncate leading-tight font-semibold tracking-tight',
+                'font-rounded numeric leading-tight font-semibold tracking-tight',
                 size === 'lg' ? 'text-[34px]' : 'text-[26px]'
               )}
             >
               {formatted}
-            </span>
+            </FitText>
           </span>
           {isCard && account.closingDay && (
             <span className='text-footnote shrink-0 pb-1 text-white/80'>

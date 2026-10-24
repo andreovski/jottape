@@ -2,6 +2,7 @@ import type { AccountResponse } from '@jottape/schemas';
 import { useNavigate } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 
+import { FitText } from '@/components/ios/fit-text';
 import { Sheet } from '@/components/ios/sheet';
 import { money } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -64,16 +65,24 @@ export function AccountsWallet({
     <>
       <div className='mb-4 flex justify-between gap-3 px-1'>
         {totals.map((total, i) => (
-          <div key={total.label} className={cn('min-w-0', i === totals.length - 1 && 'text-right')}>
+          <div
+            key={total.label}
+            // Colunas iguais: o valor encolhe dentro da sua coluna sem empurrar os outros.
+            className={cn(
+              'min-w-0 flex-1',
+              i > 0 && i === totals.length - 1 && 'text-right',
+              i > 0 && i < totals.length - 1 && 'text-center'
+            )}
+          >
             <div className='text-footnote text-label-2'>{total.label}</div>
-            <div
+            <FitText
               className={cn(
-                'font-rounded numeric text-callout truncate font-semibold',
+                'font-rounded numeric text-callout font-semibold',
                 total.cents < 0 && total.label !== 'Faturas abertas' && 'text-red'
               )}
             >
               {signed(total.cents)}
-            </div>
+            </FitText>
           </div>
         ))}
       </div>

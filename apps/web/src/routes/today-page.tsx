@@ -21,6 +21,7 @@ import { CategoryIcon } from '@/components/finance/category-icon';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { InstallInvite } from '@/components/install-invite';
 import { CheckCircle, EmptyState, Skeleton } from '@/components/ios/controls';
+import { FitText } from '@/components/ios/fit-text';
 import { Row, Section } from '@/components/ios/list';
 import { BarButton, Page } from '@/components/ios/page';
 import { ActionSheet } from '@/components/ios/sheet';
@@ -172,15 +173,15 @@ function BalanceWidget({
         <Skeleton className='mt-2 h-10 w-40' />
       ) : (
         <div className='flex flex-1 items-end justify-between gap-4'>
-          <div>
-            <div
+          <div className='min-w-0 flex-1'>
+            <FitText
               className={cn(
                 'font-rounded numeric text-[34px] leading-tight font-semibold',
                 available < 0 && !hidden && 'text-red'
               )}
             >
               {format(available)}
-            </div>
+            </FitText>
             <div className='text-footnote text-label-2'>disponível agora</div>
             {end !== undefined && (
               <div className='text-footnote mt-2'>
@@ -197,7 +198,7 @@ function BalanceWidget({
             )}
           </div>
           {days.length > 1 && (
-            <div className='h-[72px] w-[46%] max-w-[260px]'>
+            <div className='h-[72px] w-[46%] max-w-[260px] shrink-0'>
               <ResponsiveContainer width='100%' height='100%'>
                 <AreaChart data={days} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
                   <defs>

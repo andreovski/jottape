@@ -21,6 +21,7 @@ import { resolveScope } from '@/components/finance/scope-filter';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { useSheetState } from '@/components/finance/use-sheet-state';
 import { Segmented, Skeleton } from '@/components/ios/controls';
+import { FitText } from '@/components/ios/fit-text';
 import { BarButton } from '@/components/ios/page';
 import { SettingsButton } from '@/components/settings-button';
 import { useBankStatus } from '@/features/bank';
@@ -251,15 +252,15 @@ function Balance({ compact }: { compact?: boolean }) {
   const { isLoading, balance } = useTotals();
   if (isLoading) return <Skeleton className={cn('my-1 w-36', compact ? 'h-5' : 'h-8')} />;
   return (
-    <div
+    <FitText
       className={cn(
-        'font-rounded numeric truncate font-bold tracking-tight',
+        'font-rounded numeric font-bold tracking-tight',
         compact ? 'text-[21px] leading-[26px]' : 'text-[32px] leading-[38px]',
         balance < 0 && 'text-red'
       )}
     >
       {signed(balance)}
-    </div>
+    </FitText>
   );
 }
 
@@ -302,7 +303,7 @@ function Summary({
           <div className='text-footnote text-label-2 font-medium'>Saldo disponível</div>
           <Balance />
           {endOfMonth !== undefined && (
-            <div className='text-footnote text-label-2 truncate'>
+            <FitText className='text-footnote text-label-2'>
               Fim do mês{' '}
               <span
                 className={cn(
@@ -312,7 +313,7 @@ function Summary({
               >
                 {signed(endOfMonth)}
               </span>
-            </div>
+            </FitText>
           )}
         </div>
         <button

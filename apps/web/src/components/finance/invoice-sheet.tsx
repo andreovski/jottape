@@ -9,6 +9,7 @@ import { useState } from 'react';
 
 import { Button, EmptyState, Pill, Skeleton } from '@/components/ios/controls';
 import { DateInput, FieldRow, SelectInput } from '@/components/ios/fields';
+import { FitText } from '@/components/ios/fit-text';
 import { Section } from '@/components/ios/list';
 import { Sheet } from '@/components/ios/sheet';
 import {
@@ -99,9 +100,9 @@ function InvoiceSheetContent({
         <>
           <div className='flex flex-col items-center pt-2 pb-6 text-center'>
             <InvoicePill status={invoice.status} future={future} />
-            <div className='font-rounded numeric mt-2 text-[44px] leading-none font-semibold tracking-tight'>
+            <FitText className='font-rounded numeric mt-2 w-full text-[44px] leading-none font-semibold tracking-tight'>
               {money(invoice.totalCents)}
-            </div>
+            </FitText>
             <div className='text-subhead text-label-2 mt-2'>
               Fecha em {longDay(invoice.closingDate)}
               <br />
