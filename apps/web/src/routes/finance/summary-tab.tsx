@@ -10,6 +10,7 @@ import {
 } from '@/components/finance/finance-utils';
 import { MonthSwitcher } from '@/components/finance/month-switcher';
 import { EmptyState, Skeleton } from '@/components/ios/controls';
+import { FitText } from '@/components/ios/fit-text';
 import { Row, Section } from '@/components/ios/list';
 import { useCategories, useMonthSummary } from '@/features/finance';
 import { amountTone, money, monthName } from '@/lib/format';
@@ -176,9 +177,9 @@ function BigTile({
         <span className='[&_svg]:size-4'>{icon}</span>
         {label}
       </div>
-      <div className='font-rounded numeric mt-2 truncate text-[24px] leading-tight font-semibold tracking-tight sm:text-[28px]'>
+      <FitText className='font-rounded numeric mt-2 text-[24px] leading-tight font-semibold tracking-tight sm:text-[28px]'>
         {money(value)}
-      </div>
+      </FitText>
       <div className='text-footnote text-label-2 mt-1 min-h-[18px]'>{comparison ?? ' '}</div>
     </div>
   );

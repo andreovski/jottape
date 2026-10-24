@@ -25,6 +25,7 @@ import { InvoicePill } from '@/components/finance/invoice-sheet';
 import { TransactionRow } from '@/components/finance/transaction-list';
 import { useUnpaidCardInvoices } from '@/components/finance/use-card-invoices';
 import { EmptyState, Segmented, Skeleton } from '@/components/ios/controls';
+import { FitText } from '@/components/ios/fit-text';
 import { IconChip, Row, Section } from '@/components/ios/list';
 import { useAccounts, useCategories, useForecast, useTransactions } from '@/features/finance';
 import { longDay, money, shortDay, todayKey } from '@/lib/format';
@@ -130,15 +131,15 @@ function ForecastChart({ forecast }: { forecast: ForecastResponse }) {
         <div className='text-footnote text-label-2 font-medium uppercase'>Saldo previsto</div>
         {last && (
           <div className='flex items-baseline gap-2'>
-            <span
+            <FitText
               className={cn(
                 'font-rounded numeric text-title-1',
                 last.value < 0 ? 'text-red' : undefined
               )}
             >
               {last.value < 0 ? `−${money(-last.value)}` : money(last.value)}
-            </span>
-            <span className='text-footnote text-label-2'>em {shortDay(last.date)}</span>
+            </FitText>
+            <span className='text-footnote text-label-2 shrink-0'>em {shortDay(last.date)}</span>
           </div>
         )}
       </div>
