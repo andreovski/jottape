@@ -15,7 +15,9 @@ import {
   lastDayOfMonth,
   monthOfDay,
   resolveMonth,
+  type StatementScope,
 } from '@/components/finance/finance-utils';
+import { resolveScope } from '@/components/finance/scope-filter';
 import { TransactionSheet } from '@/components/finance/transaction-sheet';
 import { useSheetState } from '@/components/finance/use-sheet-state';
 import { Segmented, Skeleton } from '@/components/ios/controls';
@@ -47,13 +49,14 @@ export function FinancePage() {
   const today = todayKey();
   const tab: Tab = isTab(search.tab) ? search.tab : 'extrato';
   const month = resolveMonth(search.month, today);
+  const scope = resolveScope(search.scope);
 
   const txSheet = useSheetState<TransactionResponse>();
   const accountSheet = useSheetState<undefined>();
 
-  const setSearch = (next: { tab?: Tab; month?: string }) =>
+  const setSearch = (next: { tab?: Tab; month?: string; scope?: StatementScope }) =>
     void navigate({
-      search: (prev: { tab?: string; month?: string }) => ({
+      search: (prev: { tab?: string; month?: string; scope?: string }) => ({
         ...prev,
         ...next,
         // Mês atual não precisa ficar na URL.
@@ -61,6 +64,9 @@ export function FinancePage() {
           ? { month: next.month === monthOfDay(today) ? undefined : next.month }
           : {}),
         ...(next.tab !== undefined ? { tab: next.tab === 'extrato' ? undefined : next.tab } : {}),
+        ...(next.scope !== undefined
+          ? { scope: next.scope === 'all' ? undefined : next.scope }
+          : {}),
       }),
       replace: true,
     });
@@ -151,7 +157,14 @@ export function FinancePage() {
                 />
               )}
               {tab === 'previsao' && <ForecastTab onSelect={(tx) => txSheet.show(tx)} />}
-              {tab === 'resumo' && <SummaryTab month={month} onMonthChange={onMonthChange} />}
+              {tab === 'resumo' && (
+                <SummaryTab
+                  month={month}
+                  onMonthChange={onMonthChange}
+                  scope={scope}
+                  onScopeChange={(value) => setSearch({ scope: value })}
+                />
+              )}
               {tab === 'orcamentos' && <BudgetsTab month={month} onMonthChange={onMonthChange} />}
             </div>
           </div>

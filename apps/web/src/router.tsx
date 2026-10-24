@@ -12,6 +12,7 @@ import { AuthGate } from '@/components/auth-gate';
 import { AgendaPage } from '@/routes/agenda/agenda-page';
 import { AssistantPage } from '@/routes/assistant/assistant-page';
 import { AccountPage } from '@/routes/finance/account-page';
+import { CategoryPage } from '@/routes/finance/category-page';
 import { FinancePage } from '@/routes/finance/finance-page';
 import { ReviewPage } from '@/routes/finance/review-page';
 import { PrivacyPage, TermsPage } from '@/routes/legal/legal-pages';
@@ -109,12 +110,25 @@ const appRoutes = appRoute.addChildren([
     getParentRoute: () => appRoute,
     path: '/financas',
     component: FinancePage,
-    validateSearch: (search: Record<string, unknown>): { tab?: string; month?: string } => ({
+    validateSearch: (
+      search: Record<string, unknown>
+    ): { tab?: string; month?: string; scope?: string } => ({
       tab: typeof search.tab === 'string' ? search.tab : undefined,
       month: typeof search.month === 'string' ? search.month : undefined,
+      scope: typeof search.scope === 'string' ? search.scope : undefined,
     }),
   }),
   route('/financas/contas/$accountId', AccountPage),
+  // Despesas de uma categoria no mês (vindo do Resumo); "sem" é a fatia sem categoria.
+  createRoute({
+    getParentRoute: () => appRoute,
+    path: '/financas/categorias/$categoryId',
+    component: CategoryPage,
+    validateSearch: (search: Record<string, unknown>): { month?: string; scope?: string } => ({
+      month: typeof search.month === 'string' ? search.month : undefined,
+      scope: typeof search.scope === 'string' ? search.scope : undefined,
+    }),
+  }),
   route('/financas/revisar', ReviewPage),
   createRoute({
     getParentRoute: () => appRoute,

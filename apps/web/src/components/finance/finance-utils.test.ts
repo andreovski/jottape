@@ -11,12 +11,14 @@ import {
   availableBalance,
   axisTicks,
   budgetBar,
+  categoryExpenses,
   categorySlices,
   categoryTree,
   compactMoney,
   comparisonText,
   defaultStatus,
   dueInvoiceRows,
+  expenseTotalsByCategory,
   filterTransactions,
   forecastAt,
   futureInvoiceIds,
@@ -522,5 +524,57 @@ describe('faturas do cartão', () => {
       invoice('mp-jan', 'mp', '2027-01-01'),
     ]);
     expect([...future].sort()).toEqual(['mp-dez', 'mp-jan']);
+  });
+});
+
+describe('despesas por categoria num recorte', () => {
+  const tx = (over: Partial<TransactionResponse>): TransactionResponse => ({
+    id: Math.random().toString(36).slice(2),
+    kind: 'EXPENSE',
+    amountCents: 1000,
+    date: '2026-10-10',
+    accountId: 'conta',
+    toAccountId: null,
+    categoryId: 'mercado',
+    description: 'x',
+    notes: null,
+    status: 'DONE',
+    recurrenceId: null,
+    recurrenceRule: null,
+    installmentGroupId: null,
+    installmentNumber: null,
+    installmentTotal: null,
+    invoiceId: null,
+    paysInvoiceId: null,
+    ...over,
+  });
+  const list = [
+    tx({ amountCents: 3000 }),
+    tx({ accountId: 'cartao', amountCents: 2000 }),
+    tx({ categoryId: null, amountCents: 500 }),
+    tx({ status: 'PLANNED', amountCents: 9999 }),
+    tx({ kind: 'INCOME', amountCents: 9999 }),
+    tx({ kind: 'TRANSFER', categoryId: null, amountCents: 9999 }),
+  ];
+
+  it('soma só as despesas pagas, como o Resumo', () => {
+    expect(expenseTotalsByCategory(list)).toEqual([
+      { categoryId: 'mercado', totalCents: 5000 },
+      { categoryId: null, totalCents: 500 },
+    ]);
+  });
+
+  it('respeita o recorte de contas ou cartões', () => {
+    expect(expenseTotalsByCategory(list, new Set(['cartao']))).toEqual([
+      { categoryId: 'mercado', totalCents: 2000 },
+    ]);
+  });
+
+  it('lista as despesas da fatia, inclusive a sem categoria', () => {
+    expect(categoryExpenses(list, 'mercado').map((t) => t.amountCents)).toEqual([3000, 2000]);
+    expect(categoryExpenses(list, 'mercado', new Set(['conta'])).map((t) => t.amountCents)).toEqual(
+      [3000]
+    );
+    expect(categoryExpenses(list, null).map((t) => t.amountCents)).toEqual([500]);
   });
 });

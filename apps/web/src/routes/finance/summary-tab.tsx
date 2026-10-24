@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router';
 import { ArrowDownLeft, ArrowUpRight, ChartPie, Clock } from 'lucide-react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, type TooltipProps } from 'recharts';
 
@@ -5,31 +6,61 @@ import { CategoryIcon } from '@/components/finance/category-icon';
 import {
   categorySlices,
   comparisonText,
+  expenseTotalsByCategory,
+  hasCardsAndAccounts,
+  NO_CATEGORY,
   percentLabel,
+  scopeAccountIds,
   type Slice,
+  type StatementScope,
 } from '@/components/finance/finance-utils';
 import { MonthSwitcher } from '@/components/finance/month-switcher';
+import { ScopeFilter } from '@/components/finance/scope-filter';
 import { EmptyState, Skeleton } from '@/components/ios/controls';
 import { Row, Section } from '@/components/ios/list';
-import { useCategories, useMonthSummary } from '@/features/finance';
+import { useAccounts, useCategories, useMonthSummary, useTransactions } from '@/features/finance';
 import { amountTone, money, monthName } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 export function SummaryTab({
   month,
   onMonthChange,
+  scope,
+  onScopeChange,
 }: {
   month: string;
   onMonthChange: (month: string) => void;
+  /** Recorte das despesas por categoria (Tudo / Contas / Cartão). */
+  scope: StatementScope;
+  onScopeChange: (scope: StatementScope) => void;
 }) {
+  const navigate = useNavigate();
   const { data: summary, isLoading } = useMonthSummary(month);
   const { data: categories = [] } = useCategories();
+  const { data: accounts = [] } = useAccounts({ archived: true });
+
+  // Contas e cartões só se separam quando há os dois; fora de "Tudo" as fatias saem dos
+  // lançamentos do mês, só das contas ou só dos cartões.
+  const showScope = hasCardsAndAccounts(accounts);
+  const effective = showScope ? scope : 'all';
+  const accountIds = scopeAccountIds(accounts, effective);
+  const { data: transactions } = useTransactions({ month });
+  const scoped =
+    accountIds && transactions ? expenseTotalsByCategory(transactions, accountIds) : null;
+  const waiting = isLoading || !summary || (accountIds !== undefined && !scoped);
+
+  const openCategory = (slice: Slice) =>
+    void navigate({
+      to: '/financas/categorias/$categoryId',
+      params: { categoryId: slice.categoryId ?? NO_CATEGORY },
+      search: { month, scope: effective === 'all' ? undefined : effective },
+    });
 
   return (
     <div>
       <MonthSwitcher month={month} onChange={onMonthChange} className='-mx-2 mb-4' />
 
-      {isLoading || !summary ? (
+      {waiting ? (
         <div className='space-y-3'>
           <div className='grid grid-cols-2 gap-3'>
             <Skeleton className='h-28' />
@@ -40,7 +71,10 @@ export function SummaryTab({
       ) : (
         <SummaryContent
           summary={summary}
-          slices={categorySlices(summary.expenseByCategory, categories)}
+          slices={categorySlices(scoped ?? summary.expenseByCategory, categories)}
+          filter={showScope ? <ScopeFilter scope={scope} onChange={onScopeChange} /> : undefined}
+          scoped={effective !== 'all'}
+          onOpenCategory={openCategory}
         />
       )}
     </div>
@@ -50,10 +84,18 @@ export function SummaryTab({
 function SummaryContent({
   summary,
   slices,
+  filter,
+  scoped,
+  onOpenCategory,
 }: {
   summary: NonNullable<ReturnType<typeof useMonthSummary>['data']>;
   slices: Slice[];
+  filter?: React.ReactNode;
+  /** As fatias são só das contas ou só dos cartões. */
+  scoped: boolean;
+  onOpenCategory: (slice: Slice) => void;
 }) {
+  const slicesTotal = slices.reduce((total, slice) => total + slice.totalCents, 0);
   const previousName = monthName(summary.previous.month);
   const hasPlanned = summary.plannedIncomeCents > 0 || summary.plannedExpenseCents > 0;
 
@@ -123,15 +165,21 @@ function SummaryContent({
         )}
       </Section>
 
-      <Section header='Despesas por categoria'>
+      <Section header='Despesas por categoria' action={filter}>
         {slices.length ? (
           <>
-            <Donut slices={slices} total={summary.expenseCents} />
+            <Donut
+              slices={slices}
+              total={scoped ? slicesTotal : summary.expenseCents}
+              onSelect={onOpenCategory}
+            />
             {slices.map((slice) => (
               <Row
                 key={slice.categoryId ?? 'none'}
                 leading={<CategoryIcon category={slice.category} size='sm' />}
                 title={slice.name}
+                chevron
+                onClick={() => onOpenCategory(slice)}
                 trailing={
                   <span className='flex shrink-0 items-baseline gap-2'>
                     <span className='font-rounded numeric text-body'>
@@ -149,7 +197,11 @@ function SummaryContent({
           <EmptyState
             icon={<ChartPie />}
             title='Sem despesas'
-            message='As despesas pagas do mês aparecem aqui, por categoria.'
+            message={
+              scoped
+                ? 'Nenhuma despesa paga neste recorte no mês.'
+                : 'As despesas pagas do mês aparecem aqui, por categoria.'
+            }
           />
         )}
       </Section>
@@ -184,7 +236,15 @@ function BigTile({
   );
 }
 
-function Donut({ slices, total }: { slices: Slice[]; total: number }) {
+function Donut({
+  slices,
+  total,
+  onSelect,
+}: {
+  slices: Slice[];
+  total: number;
+  onSelect: (slice: Slice) => void;
+}) {
   return (
     <div className='relative mx-auto h-60 w-full max-w-[280px]'>
       <ResponsiveContainer width='100%' height='100%'>
@@ -204,7 +264,12 @@ function Donut({ slices, total }: { slices: Slice[]; total: number }) {
             animationDuration={500}
           >
             {slices.map((slice) => (
-              <Cell key={slice.categoryId ?? 'none'} fill={slice.color} />
+              <Cell
+                key={slice.categoryId ?? 'none'}
+                fill={slice.color}
+                className='cursor-pointer outline-none'
+                onClick={() => onSelect(slice)}
+              />
             ))}
           </Pie>
           <Tooltip content={<SliceTooltip />} isAnimationActive={false} />

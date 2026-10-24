@@ -298,6 +298,43 @@ export function categorySlices(
     .sort((a, b) => b.totalCents - a.totalCents);
 }
 
+/** Na URL, a categoria vazia ("Sem categoria") vira "sem". */
+export const NO_CATEGORY = 'sem';
+
+/**
+ * Despesas pagas de uma categoria (null = sem categoria), do recorte pedido: as mesmas que somam
+ * a fatia do Resumo.
+ */
+export function categoryExpenses<T extends TransactionResponse>(
+  transactions: T[],
+  categoryId: string | null,
+  accountIds?: ReadonlySet<string>
+): T[] {
+  return transactions.filter(
+    (tx) =>
+      tx.kind === 'EXPENSE' &&
+      tx.status === 'DONE' &&
+      tx.categoryId === categoryId &&
+      (!accountIds || accountIds.has(tx.accountId))
+  );
+}
+
+/** Total de despesas pagas por categoria, como o `expenseByCategory` do Resumo, num recorte. */
+export function expenseTotalsByCategory(
+  transactions: TransactionResponse[],
+  accountIds?: ReadonlySet<string>
+): { categoryId: string | null; totalCents: number }[] {
+  const totals = new Map<string | null, number>();
+  for (const tx of transactions) {
+    if (tx.kind !== 'EXPENSE' || tx.status !== 'DONE') continue;
+    if (accountIds && !accountIds.has(tx.accountId)) continue;
+    totals.set(tx.categoryId, (totals.get(tx.categoryId) ?? 0) + tx.amountCents);
+  }
+  return [...totals.entries()]
+    .map(([categoryId, totalCents]) => ({ categoryId, totalCents }))
+    .sort((a, b) => b.totalCents - a.totalCents);
+}
+
 // ------------------------------------------------------------------ comparação e números
 
 /** "12% menos que setembro", "Igual a setembro" ou null quando não há base. */
